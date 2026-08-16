@@ -23,7 +23,23 @@ import {
   docTextContainer,
   addQuestionBtn,
   removeDuplicatesBtn,
+  termBarEl,
+  termFilterIndicatorEl,
 } from './dom-refs.js';
+
+// UPDATE 3 (term nav bar — see UI_UPGRADES_HANDOFF_PROMPT.md): pulled in
+// for buildTermGroups()'s "same term" grouping, using the exact same
+// normalization computeDuplicateMap() already uses for its "same target
+// term" duplicate check, so a person never sees a question grouped one
+// way in the term bar and flagged a different way in the duplicate
+// warning. NOTE (structural, not a logic change): text-normalize.js
+// already imports escapeHtml from THIS file, so this creates a 2-file
+// import cycle — same category and same safety reasoning as the
+// existing highlighting.js <-> editor-render.js cycle noted above for
+// markQidList: every use of normalizeTermKeyLoose below is inside a
+// function body (buildTermGroups, setActiveCard), never at top-level
+// module-evaluation time, so the cycle is safe.
+import { normalizeTermKeyLoose } from './text-normalize.js';
 
 // NOTE (structural, not a logic change): TIER_META and DATA_STATUS_META
 // were originally declared inline near question-model.js's section of the
@@ -88,8 +104,38 @@ const NAV_CHIPS_PER_PAGE = 20;
 const NAV_PAGER_BLOCK_SIZE = 10; // how many numbered page buttons show before Next steps to the next block — same behavior as Google's classic results pager
 let navChipPage = 0;
 
+// UPDATE 3 (term nav bar — see UI_UPGRADES_HANDOFF_PROMPT.md): which
+// term the chip grid is currently filtered to, as a
+// normalizeTermKeyLoose() key, or null when unfiltered. Same
+// module-level-`let` treatment as navChipPage just above and for the
+// same reason — only ever read/reassigned from inside this module
+// (renderQuestionNav, setActiveCard, and this term bar's own click
+// handlers), so it doesn't need core-state.js's cross-module
+// getter/setter treatment.
+// DESIGN DECISION (flagged per the handoff doc's "don't silently
+// assume" instruction): clicking a term FILTERS this existing chip
+// grid (reusing Update 1's pager) rather than opening a separate
+// modal/view, so there's one source of truth for "which questions are
+// currently shown" instead of two parallel lists to keep in sync.
+let activeTermFilterKey = null;
+
+// Every question that should currently be visible in the Pane 1 chip
+// list, paired with its GLOBAL index in state.questions — every
+// question when no term filter is active, or just the ones sharing the
+// filtered term's normalized key otherwise. The global index (not the
+// filtered subset's own position) is what buildNavChipHtml turns into
+// the Q01/Q02/... label, so a chip's number never disagrees with what
+// the same question shows as everywhere else in the app (the active
+// editor title, a duplicate-warning "possible duplicate of Q07" label)
+// just because a term filter happens to be applied.
+function visibleQuestionEntries() {
+  return state.questions
+    .map((q, i) => ({ q, i }))
+    .filter(({ q }) => !activeTermFilterKey || normalizeTermKeyLoose(q.targetTerm || '') === activeTermFilterKey);
+}
+
 function totalNavChipPages() {
-  return Math.max(1, Math.ceil(state.questions.length / NAV_CHIPS_PER_PAGE));
+  return Math.max(1, Math.ceil(visibleQuestionEntries().length / NAV_CHIPS_PER_PAGE));
 }
 
 // Builds the numbered-page + Prev/Next controls for whatever
@@ -159,6 +205,16 @@ function buildNavChipHtml(q, displayIndex, dup) {
 function renderQuestionNav() {
   setDuplicateMap(computeDuplicateMap());
 
+  // UPDATE 3: if the active term filter no longer matches any question
+  // (its last question was deleted, retargeted, or had its target term
+  // cleared), auto-clear it here — before this render's visible entries
+  // are computed below — so the chip grid falls back to "show
+  // everything" instead of getting stuck showing "no questions match"
+  // for a term that no longer exists anywhere in the quiz.
+  if (activeTermFilterKey && !state.questions.some(q => normalizeTermKeyLoose(q.targetTerm || '') === activeTermFilterKey)) {
+    activeTermFilterKey = null;
+  }
+
   // New (not from source) — Update 1: clamp navChipPage in case the
   // question count shrank (e.g. removeFlaggedDuplicates/deleteQuestion)
   // since the last render and the previously-shown page no longer
@@ -170,22 +226,32 @@ function renderQuestionNav() {
     questionNavPager.innerHTML = '';
     questionNavPager.classList.add('hidden');
   } else {
-    // displayIndex must stay the GLOBAL array index (not the position
-    // within this page's slice) — it's what buildNavChipHtml turns into
-    // the Q01/Q02/... label and what duplicate-match titles reference,
-    // and neither of those should renumber depending on which pager
-    // page happens to be showing.
-    const startIdx = navChipPage * NAV_CHIPS_PER_PAGE;
-    const pageItems = state.questions.slice(startIdx, startIdx + NAV_CHIPS_PER_PAGE);
-    questionNavEl.innerHTML = pageItems
-      .map((q, i) => buildNavChipHtml(q, startIdx + i, getDuplicateMap().get(q.id)))
-      .join('');
+    // UPDATE 3: pageItems now comes from visibleQuestionEntries()
+    // (state.questions itself when unfiltered) rather than slicing
+    // state.questions directly, so a term filter narrows which
+    // questions appear here. displayIndex is each entry's own `.i`
+    // (the GLOBAL array index) rather than a position recomputed
+    // within the filtered subset — see visibleQuestionEntries()'s own
+    // comment for why that still has to hold even while filtered.
+    const entries = visibleQuestionEntries();
+    if (entries.length === 0) {
+      questionNavEl.innerHTML = '<p class="text-xs text-mute italic px-1">No questions match this term filter.</p>';
+      questionNavPager.innerHTML = '';
+      questionNavPager.classList.add('hidden');
+    } else {
+      const startIdx = navChipPage * NAV_CHIPS_PER_PAGE;
+      const pageItems = entries.slice(startIdx, startIdx + NAV_CHIPS_PER_PAGE);
+      questionNavEl.innerHTML = pageItems
+        .map(({ q, i }) => buildNavChipHtml(q, i, getDuplicateMap().get(q.id)))
+        .join('');
 
-    const pagerHtml = buildPagerHtml();
-    questionNavPager.innerHTML = pagerHtml;
-    questionNavPager.classList.toggle('hidden', !pagerHtml);
+      const pagerHtml = buildPagerHtml();
+      questionNavPager.innerHTML = pagerHtml;
+      questionNavPager.classList.toggle('hidden', !pagerHtml);
+    }
   }
   renderPane3QuestionNav();
+  renderTermBar(); // UPDATE 3 — keep the term panel (and any duplicate rows inside it) in sync with every nav-affecting change, same call site as renderPane3QuestionNav above and for the same reason
 }
 
 // Pane 3's own mini nav: every question whose sourcePage matches
@@ -197,12 +263,28 @@ function renderQuestionNav() {
 // navigation, which doesn't otherwise touch the question list).
 // ---------------------------------------------------------------------
 // Verbatim from source, lines 1128-1140, except the same mechanical
-// duplicateMap -> getDuplicateMap() substitution.
+// duplicateMap -> getDuplicateMap() substitution, PLUS an additive
+// q.sourceId check — see UPDATE 2B note below.
 // ---------------------------------------------------------------------
+// UPDATE 2B (bug found during verification for Update 2B item 3 — see
+// UI_UPGRADES_HANDOFF_PROMPT.md; not one of the doc's 5 listed items,
+// but discovered while checking this file's page-lookup logic for
+// multi-source correctness, so fixed here and flagged explicitly
+// rather than left in): with only one possible source, "sourcePage
+// matches state.currentPage" and "this question belongs to the source
+// Pane 3 is showing" were the same condition. With multiple sources
+// they're not — page 3 of source A and page 3 of source B are
+// different pages that happen to share a number, and Pane 3 only ever
+// shows ONE source's page N at a time (state.currentPage is a plain
+// page number, not itself source-scoped). Without the sourceId check,
+// a question from a completely different, non-active source could
+// wrongly appear in Pane 3's mini-nav (and its chip would then open
+// via setActiveCard onto content that doesn't match it). Restricting
+// to q.sourceId === state.activeSourceId fixes this.
 function renderPane3QuestionNav() {
   const chips = [];
   state.questions.forEach((q, i) => {
-    if (q.sourcePage !== state.currentPage) return;
+    if (q.sourceId !== state.activeSourceId || q.sourcePage !== state.currentPage) return;
     chips.push(buildNavChipHtml(q, i, getDuplicateMap().get(q.id)));
   });
   if (chips.length === 0) {
@@ -216,6 +298,149 @@ function renderPane3QuestionNav() {
 pane3QuestionNavEl.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-nav-id]');
   if (btn) setActiveCard(btn.dataset.navId);
+});
+
+// =====================================================================
+// PANE 1 — term nav bar (Update 3, new — see UI_UPGRADES_HANDOFF_PROMPT.md)
+// =====================================================================
+// Important: the duplicate-detection engine this panel surfaces already
+// exists and is fully wired (computeDuplicateMap, normalizeTermKeyLoose,
+// q.dupeDismissed) — everything below is new browsing/filtering UI on
+// top of it, not new detection logic.
+
+// Groups every question with a non-blank targetTerm by
+// normalizeTermKeyLoose() — the exact same "same term" notion
+// computeDuplicateMap() already uses for its own "same target term"
+// duplicate check (see question-model.js) — so two spellings or
+// pluralizations of one concept collapse into a single row here just
+// like they'd collapse into a single duplicate flag there. This is the
+// "collapse, don't list separately" option from the handoff doc's
+// design-decision note. `label` is just the first-seen raw targetTerm
+// for that key, for display only — grouping and filtering both go
+// through the normalized key, never the label.
+//
+// DESIGN NOTE: this recomputes the grouping fresh from state.questions
+// rather than extending ai-prompt-builders.js's collectTargetTerms().
+// That function already exists and returns a flat, deduped array of
+// term strings, but it's on the hot path of AI bulk-generation (each
+// tier pass's exclusion-list prompt) and doesn't carry per-term
+// question-id lists, which this panel needs. Changing its return shape
+// risked touching AI-prompt-building code for a rendering feature;
+// deriving the grouping fresh here instead is cheap (this only ever
+// runs on a nav re-render, over an in-memory array) and keeps this
+// update scoped to Pane 1.
+function buildTermGroups() {
+  const groups = new Map(); // normalizeTermKeyLoose key -> { key, label, questionIds }
+  state.questions.forEach((q) => {
+    const raw = (q.targetTerm || '').trim();
+    if (!raw) return;
+    const key = normalizeTermKeyLoose(raw);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, { key, label: raw, questionIds: [] });
+    groups.get(key).questionIds.push(q.id);
+  });
+  return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// One term row: the clickable filter button, plus — DESIGN DECISION
+// (flagged per the handoff doc) — an inline duplicate-warning row for
+// each of this term's questions that's currently flagged, with its own
+// "View →" / "Not a duplicate" actions. This is IN ADDITION TO, not
+// instead of, the existing warning box in the single-question editor
+// (activeEditorTemplate above) — that box is untouched and still shows
+// exactly as before. The inline copy here is a convenience for
+// triaging several flagged questions under one term without leaving
+// this panel; "View →" (viewFlaggedQuestion) opens the flagged
+// question itself in the editor, where the full warning box (with its
+// own View-the-original-match / dismiss actions) is still available.
+function buildTermRowHtml(group) {
+  const isActive = group.key === activeTermFilterKey;
+  const dupQids = group.questionIds.filter((qid) => getDuplicateMap().has(qid));
+  return `
+    <div class="term-row ${isActive ? 'term-row-active' : ''}">
+      <button type="button" data-action="filterByTerm" data-term-key="${escapeAttr(group.key)}"
+        class="term-row-btn" title="Show only questions using this term">
+        <span class="term-row-label">${escapeHtml(group.label)}</span>
+        <span class="term-row-count">${group.questionIds.length} ${group.questionIds.length === 1 ? 'question' : 'questions'}</span>
+      </button>
+      ${dupQids.map((qid) => {
+        const dup = getDuplicateMap().get(qid);
+        const idx = state.questions.findIndex((x) => x.id === qid);
+        return `
+        <div class="term-row-dupe">
+          <span class="term-row-dupe-text">⚠ Q${String(idx + 1).padStart(2, '0')} possible duplicate — ${escapeHtml(dup.reason)}</span>
+          <button type="button" data-action="viewFlaggedQuestion" data-qid="${qid}" class="term-row-dupe-btn">View →</button>
+          <button type="button" data-action="dismissDuplicateInline" data-qid="${qid}" class="term-row-dupe-btn">Not a duplicate</button>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+// Renders the term list plus the "showing filtered term" indicator
+// strip above the chip grid. Called from renderQuestionNav() (see
+// above) so it stays in sync with every question-list change exactly
+// the way renderPane3QuestionNav() already does — new questions, edited
+// target terms, deletions, and dismissed duplicates all flow through
+// renderQuestionNav() already, so no separate call sites are needed
+// here.
+//
+// DESIGN NOTE: Pane 3's mini-nav (renderPane3QuestionNav, above) is
+// deliberately NOT filtered by activeTermFilterKey — it's scoped to "the
+// questions on the currently visible document page", a different
+// browsing axis than "questions using this term", and filtering it too
+// could hide a question from Pane 3 that's still on-screen in Pane 2.
+function renderTermBar() {
+  const groups = buildTermGroups();
+  termBarEl.innerHTML = groups.length
+    ? groups.map(buildTermRowHtml).join('')
+    : '<p class="text-xs text-mute italic">No target terms yet — they show up here once questions have one set.</p>';
+
+  termFilterIndicatorEl.classList.toggle('hidden', !activeTermFilterKey);
+  if (activeTermFilterKey) {
+    const activeGroup = groups.find((g) => g.key === activeTermFilterKey);
+    const label = activeGroup ? activeGroup.label : activeTermFilterKey;
+    termFilterIndicatorEl.innerHTML = `
+      <div class="term-filter-indicator-inner">
+        <span>Showing questions for <strong>${escapeHtml(label)}</strong></span>
+        <button type="button" data-action="clearTermFilter" class="term-filter-clear">✕ Clear filter</button>
+      </div>
+    `;
+  }
+}
+
+// Delegated click handling for the term panel: filtering the chip grid
+// below, jumping straight to a flagged duplicate, or dismissing its
+// warning — all without leaving this panel.
+termBarEl.addEventListener('click', (e) => {
+  const filterBtn = e.target.closest('[data-action="filterByTerm"]');
+  if (filterBtn) {
+    const key = filterBtn.dataset.termKey;
+    // Clicking the already-active term again clears the filter, same
+    // toggle behavior as a lot of filter-chip UIs elsewhere.
+    activeTermFilterKey = (activeTermFilterKey === key) ? null : key;
+    navChipPage = 0;
+    renderQuestionNav();
+    return;
+  }
+  const viewBtn = e.target.closest('[data-action="viewFlaggedQuestion"]');
+  if (viewBtn) {
+    setActiveCard(viewBtn.dataset.qid);
+    return;
+  }
+  const dismissBtn = e.target.closest('[data-action="dismissDuplicateInline"]');
+  if (dismissBtn) {
+    dismissDuplicateForQuestion(dismissBtn.dataset.qid);
+    return;
+  }
+});
+
+termFilterIndicatorEl.addEventListener('click', (e) => {
+  const clearBtn = e.target.closest('[data-action="clearTermFilter"]');
+  if (!clearBtn) return;
+  activeTermFilterKey = null;
+  navChipPage = 0;
+  renderQuestionNav();
 });
 
 // Tab group order is fixed: Multiple Choice, then True/False, then
@@ -651,9 +876,30 @@ activeEditorEl.addEventListener('change', (e) => {
   }
 });
 
+// UPDATE 3 (small refactor, not a logic change): pulled out of what was
+// previously inline body of activeEditorEl's own "dismissDuplicate"
+// click handler below, unchanged, so the term bar's new inline
+// "Not a duplicate" action (see renderTermBar()'s click listener above)
+// can call the exact same logic on an arbitrary qid instead of only the
+// currently-active card. Behavior for the existing editor button is
+// identical to before this change.
+function dismissDuplicateForQuestion(qid) {
+  const q = state.questions.find(x => x.id === qid);
+  if (!q) return;
+  // Manually clears the flag for THIS question only — computeDuplicateMap()
+  // skips any question with dupeDismissed set, so it won't be re-flagged
+  // (or swept up by "Remove Duplicates") until the person edits it enough
+  // to change what it matches against.
+  q.dupeDismissed = true;
+  renderQuestionNav();
+  renderActiveQuestion();
+}
+
 // ---------------------------------------------------------------------
 // Verbatim from source, lines 1523-1645 (the 'click' listener on
-// activeEditorEl)
+// activeEditorEl), EXCEPT the dismissDuplicate block now calls the
+// dismissDuplicateForQuestion() helper just above instead of inlining
+// the same three lines — see its own comment for why.
 // ---------------------------------------------------------------------
 activeEditorEl.addEventListener('click', (e) => {
   const deleteBtn = e.target.closest('[data-action="delete"]');
@@ -695,15 +941,7 @@ activeEditorEl.addEventListener('click', (e) => {
   if (dismissBtn) {
     const card = e.target.closest('.question-card');
     if (!card) return;
-    const q = state.questions.find(x => x.id === card.dataset.id);
-    if (!q) return;
-    // Manually clears the flag for THIS question only — computeDuplicateMap()
-    // skips any question with dupeDismissed set, so it won't be re-flagged
-    // (or swept up by "Remove Duplicates") until the person edits it enough
-    // to change what it matches against.
-    q.dupeDismissed = true;
-    renderQuestionNav();
-    renderActiveQuestion();
+    dismissDuplicateForQuestion(card.dataset.id);
     return;
   }
   const genVariantBtn = e.target.closest('[data-action="generateVariant"]');
@@ -868,6 +1106,18 @@ function setActiveCard(id, viaUserClick = true) {
     q.aiUnchecked = false;
   }
 
+  // UPDATE 3: if a term filter is currently narrowing the chip grid and
+  // the question being activated doesn't match it (e.g. the term bar's
+  // own "View →" on a flagged duplicate under a DIFFERENT term than
+  // whatever's currently filtered, or "jump to duplicate" landing on a
+  // question with a different target term), clear the filter first —
+  // otherwise the paging logic just below would compute a page position
+  // within a filtered list this question isn't even part of, and the
+  // chip for `id` could end up on a page that doesn't show it at all.
+  if (activeTermFilterKey && q && normalizeTermKeyLoose(q.targetTerm || '') !== activeTermFilterKey) {
+    activeTermFilterKey = null;
+  }
+
   // New (not from source) — Update 1: bring the nav-chip pager to
   // whichever page the newly-active question lives on, so the
   // highlighted chip is never hidden behind a page the pager isn't
@@ -880,8 +1130,12 @@ function setActiveCard(id, viaUserClick = true) {
   // OWN Prev/Next/arrow-key navigation (which never calls
   // setActiveCard), pulling the person back to the active question's
   // page every time they tried to just browse.
-  const activeIdx = state.questions.findIndex(x => x.id === id);
-  if (activeIdx !== -1) navChipPage = Math.floor(activeIdx / NAV_CHIPS_PER_PAGE);
+  // UPDATE 3: paging is now computed against visibleQuestionEntries()
+  // rather than state.questions directly, so this still lands on the
+  // right page when a (still-matching) term filter is active.
+  const entries = visibleQuestionEntries();
+  const activeEntryIdx = entries.findIndex(({ q: eq }) => eq.id === id);
+  if (activeEntryIdx !== -1) navChipPage = Math.floor(activeEntryIdx / NAV_CHIPS_PER_PAGE);
 
   state.activeCardId = id;
   renderQuestionNav();

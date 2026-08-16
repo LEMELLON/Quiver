@@ -6,6 +6,31 @@
 // modularization — see MODULARIZATION_SCHEMA.txt).
 // Function/const bodies are UNCHANGED from source — only import/export
 // wrapper lines were added.
+//
+// UPDATE 2B (verification pass, not extraction — see
+// UI_UPGRADES_HANDOFF_PROMPT.md, Update 2B item 3): the handoff doc
+// flagged this module for "verify/adjust its page-lookup helpers once
+// Pane 2 can show more than one source's pages at a time (today it
+// only ever sees the active source's pages via the 2A shim)". Pane 2's
+// own rendering (layout-formatting.js) is NOT touched this session —
+// it's not among the files sent for 2B — so docTextContainer still
+// only ever contains ONE source's .doc-page elements at a time: the
+// active one. The verification finding: locateAndHighlightSnippet()
+// itself is fine as-is (its DOM queries and its Rung 4 state.pages
+// fallback are automatically scoped to "whatever's in the DOM /
+// whatever the shim resolves to", which is the active source either
+// way) — but its TWO CALLERS below, recheckHighlights() and
+// recheckHighlightsForQuestion(), each loop/operate over
+// state.questions (ALL sources), not just the active one. Before this
+// fix, a question belonging to a non-active source would get searched
+// for in the wrong source's DOM (or, worse, in a same-numbered page
+// that happens to belong to a *different* source than the one it was
+// actually written against) and get reported as "still not found" —
+// a false negative, since that question's real source text simply
+// isn't on screen right now, not because anything is actually broken.
+// Both callers now skip/decline non-active-source questions instead
+// (see each function's own UPDATE 2B note below) rather than silently
+// misreporting on content that isn't even in the DOM to search.
 
 // --- Shared dependencies ---
 import { state, getDuplicateMap } from './core-state.js';
@@ -932,6 +957,21 @@ function recheckHighlights() {
   // preserve a Tier 2 bucket that no longer means anything.
 
   state.questions.forEach((q, i) => {
+    // UPDATE 2B (see file-header note above): Pane 2 only ever shows
+    // the ACTIVE source's pages this session, so a question from any
+    // OTHER source has no .doc-page in the DOM at all right now to be
+    // rechecked against. Skip it entirely — leave its verifyTier/
+    // sourceFound/answerFound exactly as they were — rather than count
+    // it toward stillMissing/fuzzyMatched/unclassifiedCount below. It
+    // gets a meaningful recheck once its own source becomes active (or
+    // once Pane 2 can show every source at once, a follow-up beyond
+    // 2B). A question with no sourceId at all (added via "+ Add
+    // Question" before any import) still gets checked as before —
+    // state.activeSourceId is also null/unset in that situation, so
+    // the two sides of this comparison match and nothing here changes
+    // for that case.
+    if (q.sourceId !== state.activeSourceId) return;
+
     const label = 'Q' + String(i + 1).padStart(2, '0');
     const entry = results.get(q.id) || { question: null, answer: null };
     const slotTiers = []; // this question's tier(s) actually checked this pass
@@ -1054,6 +1094,20 @@ recheckHighlightsBtn.addEventListener('click', recheckHighlights);
 function recheckHighlightsForQuestion(qid) {
   const q = state.questions.find(x => x.id === qid);
   if (!q) return;
+
+  // UPDATE 2B (see file-header note above): same reasoning as
+  // recheckHighlights()'s per-question skip — Pane 2 only shows the
+  // active source's pages this session, so a question from a different
+  // source has nothing in the DOM to search. Rather than silently
+  // report a false "still not found anywhere" (worst case, tier 4) for
+  // a question that's actually fine and just not on screen right now,
+  // tell the person why and stop. A question with no sourceId (added
+  // before any import) is unaffected — see the matching note above.
+  if (q.sourceId !== state.activeSourceId) {
+    setSelectionGenStatus('This question belongs to a different imported document — switch to it in Pane 3 to recheck its highlight.', 'error');
+    setTimeout(() => setSelectionGenStatus(''), 3500);
+    return;
+  }
 
   const slots = [
     { snippet: q.sourceSnippet, type: 'question' },
@@ -1180,6 +1234,12 @@ function logAllHighlights(label) {
   // Which questions HAVE a snippet defined but NO mark for it anywhere in the DOM.
   const missing = [];
   state.questions.forEach(q => {
+    // UPDATE 2B (see file-header note above): diagnostic-only, but same
+    // scoping fix as recheckHighlights()/recheckHighlightsForQuestion —
+    // a non-active-source question has no page in the DOM to be
+    // missing FROM, so counting it here would just be console noise.
+    if (q.sourceId !== state.activeSourceId) return;
+
     const marksForQ = byQid[q.id] || { question: 0, answer: 0 };
     if (q.sourceSnippet && marksForQ.question === 0) {
       missing.push({ qid: q.id, type: 'question', sourcePage: q.sourcePage, snippetPreview: q.sourceSnippet.slice(0, 60) });

@@ -29,6 +29,8 @@ import {
   scanRangeError,
   scanRangeStatus,
   scanRangeHint,
+  scanSourceSelect,
+  scanSourceFieldEl,
   scanFromPage,
   scanToPage,
   scanRangeGenerateBtn,
@@ -108,27 +110,83 @@ async function scanPageRange(from, to, questionType) {
   return generated;
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4848-4875
-// ---------------------------------------------------------------------
-function openScanRangeModal() {
-  scanRangeError.classList.add('hidden');
-  scanRangeStatus.classList.add('hidden');
+// UPDATE 2B (new, not from source — see UI_UPGRADES_HANDOFF_PROMPT.md,
+// Update 2B item 4): which source the modal's from/to bounds should be
+// computed against — whichever one is picked in scanSourceSelect, or
+// the active source if the picker is hidden (0-1 sources, or the ref
+// wasn't found for some reason). Kept separate from state.activeSourceId
+// itself so opening the modal / changing the picker never silently
+// switches what Pane 2/3 are showing — only actually clicking "Scan →"
+// does that (see the scanRangeGenerateBtn listener below), and only
+// because it has to (see that listener's own note on why).
+function getScanTargetSourceId() {
+  if (scanSourceSelect && state.sources.length > 1 && scanSourceSelect.value) return scanSourceSelect.value;
+  return state.activeSourceId;
+}
+function getScanTargetPages() {
+  const source = state.sources.find(s => s.id === getScanTargetSourceId());
+  // Falls back to the (shimmed) state.pages for the pre-multi-source
+  // edge case: no source exists yet at all, so `source` above is
+  // undefined and state.pages itself already correctly returns [].
+  return source ? source.pages : state.pages;
+}
 
-  if (state.pages.length === 0) {
+// UPDATE 2B (new, not from source): populates the picker from
+// state.sources, defaulting to whichever source is currently active in
+// Pane 3. Hidden whenever there's 0 or 1 imported sources — with only
+// one possible choice, the picker is just noise, same rationale as
+// 2A's placeholder source list only showing once there's more than one
+// import. Built with DOM APIs (not innerHTML) so a filename with
+// HTML-special characters can't be misinterpreted as markup — same
+// convention main.js's renderSourceList() already uses.
+function populateScanSourcePicker() {
+  if (!scanSourceSelect) return;
+  scanSourceSelect.innerHTML = '';
+  if (state.sources.length <= 1) {
+    if (scanSourceFieldEl) scanSourceFieldEl.classList.add('hidden');
+    return;
+  }
+  if (scanSourceFieldEl) scanSourceFieldEl.classList.remove('hidden');
+  state.sources.forEach((s) => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = s.name;
+    if (s.id === state.activeSourceId) opt.selected = true;
+    scanSourceSelect.appendChild(opt);
+  });
+}
+
+// UPDATE 2B: the from/to bounds + hint text, split out of
+// openScanRangeModal() (below) so scanSourceSelect's own 'change'
+// listener can re-run just this part when the picked document changes,
+// without re-populating the picker itself or touching the error/status
+// banners. Reads whichever source getScanTargetPages() resolves to —
+// NOT always state.pages (which is only ever the active source) — so
+// switching the picker updates these bounds even for a source that
+// isn't currently shown in Pane 3.
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 4848-4875, EXCEPT reading
+// getScanTargetPages() instead of always state.pages — see note above.
+// ---------------------------------------------------------------------
+function refreshScanRangeBounds() {
+  const pages = getScanTargetPages();
+  if (pages.length === 0) {
     scanRangeHint.textContent = 'Import a document first.';
     scanFromPage.disabled = true;
     scanToPage.disabled = true;
     scanRangeGenerateBtn.disabled = true;
   } else {
-    const first = state.pages[0].pageNumber;
-    const last = state.pages[state.pages.length - 1].pageNumber;
+    const first = pages[0].pageNumber;
+    const last = pages[pages.length - 1].pageNumber;
     scanFromPage.min = first;
     scanFromPage.max = last;
     scanToPage.min = first;
     scanToPage.max = last;
     // Default to the page currently open in Pane 3, so "rescan this
-    // page" is a single click from wherever the user is looking.
+    // page" is a single click from wherever the user is looking. Only
+    // meaningful when the picked source IS the active one — clamps
+    // against ITS OWN first/last either way, so a differently-sized
+    // non-active source never ends up with an out-of-range default.
     const current = Math.min(Math.max(first, state.currentPage || first), last);
     scanFromPage.value = current;
     scanToPage.value = current;
@@ -137,6 +195,16 @@ function openScanRangeModal() {
     scanToPage.disabled = false;
     scanRangeGenerateBtn.disabled = false;
   }
+}
+if (scanSourceSelect) scanSourceSelect.addEventListener('change', refreshScanRangeBounds);
+
+function openScanRangeModal() {
+  scanRangeError.classList.add('hidden');
+  scanRangeStatus.classList.add('hidden');
+
+  populateScanSourcePicker();
+  refreshScanRangeBounds();
+
   scanRangeModal.classList.remove('hidden');
 }
 // ---------------------------------------------------------------------
@@ -165,6 +233,29 @@ scanRangeGenerateBtn.addEventListener('click', async () => {
     return;
   }
   if (from > to) { const t = from; from = to; to = t; }
+
+  // UPDATE 2B (see item 4 in the handoff doc): if the picked document
+  // isn't the active one, make it active before scanning. This is
+  // required, not just convenient — ai-api-calls.js's question-builder
+  // touch point (added in 2A, out of scope to change this session)
+  // tags every generated question with state.activeSourceId at the
+  // moment it's created, so scanning without switching first would tag
+  // the new questions with the WRONG source. One side effect worth
+  // flagging explicitly rather than leaving implicit: this makes Pane 2
+  // correctly redraw for the scanned source afterward (scanPageRange's
+  // own renderTextVersion() call, further down, picks it up
+  // automatically via the shim) — but Pane 3's canvas/slide view is
+  // NOT re-synced here (that's setupNavRange()/renderDocPage(), in
+  // doc-pane-navigation.js, which isn't among the files sent for 2B),
+  // so Pane 3 can end up showing a stale page — or, if the scanned
+  // source is a different docType than what was previously active, the
+  // wrong preview element entirely — until the person next navigates
+  // Pane 3 themselves. Left as a known follow-up rather than guessed
+  // at blind, since fixing it correctly needs that file's internals.
+  const targetSourceId = getScanTargetSourceId();
+  if (targetSourceId && targetSourceId !== state.activeSourceId) {
+    state.activeSourceId = targetSourceId;
+  }
 
   scanRangeGenerateBtn.disabled = true;
   const rangeLabel = from === to ? `page ${from}` : `pages ${from}–${to}`;

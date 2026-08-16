@@ -78,8 +78,26 @@ function hideSelectionToolbar() {
 // Verbatim from source, lines 3015-3039, except the two mechanical
 // `pendingSelection = captured;` -> `setPendingSelection(captured);` and
 // `lastDocSelection = captured;` -> `setLastDocSelection(captured);`
-// substitutions (see NOTE above).
+// substitutions (see NOTE above), plus the additive `sourceId` field —
+// see UPDATE 2B note below.
 // ---------------------------------------------------------------------
+// UPDATE 2B (new feature work, not extraction — see
+// UI_UPGRADES_HANDOFF_PROMPT.md, Update 2B item 2): tags the captured
+// selection with the source it was made in, alongside its existing
+// sourcePage. As of this session, Pane 2 (docTextContainer) still only
+// ever renders the ACTIVE source's pages — layout-formatting.js's
+// multi-source concatenated rendering is out of scope for 2B (it's not
+// among the files sent this session; see the handoff doc's own note on
+// this in snippet-question-generation.js's generateQuestionFromSnippet)
+// — so state.activeSourceId is, for now, always the correct answer for
+// "which source did this selection come from". The field is added now
+// anyway so it's already in place, additively, for whenever Pane 2
+// does grow multi-source rendering: at that point, the fix is a
+// one-line swap here (read the selected .doc-page's own data-source-id
+// instead of state.activeSourceId — see item 2's description of that
+// future attribute in the handoff doc), not a new field to design and
+// thread through every consumer of pendingSelection/lastDocSelection
+// from scratch.
 function handleTextSelection() {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hideSelectionToolbar(); return; }
@@ -96,7 +114,7 @@ function handleTextSelection() {
   const pageEl = anchorEl ? anchorEl.closest('.doc-page') : null;
   if (!pageEl) { hideSelectionToolbar(); return; }
 
-  const captured = { text, sourcePage: Number(pageEl.dataset.page), range: range.cloneRange() };
+  const captured = { text, sourcePage: Number(pageEl.dataset.page), sourceId: state.activeSourceId, range: range.cloneRange() };
   setPendingSelection(captured);
   setLastDocSelection(captured);
 

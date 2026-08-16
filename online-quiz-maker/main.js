@@ -32,7 +32,12 @@ import './ai-credentials-and-models.js';
 
 import { addQuestion, sortQuestionsByPage, updateQuestionCount } from './question-model.js';
 import { setParseStatus } from './status-helpers.js';
-import { setActiveCard } from './editor-render.js';
+// UPDATE 2B: renderQuestionNav added to this existing import — the new
+// draggable source stack's drop handler (renderSourceList(), below)
+// calls it after a reorder so Q01/Q02/... numbering picks up the new
+// state.sources order immediately (sortQuestionsByPage() is already
+// source-order-aware as of 2A).
+import { setActiveCard, renderQuestionNav } from './editor-render.js';
 import { extractPptxPages, extractPdfPages } from './doc-extraction.js';
 import './text-normalize.js';
 // HIGHLIGHT_DUPLICATE_SHARED_MARK_FIX_PROMPT.md: named import (was a bare
@@ -230,13 +235,37 @@ pdfFileInput.addEventListener('change', async (e) => {
   }
 });
 
-// UPDATE 2A (new, not from source): minimal, non-draggable placeholder
-// list of every imported source (filename + question count), so multi-
-// file import is visually confirmable without building the real
-// drag-to-reorder stack yet — that's Update 2B's job, which replaces
-// this function's whole rendering with the slide-sorter UI. Built with
-// DOM APIs (not innerHTML + string interpolation) so a filename with
-// HTML-special characters can't be misinterpreted as markup.
+// UPDATE 2B (new, not from source — see UI_UPGRADES_HANDOFF_PROMPT.md,
+// Update 2B item 1): replaces 2A's placeholder, non-draggable list with
+// the real PowerPoint-slide-sorter-style draggable stack — filename +
+// question count per card, a stacked-boxes drag handle per the
+// wireframe, wired to reorder state.sources and re-trigger
+// sortQuestionsByPage() + a nav-chip re-render on drop (2A already made
+// sortQuestionsByPage() source-order-aware specifically for this).
+// Still built with DOM APIs (not innerHTML) so a filename with
+// HTML-special characters can't be misinterpreted as markup — same
+// convention as 2A's version of this function.
+//
+// Kept in main.js rather than moved to editor-render.js (which the
+// handoff doc's "files to send" list names for this session, alongside
+// main.js "for reference" only): the render/reorder logic here reads
+// and writes state.sources/state.activeSourceId bookkeeping that
+// already lived in this file's file-input handler above, and doesn't
+// touch anything editor-render.js owns except calling its already-
+// exported renderQuestionNav() once, on drop — so relocating it would
+// add a new cross-module surface for no behavioral benefit. Flagging
+// this as a deliberate deviation from that file list rather than a
+// silent one, per this codebase's own "flag it" convention.
+//
+// Explicitly NOT done here (flagging rather than guessing): clicking a
+// card to make that source the one shown in Pane 2/3. The wireframe's
+// stack strongly suggests that as a natural next affordance, but doing
+// it correctly needs setupNavRange() + renderSourcePage()
+// (doc-pane-navigation.js) and the pdfCanvas/slideTextPreview
+// visibility toggle (currently inlined in this file's own
+// pdfFileInput handler, not factored into a reusable function) — none
+// of which are safe to guess at blind. Left for a follow-up session
+// with doc-pane-navigation.js in scope.
 function renderSourceList() {
   if (!sourceListEl) return;
   sourceListEl.innerHTML = '';
@@ -248,7 +277,15 @@ function renderSourceList() {
   state.sources.forEach((source) => {
     const count = state.questions.filter(q => q.sourceId === source.id).length;
     const row = document.createElement('div');
-    row.className = 'source-list-item' + (source.id === state.activeSourceId ? ' source-list-item-active' : '');
+    row.className = 'source-stack-item' + (source.id === state.activeSourceId ? ' source-stack-item-active' : '');
+    row.draggable = true;
+    row.dataset.sourceId = source.id;
+
+    const handle = document.createElement('span');
+    handle.className = 'source-stack-handle';
+    handle.textContent = '⠿';
+    handle.setAttribute('aria-hidden', 'true');
+    handle.title = 'Drag to reorder';
 
     const name = document.createElement('span');
     name.className = 'source-list-name';
@@ -258,9 +295,62 @@ function renderSourceList() {
     countEl.className = 'source-list-count';
     countEl.textContent = count + (count === 1 ? ' question' : ' questions');
 
+    row.appendChild(handle);
     row.appendChild(name);
     row.appendChild(countEl);
     sourceListEl.appendChild(row);
+  });
+}
+
+// UPDATE 2B (new, not from source): native HTML5 drag-and-drop for the
+// stack above — no drag/sort library is loaded anywhere in this app,
+// and the interaction is simple enough (reorder a short flat list) not
+// to warrant pulling one in. Delegated on sourceListEl itself rather
+// than bound per-row, since renderSourceList() above tears down and
+// rebuilds every row on each call — per-row listeners would silently
+// leak (old rows garbage-collect fine since they're detached, but new
+// rows would never get one without this being delegated).
+//
+// dragover moves the dragged row's actual DOM node live, so the stack
+// visually reorders as you drag it — same feel as a real slide-sorter —
+// rather than only showing the result after you let go. drop is what
+// commits that DOM order back into state.sources for real and kicks
+// off the renumbering.
+let dragSourceRowId = null;
+
+if (sourceListEl) {
+  sourceListEl.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.source-stack-item');
+    if (!row) return;
+    dragSourceRowId = row.dataset.sourceId;
+    row.classList.add('source-stack-item-dragging');
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+  });
+
+  sourceListEl.addEventListener('dragend', (e) => {
+    const row = e.target.closest('.source-stack-item');
+    if (row) row.classList.remove('source-stack-item-dragging');
+    dragSourceRowId = null;
+  });
+
+  sourceListEl.addEventListener('dragover', (e) => {
+    e.preventDefault(); // required for this element to accept a drop at all
+    const overRow = e.target.closest('.source-stack-item');
+    const draggingRow = sourceListEl.querySelector('.source-stack-item-dragging');
+    if (!overRow || !draggingRow || overRow === draggingRow) return;
+    const rect = overRow.getBoundingClientRect();
+    const insertBefore = (e.clientY - rect.top) < rect.height / 2;
+    sourceListEl.insertBefore(draggingRow, insertBefore ? overRow : overRow.nextSibling);
+  });
+
+  sourceListEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (!dragSourceRowId) return;
+    const orderedIds = Array.from(sourceListEl.querySelectorAll('.source-stack-item')).map(el => el.dataset.sourceId);
+    state.sources.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
+    sortQuestionsByPage();
+    renderQuestionNav();
+    renderSourceList();
   });
 }
 

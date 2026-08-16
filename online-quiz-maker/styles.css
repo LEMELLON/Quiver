@@ -45,16 +45,15 @@
   }
   .icon-btn:hover { color: #e7edf5; border-color: #f5b942; }
 
-  /* ---------- UPDATE 2A: minimal placeholder source list ----------
+  /* ---------- UPDATE 2B: draggable source stack ----------
      Filename + question-count rows shown under "Import Document" once
-     more than one file has been imported. Deliberately plain (no drag
-     handles, no reorder affordance) — Update 2B replaces this with the
-     real draggable slide-sorter stack; this is only here to visually
-     confirm multi-import works this session. */
-  .source-list-item {
+     more than one file has been imported — draggable to reorder, which
+     drives the Q01/Q02/... renumbering (see main.js's renderSourceList()
+     and question-model.js's sortQuestionsByPage()). Replaces 2A's
+     plain, non-draggable .source-list-item of the same shape. */
+  .source-stack-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.5rem;
     font-family: 'Space Mono', monospace;
     font-size: 0.72rem;
@@ -63,12 +62,29 @@
     border: 1px solid #243040;
     border-radius: 0.375rem;
     padding: 0.4rem 0.6rem;
+    cursor: grab;
+    transition: border-color 120ms ease, opacity 120ms ease;
   }
-  .source-list-item-active {
+  .source-stack-item-active {
     border-color: #f5b942;
     color: #e7edf5;
   }
+  /* Applied to the row currently mid-drag — dimmed rather than hidden,
+     so its place in the stack stays visible while dragover (main.js)
+     moves it live between the other rows. */
+  .source-stack-item-dragging {
+    opacity: 0.4;
+    cursor: grabbing;
+  }
+  .source-stack-handle {
+    flex-shrink: 0;
+    color: #8296ab;
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: grab;
+  }
   .source-list-name {
+    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -206,6 +222,119 @@
     border-color: #f5b942;
     box-shadow: 0 0 0 1px #f5b942;
   }
+
+  /* ---------- Update 3: term nav bar ----------
+     New panel (Terms) above the chip grid — see editor-render.js's
+     buildTermGroups()/buildTermRowHtml()/renderTermBar() and
+     online-quiz-maker.html's #termBarDetails. Reuses the same base
+     palette as .nav-chip / .nav-pager-btn above (dark input background,
+     amber active state, danger red for the duplicate warning) so this
+     reads as part of the same control language rather than a
+     bolted-on widget. */
+  .term-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .term-row-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    text-align: left;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    color: #8296ab;
+    background: #0f151d;
+    border: 1px solid #243040;
+    border-radius: 0.375rem;
+    padding: 0.4rem 0.6rem;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  }
+  .term-row-btn:hover { color: #e7edf5; border-color: #f5b942; }
+  /* Active filter state — same treatment as .nav-chip-active /
+     .nav-pager-btn-active above, applied via the wrapping .term-row so
+     the whole row (including any duplicate rows nested inside it,
+     which keep their own red styling below) reads as "currently
+     filtering on this". */
+  .term-row-active .term-row-btn {
+    color: #0b0f14;
+    background: #f5b942;
+    border-color: #f5b942;
+    font-weight: 700;
+  }
+  .term-row-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .term-row-count {
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    opacity: 0.75;
+  }
+  /* Inline duplicate-warning row for a flagged question under this
+     term — a compact copy of the existing warning box in the active
+     editor (see .text-danger usage in activeEditorTemplate), not a
+     replacement for it. */
+  .term-row-dupe {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid #ef576555;
+    background: #ef576514;
+    border-radius: 0.375rem;
+  }
+  .term-row-dupe-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.68rem;
+    color: #ef5765;
+  }
+  .term-row-dupe-btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #8296ab;
+    background: none;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .term-row-dupe-btn:hover { color: #e7edf5; }
+  /* "Showing questions for X" strip above the chip grid, shown only
+     while a term filter is active (see #termFilterIndicator /
+     renderTermBar()'s termFilterIndicatorEl.classList.toggle). */
+  .term-filter-indicator-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.68rem;
+    color: #f5b942;
+    background: #f5b94214;
+    border: 1px solid #f5b94255;
+    border-radius: 0.375rem;
+    padding: 0.35rem 0.6rem;
+  }
+  .term-filter-clear {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #f5b942;
+    background: none;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .term-filter-clear:hover { color: #e7edf5; }
 
   /* ---------- Pane 2: rendered text version — "bond paper" pages ---------- */
   #docTextViewport { background: #0e131a; }

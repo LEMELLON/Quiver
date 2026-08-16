@@ -46,29 +46,48 @@ import {
 } from './dom-refs.js';
 
 // ---------------------------------------------------------------------
-// Verbatim from source, lines 4589-4611
+// Verbatim from source, lines 4589-4611, EXCEPT the additive
+// sourceId/sourceName fields — see UPDATE 2B note below.
 // ---------------------------------------------------------------------
+// UPDATE 2B (new feature work, not extraction — see
+// UI_UPGRADES_HANDOFF_PROMPT.md, Update 2B item 5): every question now
+// carries a sourceId (see the UPDATE 2A note in question-model.js's
+// newQuestion()), so exported JSON can stay traceable to which imported
+// document a question came from. sourceName is looked up fresh from
+// state.sources rather than duplicated onto the question object itself
+// — a source's display name is a source-level fact, not a per-question
+// one, so this keeps the two from ever drifting out of sync if sources
+// are ever renamed later. Both fields are OMITTED (not just left
+// blank) for a question with no sourceId at all — e.g. one added via
+// "+ Add Question" before any document was ever imported — so a quiz
+// with no imported sources exports in exactly the same shape as before
+// this update, and validateQuiz()/offline-quiz-runner.html never see
+// an unexpected sourceId: '' / sourceName: '' pair to account for.
 function buildQuizObject() {
   return {
     title: quizTitleInput.value.trim() || 'Untitled Quiz',
-    questions: state.questions.map(q => ({
-      id: q.id,
-      targetTerm: q.targetTerm || '',
-      sourcePage: q.sourcePage,
-      sourceSnippet: q.sourceSnippet || '',
-      answerSnippet: q.answerSnippet || '',
-      tier: [1, 2, 3].includes(q.tier) ? q.tier : 1,
-      definitionType: q.definitionType === 'extension' ? 'extension' : 'new',
-      variants: q.variants.map(v => ({
-        type: v.type,
-        questionText: v.questionText,
-        choices: v.choices,
-        correctAnswerIndex: v.correctAnswerIndex,
-        // Only present (and only meaningful) for 'category' variants —
-        // omitted for every other type so exported JSON stays clean.
-        ...(v.type === 'category' ? { correctAnswerIndices: v.correctAnswerIndices || [] } : {}),
-      })),
-    })),
+    questions: state.questions.map(q => {
+      const source = q.sourceId ? state.sources.find(s => s.id === q.sourceId) : null;
+      return {
+        id: q.id,
+        targetTerm: q.targetTerm || '',
+        sourcePage: q.sourcePage,
+        ...(q.sourceId ? { sourceId: q.sourceId, sourceName: source ? source.name : '' } : {}),
+        sourceSnippet: q.sourceSnippet || '',
+        answerSnippet: q.answerSnippet || '',
+        tier: [1, 2, 3].includes(q.tier) ? q.tier : 1,
+        definitionType: q.definitionType === 'extension' ? 'extension' : 'new',
+        variants: q.variants.map(v => ({
+          type: v.type,
+          questionText: v.questionText,
+          choices: v.choices,
+          correctAnswerIndex: v.correctAnswerIndex,
+          // Only present (and only meaningful) for 'category' variants —
+          // omitted for every other type so exported JSON stays clean.
+          ...(v.type === 'category' ? { correctAnswerIndices: v.correctAnswerIndices || [] } : {}),
+        })),
+      };
+    }),
   };
 }
 

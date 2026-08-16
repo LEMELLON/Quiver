@@ -128,14 +128,36 @@
         </label>
         <p id="parseStatus" class="hidden mt-3 text-xs font-mono text-mute"></p>
 
-        <!-- UPDATE 2A: minimal, non-draggable placeholder list of every
-             imported source (filename + question count), rendered by
-             main.js's renderSourceList(), so multi-file import is
-             visually confirmable this session. Starts hidden/empty —
-             Update 2B replaces this with the real drag-to-reorder
-             slide-sorter stack; don't mistake this for the final
-             design. -->
+        <!-- UPDATE 2B: real draggable slide-sorter stack (filename +
+             question count per card, drag handle per the wireframe),
+             rendered by main.js's renderSourceList() — replaces 2A's
+             non-draggable placeholder of the same element. Starts
+             hidden/empty; shown once more than one source is imported. -->
         <div id="sourceList" class="hidden mt-3 space-y-1"></div>
+      </details>
+
+      <!-- Update 3 (term nav bar): browse-by-term UI on top of the
+           existing duplicate-detection engine (computeDuplicateMap /
+           normalizeTermKeyLoose already existed before this update —
+           see question-model.js and text-normalize.js; this session
+           only adds the browsing/filtering UI and a compact, additional
+           copy of the warning+dismiss action). See
+           editor-render.js's buildTermGroups()/renderTermBar() for the
+           full design-decision notes:
+             - clicking a term FILTERS the existing chip grid below
+               (reusing Update 1's pager) rather than opening a
+               separate modal/view
+             - terms sharing a normalizeTermKeyLoose() key collapse
+               into one row, matching computeDuplicateMap()'s own
+               notion of "same term"
+             - the duplicate warning + dismiss action appears HERE in
+               addition to (not instead of) its existing spot in the
+               single-question editor -->
+      <details id="termBarDetails" class="bg-card border border-edge rounded-lg p-4 lg:p-5">
+        <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Terms</summary>
+        <p class="text-xs text-mute mb-2 mt-2">Every target term used across your questions. Click one to filter the list below to just its question(s).</p>
+        <div id="termFilterIndicator" class="hidden mb-2"></div>
+        <div id="termBar" class="space-y-1.5"></div>
       </details>
 
       <!-- Question nav -->
@@ -316,6 +338,17 @@
         <button id="closeScanRangeModalBtn" class="text-mute hover:text-ink text-lg leading-none">✕</button>
       </div>
       <p class="text-sm text-mute">Runs the same 3-pass AI scan used on import, but only against the pages you pick — handy for re-scanning a slide you edited, or covering pages the first pass skipped. New questions are added alongside your existing ones.</p>
+
+      <!-- UPDATE 2B (new — see UI_UPGRADES_HANDOFF_PROMPT.md, Update 2B
+           item 4): source picker, so a person can target a non-active
+           imported document without switching Pane 3 to it first.
+           Hidden by batch-scan.js's populateScanSourcePicker() whenever
+           there are 0-1 imported sources — a picker with one option is
+           just noise. -->
+      <div id="scanSourceField">
+        <label class="field-label" for="scanSourceSelect">Document</label>
+        <select id="scanSourceSelect" class="input-base"></select>
+      </div>
 
       <div class="flex items-end gap-3">
         <div class="flex-1">

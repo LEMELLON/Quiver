@@ -113,6 +113,14 @@ const modalError = document.getElementById('modalError');
 const scanRangeBtn = document.getElementById('scanRangeBtn');
 const scanRangeModal = document.getElementById('scanRangeModal');
 const closeScanRangeModalBtn = document.getElementById('closeScanRangeModalBtn');
+// UPDATE 2B (new ref, not from source — see UI_UPGRADES_HANDOFF_PROMPT.md,
+// Update 2B item 4): source picker for the Scan Pages modal, so a
+// person can target a non-active imported document without switching
+// Pane 3 to it first. scanSourceFieldEl is the wrapping <div> (hidden
+// entirely when there's 0-1 sources, since a picker with a single
+// option is just noise) — see batch-scan.js's populateScanSourcePicker().
+const scanSourceSelect = document.getElementById('scanSourceSelect');
+const scanSourceFieldEl = document.getElementById('scanSourceField');
 const scanFromPage = document.getElementById('scanFromPage');
 const scanToPage = document.getElementById('scanToPage');
 const scanQuestionType = document.getElementById('scanQuestionType');
@@ -131,6 +139,13 @@ const importDetailsEl = document.getElementById('importDetails');
 // handler renders into — see its renderSourceList(). Replaced by
 // Update 2B's real draggable slide-sorter stack.
 const sourceListEl = document.getElementById('sourceList');
+
+// UPDATE 3 (new refs, not from source — see UI_UPGRADES_HANDOFF_PROMPT.md
+// Update 3): the term nav bar panel and the "showing filtered term"
+// indicator strip above the chip grid. See editor-render.js's
+// renderTermBar()/buildTermGroups().
+const termBarEl = document.getElementById('termBar');
+const termFilterIndicatorEl = document.getElementById('termFilterIndicator');
 
 export {
   pane1,
@@ -192,6 +207,8 @@ export {
   scanRangeBtn,
   scanRangeModal,
   closeScanRangeModalBtn,
+  scanSourceSelect,
+  scanSourceFieldEl,
   scanFromPage,
   scanToPage,
   scanQuestionType,
@@ -201,4 +218,6 @@ export {
   scanRangeError,
   importDetailsEl,
   sourceListEl,
+  termBarEl,
+  termFilterIndicatorEl,
 };
