@@ -1,0 +1,935 @@
+// editor-render.js
+// Extracted verbatim from online-quiz-maker.html, source lines 1083-1694
+// (escapeHtml through setActiveCard, including the activeEditorEl event
+// wiring block that sits between renderActiveQuestion and
+// locateSnippetInDoc in the original file — moved with its handlers per
+// the "move with handler" event-wiring strategy noted in the schema).
+// Function/const bodies are UNCHANGED from source — only import/export
+// wrapper lines were added, plus the same mechanical
+// duplicateMap -> getDuplicateMap()/setDuplicateMap() substitution
+// already flagged in question-model.js (ES imports are read-only, and
+// this module also reassigns duplicateMap at its two renderQuestionNav
+// call sites, same as removeFlaggedDuplicates did).
+
+// --- Shared state / DOM refs ---
+import { state, getDuplicateMap, setDuplicateMap } from './core-state.js';
+import {
+  questionNavGroup,
+  questionNavEl,
+  questionNavPager,
+  activeEditorEl,
+  emptyState,
+  pane3QuestionNavEl,
+  docTextContainer,
+  addQuestionBtn,
+  removeDuplicatesBtn,
+} from './dom-refs.js';
+
+// NOTE (structural, not a logic change): TIER_META and DATA_STATUS_META
+// were originally declared inline near question-model.js's section of the
+// source but are read here too (activeEditorTemplate). See the same NOTE
+// in question-model.js — both modules import from the shared
+// classification-meta.js instead of duplicating the objects.
+import { TIER_META, DATA_STATUS_META } from './classification-meta.js';
+
+// NOTE (structural, not a logic change): MIN_CHOICES was declared inline
+// in this section of the source (line 1273) but is also read by
+// variant-generation.js's isValidChoiceCount (source line 3099). Lifted
+// verbatim into shared-constants.js so both modules reference the same
+// value instead of duplicating it.
+import { MIN_CHOICES } from './shared-constants.js';
+
+// Functions from other modules that these functions/handlers call:
+import { computeDuplicateMap, computeDataClassification, deleteQuestion,
+         removeVariant, sortQuestionsByPage, addQuestion,
+         removeFlaggedDuplicates } from './question-model.js';
+import { renderDocPage } from './doc-pane-navigation.js';
+import { scheduleAutoSync, handleScanField } from './snippet-question-generation.js';
+import { handleGenerateVariant, handleRegenerateChoices } from './variant-generation.js';
+// HIGHLIGHT_DUPLICATE_SHARED_MARK_FIX_PROMPT.md: a <mark>'s data-qid can
+// now hold more than one id (see the multi-qid mark helpers block near the
+// top of highlighting.js) — markQidList is the canonical way to read it.
+// highlighting.js already imports renderQuestionNav/renderActiveQuestion
+// from THIS file, so this creates a 2-file import cycle; safe because
+// markQidList is only ever called from inside a function body (never at
+// top-level module-evaluation time) in either file.
+import { markQidList } from './highlighting.js';
+
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1083-1088
+// ---------------------------------------------------------------------
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+function escapeAttr(str) { return escapeHtml(str); }
+
+// =====================================================================
+// PANE 1 — question nav chips + the single "active" editor
+// =====================================================================
+
+// New (not from source) — Update 1 (paginated nav-chip bar). With
+// large question sets the full Pane 1 chip grid used to render every
+// chip at once (an unbroken wall past ~50 questions). Caps the visible
+// window at 20 chips and adds a Google-classic pager (numbered pages in
+// blocks of 10 + Prev/Next) below the grid. See renderQuestionNav()
+// and buildPagerHtml() below.
+//
+// `navChipPage` is a plain module-level `let`, not core-state.js
+// getter/setter state: it's only ever read/reassigned from inside this
+// module (renderQuestionNav, the pager's own click/keydown handlers,
+// and setActiveCard — all declared in this file), so it doesn't need
+// the cross-module getter/setter treatment core-state.js uses for
+// things like duplicateMap. Same reasoning doc-pane-navigation.js gives
+// for keeping renderTaskInFlight/pptxRenderGeneration as plain module
+// `let`s.
+const NAV_CHIPS_PER_PAGE = 20;
+const NAV_PAGER_BLOCK_SIZE = 10; // how many numbered page buttons show before Next steps to the next block — same behavior as Google's classic results pager
+let navChipPage = 0;
+
+function totalNavChipPages() {
+  return Math.max(1, Math.ceil(state.questions.length / NAV_CHIPS_PER_PAGE));
+}
+
+// Builds the numbered-page + Prev/Next controls for whatever
+// `navChipPage` currently is. Returns '' when everything fits on one
+// page, so the caller can hide the pager entirely instead of showing a
+// single, useless "1" button.
+function buildPagerHtml() {
+  const totalPages = totalNavChipPages();
+  if (totalPages <= 1) return '';
+
+  const blockStart = Math.floor(navChipPage / NAV_PAGER_BLOCK_SIZE) * NAV_PAGER_BLOCK_SIZE;
+  const blockEnd = Math.min(blockStart + NAV_PAGER_BLOCK_SIZE, totalPages);
+  const prevDisabled = navChipPage === 0;
+  const nextDisabled = navChipPage === totalPages - 1;
+
+  let html = `<button type="button" class="nav-pager-arrow" data-page-goto="${navChipPage - 1}" ${prevDisabled ? 'disabled' : ''} aria-label="Previous page">‹ Prev</button>`;
+  for (let i = blockStart; i < blockEnd; i++) {
+    html += `<button type="button" class="nav-pager-btn ${i === navChipPage ? 'nav-pager-btn-active' : ''}" data-page-goto="${i}">${i + 1}</button>`;
+  }
+  html += `<button type="button" class="nav-pager-arrow" data-page-goto="${navChipPage + 1}" ${nextDisabled ? 'disabled' : ''} aria-label="Next page">Next ›</button>`;
+  return html;
+}
+
+// Re-focuses whichever pager button represents the current page, right
+// after a pager-triggered re-render destroys and rebuilds the pager's
+// DOM (innerHTML replacement drops focus otherwise). Keeps repeated
+// arrow-key presses working without the person needing to re-click
+// into the panel between each one.
+function focusActiveNavPagerButton() {
+  const btn = questionNavPager.querySelector('.nav-pager-btn-active');
+  if (btn) btn.focus();
+}
+
+// Shared chip markup for both Pane 1's full nav and Pane 3's
+// current-page-scoped nav below — keeps the two visually identical.
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1095-1107, plus the `nav-chip-unchecked`
+// class added below by UNCHECKED_AI_CONTENT_AND_FUZZY_HIGHLIGHT_
+// PERSISTENCE_PROMPT.md Part B, following the exact same pattern as the
+// existing `nav-chip-duplicate` class (see styles.css for both rules).
+// SUPPRESS_UNCHECKED_INDICATOR_FOR_DUPLICATES_PROMPT.md: `&& !dup`
+// added to that condition — a question already flagged as a possible
+// duplicate needs the person's attention for that reason, so the
+// separate "unchecked" signal is suppressed rather than stacked on top
+// of it. `dup` is already this function's own parameter, so no new
+// lookup is needed here.
+// ---------------------------------------------------------------------
+function buildNavChipHtml(q, displayIndex, dup) {
+  const baseTitle = q.targetTerm || (q.variants[0] && q.variants[0].questionText) || 'Untitled question';
+  const title = dup
+    ? `${baseTitle} — possible duplicate of Q${String(dup.matchIndex + 1).padStart(2, '0')} (${dup.reason})`
+    : baseTitle;
+  return `
+    <button type="button" data-nav-id="${q.id}" data-tier="${q.tier || 1}"
+      class="nav-chip ${q.id === state.activeCardId ? 'nav-chip-active' : ''} ${q.sourceSnippet ? 'nav-chip-snippet' : ''} ${dup ? 'nav-chip-duplicate' : ''} ${(q.aiUnchecked && !dup) ? 'nav-chip-unchecked' : ''}"
+      title="${escapeAttr(title)}">
+      Q${String(displayIndex + 1).padStart(2, '0')}
+    </button>
+  `;
+}
+
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1109-1118, except the single mechanical
+// `duplicateMap = computeDuplicateMap();` -> `setDuplicateMap(...)`
+// substitution (see NOTE at top of file).
+// ---------------------------------------------------------------------
+function renderQuestionNav() {
+  setDuplicateMap(computeDuplicateMap());
+
+  // New (not from source) — Update 1: clamp navChipPage in case the
+  // question count shrank (e.g. removeFlaggedDuplicates/deleteQuestion)
+  // since the last render and the previously-shown page no longer
+  // exists.
+  navChipPage = Math.min(Math.max(0, navChipPage), totalNavChipPages() - 1);
+
+  if (state.questions.length === 0) {
+    questionNavEl.innerHTML = '';
+    questionNavPager.innerHTML = '';
+    questionNavPager.classList.add('hidden');
+  } else {
+    // displayIndex must stay the GLOBAL array index (not the position
+    // within this page's slice) — it's what buildNavChipHtml turns into
+    // the Q01/Q02/... label and what duplicate-match titles reference,
+    // and neither of those should renumber depending on which pager
+    // page happens to be showing.
+    const startIdx = navChipPage * NAV_CHIPS_PER_PAGE;
+    const pageItems = state.questions.slice(startIdx, startIdx + NAV_CHIPS_PER_PAGE);
+    questionNavEl.innerHTML = pageItems
+      .map((q, i) => buildNavChipHtml(q, startIdx + i, getDuplicateMap().get(q.id)))
+      .join('');
+
+    const pagerHtml = buildPagerHtml();
+    questionNavPager.innerHTML = pagerHtml;
+    questionNavPager.classList.toggle('hidden', !pagerHtml);
+  }
+  renderPane3QuestionNav();
+}
+
+// Pane 3's own mini nav: every question whose sourcePage matches
+// whatever page is currently on screen there, using the same Q01/Q02
+// numbering (each chip's displayIndex) as Pane 1 so the two stay
+// consistent. Hidden entirely when the current source page has no
+// questions on it. Called from renderQuestionNav (so it tracks any
+// question-list change) and from renderSourcePage (so it tracks page
+// navigation, which doesn't otherwise touch the question list).
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1128-1140, except the same mechanical
+// duplicateMap -> getDuplicateMap() substitution.
+// ---------------------------------------------------------------------
+function renderPane3QuestionNav() {
+  const chips = [];
+  state.questions.forEach((q, i) => {
+    if (q.sourcePage !== state.currentPage) return;
+    chips.push(buildNavChipHtml(q, i, getDuplicateMap().get(q.id)));
+  });
+  if (chips.length === 0) {
+    pane3QuestionNavEl.innerHTML = '';
+    pane3QuestionNavEl.classList.add('hidden');
+    return;
+  }
+  pane3QuestionNavEl.innerHTML = chips.join('');
+  pane3QuestionNavEl.classList.remove('hidden');
+}
+pane3QuestionNavEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-nav-id]');
+  if (btn) setActiveCard(btn.dataset.navId);
+});
+
+// Tab group order is fixed: Multiple Choice, then True/False, then
+// Category Selection. Each is a GROUP that can hold zero or more
+// variants (see the question-model note above), so the tab bar is
+// built dynamically per-question from however many of each type it
+// currently has. The "Multiple Choice" group merges two underlying
+// variant types — the 'clamp' base (present by default on a new
+// question, but removable like any other variant — see removeVariant)
+// plus any 'rephrased' variations generated into it — so there's a
+// single tab and a single "+ New variation" control for both, instead
+// of two separate tabs like before.
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1157-1169
+// ---------------------------------------------------------------------
+const VARIANT_GROUP_META = {
+  clamp: { label: 'Multiple Choice' },
+  true_false: { label: 'True / False' },
+  category: { label: 'Category Selection' },
+};
+// Maps a variant's own `type` to the tab group it displays under.
+const GROUP_OF_TYPE = { clamp: 'clamp', rephrased: 'clamp', true_false: 'true_false', category: 'category' };
+// The variant `type` that a group's "Generate" / "+ New variation"
+// control should produce. For the merged Multiple Choice group this is
+// 'rephrased' (the clamp base itself is never (re)generated this way);
+// for the other groups it's just the group's own type.
+const GROUP_GENERATE_TYPE = { clamp: 'rephrased', true_false: 'true_false', category: 'category' };
+const GROUP_ORDER = ['clamp', 'true_false', 'category'];
+
+// Every index in state.questions[].variants whose type belongs to the
+// given tab group, in array order (creation order).
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1174-1177
+// ---------------------------------------------------------------------
+function variantIndexesOfGroup(q, group) {
+  const out = [];
+  q.variants.forEach((v, i) => { if (GROUP_OF_TYPE[v.type] === group) out.push(i); });
+  return out;
+}
+
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1179-1260
+// ---------------------------------------------------------------------
+function variantTabsTemplate(q) {
+  const activeVariant = q.variants[q.activeVariantIndex];
+  const activeGroup = activeVariant ? (GROUP_OF_TYPE[activeVariant.type] || 'clamp') : 'clamp';
+
+  const mainTab = (group) => {
+    const idxs = variantIndexesOfGroup(q, group);
+    const label = VARIANT_GROUP_META[group].label;
+    const genType = GROUP_GENERATE_TYPE[group];
+
+    // Not generated yet — locked, click-to-generate instead of a tab.
+    // (Can happen for 'clamp' too now that its base variant is
+    // removable — see removeVariant/subRow below.)
+    if (idxs.length === 0) {
+      const generating = q.generatingType === genType;
+      return `
+        <button type="button" data-action="generateVariant" data-variant-type="${genType}" ${generating ? 'disabled' : ''}
+          title="Generate a ${label} variant with AI"
+          class="flex-1 font-mono text-[0.62rem] tracking-wide uppercase px-2 py-1.5 rounded border border-dashed border-edge text-mute hover:border-amber hover:text-amber transition-colors disabled:opacity-60 disabled:cursor-wait disabled:hover:border-edge disabled:hover:text-mute">
+          ${generating ? 'Generating…' : `🔒 ${label}`}
+        </button>`;
+    }
+
+    // Already has 1+ variants — a normal tab. Jumps to whichever of
+    // this group's variants is already active, or its first one.
+    const targetIndex = idxs.includes(q.activeVariantIndex) ? q.activeVariantIndex : idxs[0];
+    const isActiveGroup = activeGroup === group;
+    const countSuffix = idxs.length > 1 ? ` (${idxs.length})` : '';
+    return `
+      <button type="button" data-action="switchVariant" data-variant-index="${targetIndex}"
+        class="flex-1 font-mono text-[0.62rem] tracking-wide uppercase px-2 py-1.5 rounded transition-colors ${
+          isActiveGroup
+            ? 'bg-amber text-void font-bold'
+            : 'text-mute border border-edge hover:border-amber hover:text-amber'
+        }">
+        ${label}${countSuffix}
+      </button>`;
+  };
+
+  // Below the main tab row: for whichever group is ACTIVE, show one
+  // small chip per variation (switch + individually remove) plus a "+"
+  // chip to generate yet another variation of that group's type. This
+  // is where "as many variations as they want" actually lives in the
+  // UI, for every group including the merged Multiple Choice one. Any
+  // single variation — including the clamp (Multiple Choice) base —
+  // can be removed, as long as it isn't the question's last remaining
+  // variant overall (removeVariant enforces that floor).
+  const subRow = (() => {
+    const idxs = variantIndexesOfGroup(q, activeGroup);
+    if (idxs.length === 0) return '';
+    const shortLabel = activeGroup === 'clamp' ? 'MC' : activeGroup === 'true_false' ? 'TF' : 'CS';
+    const genType = GROUP_GENERATE_TYPE[activeGroup];
+    const generating = q.generatingType === genType;
+    return `
+      <div class="flex flex-wrap items-center gap-1.5 -mt-2 mb-4">
+        ${idxs.map((vi, n) => {
+          const removable = q.variants.length > 1;
+          return `
+          <span class="inline-flex items-center gap-1 rounded border pl-2 pr-1 py-0.5 ${
+            vi === q.activeVariantIndex ? 'border-amber text-amber' : 'border-edge text-mute'
+          }">
+            <button type="button" data-action="switchVariant" data-variant-index="${vi}"
+              class="font-mono text-[0.6rem] uppercase tracking-wide">${shortLabel}${n + 1}</button>
+            ${removable ? `
+            <button type="button" data-action="removeVariant" data-variant-index="${vi}"
+              title="Remove this variation"
+              class="w-3.5 h-3.5 flex items-center justify-center rounded-full text-[0.6rem] leading-none text-mute hover:text-danger hover:bg-danger/10 transition-colors">✕</button>
+            ` : ''}
+          </span>
+        `;}).join('')}
+        <button type="button" data-action="generateVariant" data-variant-type="${genType}" ${generating ? 'disabled' : ''}
+          title="Generate another ${VARIANT_GROUP_META[activeGroup].label} variation with AI"
+          class="font-mono text-[0.6rem] uppercase tracking-wide px-2 py-0.5 rounded border border-dashed border-edge text-mute hover:border-amber hover:text-amber transition-colors disabled:opacity-60 disabled:cursor-wait">
+          ${generating ? '…' : '+ New variation'}
+        </button>
+      </div>`;
+  })();
+
+  return `
+    <div class="flex gap-1.5 mb-4 border-b border-edge pb-3">
+      ${GROUP_ORDER.map(mainTab).join('')}
+    </div>
+    ${subRow}
+    ${q.variantGenError ? `<p class="text-xs text-danger -mt-2 mb-4">⚠ ${escapeHtml(q.variantGenError)}</p>` : ''}
+  `;
+}
+
+// Category Selection is checkbox-style (0+ correct answers, tracked in
+// variant.correctAnswerIndices) — every other type is radio-style
+// (exactly 1 correct answer, tracked in variant.correctAnswerIndex).
+// Choice count has no hard cap for any type except true_false (always
+// exactly True/False, so it gets no add/remove controls) — every other
+// type starts at 4 by default (see newVariant) but can be grown or
+// shrunk down to a minimum of MIN_CHOICES via the row's ✕ / the "+ Add
+// choice" button below the list.
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1274-1306
+// ---------------------------------------------------------------------
+function choiceRowsTemplate(q, variant) {
+  const removable = variant.type !== 'true_false' && variant.choices.length > MIN_CHOICES;
+  const removeBtn = (i) => removable ? `
+        <button type="button" data-action="removeChoice" data-choice-index="${i}"
+          title="Remove this choice"
+          class="w-6 h-6 shrink-0 flex items-center justify-center rounded text-mute hover:text-danger hover:bg-danger/10 transition-colors">✕</button>` : '';
+
+  if (variant.type === 'category') {
+    const correctSet = new Set(variant.correctAnswerIndices || []);
+    return variant.choices.map((choice, i) => `
+      <div class="flex items-center gap-2">
+        <input type="checkbox" data-action="toggleCorrect" data-choice-index="${i}"
+          ${correctSet.has(i) ? 'checked' : ''}
+          class="w-4 h-4 shrink-0 accent-amber" title="Mark as a correct answer" />
+        <input type="text" data-field="choice" data-choice-index="${i}" value="${escapeAttr(choice)}"
+          placeholder="Choice ${i + 1}"
+          class="input-base ${correctSet.has(i) ? 'ring-1 ring-violet/60 border-violet/60' : ''}" />
+        ${removeBtn(i)}
+      </div>
+    `).join('');
+  }
+  return variant.choices.map((choice, i) => `
+    <div class="flex items-center gap-2">
+      <input type="radio" name="correct_${q.id}_${variant.type}" data-action="setCorrect" data-choice-index="${i}"
+        ${variant.correctAnswerIndex === i ? 'checked' : ''}
+        class="w-4 h-4 shrink-0 accent-amber" title="Mark as correct answer" />
+      <input type="text" data-field="choice" data-choice-index="${i}" value="${escapeAttr(choice)}"
+        placeholder="Choice ${i + 1}"
+        class="input-base ${variant.correctAnswerIndex === i ? 'ring-1 ring-violet/60 border-violet/60' : ''}" />
+      ${removeBtn(i)}
+    </div>
+  `).join('');
+}
+
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1308-1315
+// ---------------------------------------------------------------------
+const VARIANT_PLACEHOLDERS = {
+  clamp: 'Sentence-continuation prompt with the term blanked out (e.g. "___ is an electronic machine, operating under the control of instructions...")',
+  // Kept for questions loaded from older exported JSON that still use
+  // the retired multiple-choice "definition" variant type.
+  definition: 'Definition-first prompt (e.g. "The restriction of an inmate to a segregated area is called what?")',
+  rephrased: 'A differently-worded conceptual or scenario question testing the same term',
+  true_false: 'A true/false statement derived from the source material',
+  category: 'A "select all that apply" prompt (e.g. "What are the Components of a Computer?")',
+};
+
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1318-1443, except the single mechanical
+// `duplicateMap.get(q.id)` -> `getDuplicateMap().get(q.id)` substitution,
+// and — per SUPPRESS_UNCHECKED_INDICATOR_FOR_DUPLICATES_PROMPT.md — the
+// `dup` lookup itself moved up to the top of the function (it used to
+// live only inside the duplicate-warning-box IIFE further down) so the
+// "Unchecked" badge above can also read it, without computing
+// getDuplicateMap().get(q.id) twice.
+// ---------------------------------------------------------------------
+function activeEditorTemplate(q, index, total) {
+  const variant = q.variants[q.activeVariantIndex] || q.variants[0];
+  const tierMeta = TIER_META[q.tier] || TIER_META[1];
+  const dataStatusMeta = DATA_STATUS_META[computeDataClassification(q)];
+  const dup = getDuplicateMap().get(q.id);
+  return `
+    <div class="question-card bg-card border border-edge rounded-lg p-4 lg:p-5 mb-4" data-id="${q.id}">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-mono text-xs tracking-wider text-amber">Active — Q${String(index + 1).padStart(2, '0')} / ${total}</span>
+          <span class="text-[0.6rem] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded border"
+            style="background-color: ${tierMeta.color}22; color: ${tierMeta.color}; border-color: ${tierMeta.color}55;">
+            ${tierMeta.label}
+          </span>
+          <span class="text-[0.6rem] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded border"
+            style="background-color: ${dataStatusMeta.color}22; color: ${dataStatusMeta.color}; border-color: ${dataStatusMeta.color}55;"
+            title="Data classification: Unclassified = source or answer snippet missing · Unverified = present but couldn't be highlighted · Verified = present and highlighted">
+            ${dataStatusMeta.label}
+          </span>
+          ${q.definitionType === 'extension' ? `
+          <span class="text-[0.6rem] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded border border-edge text-mute">Extension</span>
+          ` : ''}
+          ${(q.aiUnchecked && !dup) ? `
+          <!-- UNCHECKED_AI_CONTENT_AND_FUZZY_HIGHLIGHT_PERSISTENCE_PROMPT.md
+               Part B — same badge treatment as the Extension badge just
+               above, styled green (this app's convention for the
+               "unchecked AI content" signal — see nav-chip-unchecked
+               and mark.unchecked-highlight in styles.css). Cleared by
+               setActiveCard() the moment this question is viewed.
+               SUPPRESS_UNCHECKED_INDICATOR_FOR_DUPLICATES_PROMPT.md:
+               `&& !dup` added — a possible-duplicate question already
+               has the red warning box below asking for attention, so
+               this badge is suppressed rather than stacked on top of
+               it. -->
+          <span class="text-[0.6rem] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded border"
+            style="background-color: #22c55e22; color: #22c55e; border-color: #22c55e55;"
+            title="AI-autogenerated — not yet reviewed">Unchecked</span>
+          ` : ''}
+        </div>
+        <button data-action="delete" title="Delete question collection"
+          class="w-7 h-7 flex items-center justify-center rounded text-mute hover:text-danger hover:bg-danger/10 transition-colors">✕</button>
+      </div>
+
+      ${(() => {
+        if (!dup) return '';
+        const match = state.questions.find(x => x.id === dup.matchId);
+        const matchLabel = 'Q' + String(dup.matchIndex + 1).padStart(2, '0') +
+          (match && match.targetTerm ? ` (${escapeHtml(match.targetTerm)})` : '');
+        return `
+      <div class="mb-3 px-3 py-2 rounded border border-danger/50 bg-danger/10 flex items-center justify-between gap-2">
+        <p class="text-xs text-danger leading-snug">⚠ Possible duplicate of <strong>${matchLabel}</strong> — ${escapeHtml(dup.reason)}.</p>
+        <div class="flex items-center gap-2 shrink-0">
+          <button type="button" data-action="dismissDuplicate" title="Clear the duplicate flag on this question"
+            class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-ink transition-colors">Not a duplicate</button>
+          <button type="button" data-action="jumpToDuplicate" data-jump-id="${dup.matchId}"
+            class="text-[0.62rem] font-mono uppercase tracking-wide text-danger hover:text-ink transition-colors">View →</button>
+        </div>
+      </div>`;
+      })()}
+
+      <label class="field-label">Target term <span class="normal-case text-mute/70">(the concept being defined)</span></label>
+      <input type="text" data-field="targetTerm" value="${escapeAttr(q.targetTerm)}" placeholder="e.g. Confinement"
+        class="input-base" />
+
+      ${variantTabsTemplate(q)}
+
+      <label class="field-label">Question text <span class="normal-case text-mute/70">(${escapeHtml((VARIANT_GROUP_META[GROUP_OF_TYPE[variant.type]] || {}).label || variant.type.replace('_', ' '))} variant)</span></label>
+      <textarea data-field="questionText" rows="2" placeholder="${escapeAttr(VARIANT_PLACEHOLDERS[variant.type] || '')}"
+        class="input-base resize-none">${escapeHtml(variant.questionText)}</textarea>
+
+      <div class="flex items-center justify-between mt-4 pt-3 border-t border-edge">
+        <label class="field-label mb-0">Source page</label>
+        <input type="number" min="1" data-field="sourcePage" value="${q.sourcePage}"
+          class="w-20 text-center bg-void border border-edge rounded py-1.5 font-mono text-sm focus:outline-none focus:border-amber" />
+      </div>
+
+      <div class="mt-3 pt-3 border-t border-edge">
+        <div class="flex items-center justify-between mb-1">
+          <label class="field-label mb-0">Source snippet <span class="normal-case text-mute/70">(${tierMeta.label} highlight in Pane 2)</span></label>
+          <div class="flex items-center gap-2 shrink-0 ml-2">
+            ${q.sourceSnippet ? `<button type="button" data-action="locateSnippet" data-snippet-type="question"
+              class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-violet transition-colors">Locate 🔍</button>` : ''}
+            <button type="button" data-action="scanField" data-field-type="question"
+              title="Highlight the question/context passage in the document text (Pane 2), then click here — whatever you've selected becomes this snippet"
+              class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-amber transition-colors">
+              🔎 Scan question
+            </button>
+          </div>
+        </div>
+        ${q.sourceSnippet
+          ? `<p class="text-xs text-mute italic leading-relaxed">"${escapeHtml(q.sourceSnippet)}"</p>`
+          : `<p class="text-xs text-mute/60 italic">Not yet located — highlight the passage in the document text, then click "Scan question".</p>`}
+      </div>
+      <div class="mt-3 pt-3 border-t border-edge">
+        <div class="flex items-center justify-between mb-1">
+          <label class="field-label mb-0">Answer snippet <span class="normal-case text-mute/70">(green in Pane 2)</span></label>
+          <div class="flex items-center gap-2 shrink-0 ml-2">
+            ${q.answerSnippet ? `<button type="button" data-action="locateSnippet" data-snippet-type="answer"
+              class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-violet transition-colors">Locate 🔍</button>` : ''}
+            <button type="button" data-action="scanField" data-field-type="answer"
+              title="Highlight the exact answer/target-term passage in the document text (Pane 2), then click here — whatever you've selected becomes this snippet"
+              class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-amber transition-colors">
+              🔎 Scan answer
+            </button>
+          </div>
+        </div>
+        ${q.answerSnippet
+          ? `<p class="text-xs text-emerald-400/90 italic leading-relaxed">"${escapeHtml(q.answerSnippet)}"</p>`
+          : `<p class="text-xs text-mute/60 italic">Not yet located — highlight the passage in the document text, then click "Scan answer".</p>`}
+        ${q.scanError ? `<p class="text-xs text-danger mt-1.5">⚠ ${escapeHtml(q.scanError)}</p>` : ''}
+      </div>
+
+      <div class="mt-3 pt-3 border-t border-edge">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="text-[0.62rem] font-mono uppercase tracking-wide ${q.snippetBusy ? 'text-amber' : 'text-mute'}">
+            ${q.snippetBusy
+              ? (q.snippetSyncPending
+                  // AUTOSYNC_REENTRANCY_RACE_FIX_PROMPT.md: a later edit
+                  // landed while this resync was still in flight and is
+                  // queued as a single trailing follow-up pass (see
+                  // runAutoSync in snippet-question-generation.js) —
+                  // say so, rather than looking identical to a normal
+                  // single in-flight sync with no indication anything
+                  // is still pending after it.
+                  ? '🔄 Auto-syncing snippets… (another edit queued)'
+                  : '🔄 Auto-syncing snippets…')
+              : '✓ Snippets auto-sync after each edit'}
+          </span>
+        </div>
+        ${q.snippetError ? `<p class="text-xs text-danger mt-1.5">⚠ ${escapeHtml(q.snippetError)}</p>` : ''}
+      </div>
+    </div>
+
+    <div class="question-card bg-card border border-edge rounded-lg p-4 lg:p-5" data-id="${q.id}">
+      <div class="flex items-center justify-between mb-1">
+        <label class="field-label mb-0">Choices <span class="normal-case text-mute/70">${variant.type === 'category' ? '(check every correct answer)' : '(select the correct one)'}</span></label>
+        <button type="button" data-action="regenerateChoices" ${q.choicesBusy ? 'disabled' : ''}
+          title="Ask the AI to regenerate this variant's choices + correct answer from the CURRENT question text (and answer/target term, if set) — use after editing the question or answer so the distractors and correct choice line up again"
+          class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-amber transition-colors shrink-0 ml-2 disabled:opacity-60 disabled:cursor-wait">
+          ${q.choicesBusy ? '… generating' : '🪄 Auto-fill (AI)'}
+        </button>
+      </div>
+      <div class="space-y-2">${choiceRowsTemplate(q, variant)}</div>
+      ${variant.type !== 'true_false' ? `
+      <button type="button" data-action="addChoice"
+        class="mt-2 w-full font-mono text-[0.62rem] uppercase tracking-wide px-2 py-1.5 rounded border border-dashed border-edge text-mute hover:border-amber hover:text-amber transition-colors">
+        + Add choice
+      </button>` : ''}
+      ${q.choicesError ? `<p class="text-xs text-danger mt-2">⚠ ${escapeHtml(q.choicesError)}</p>` : ''}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1444-1454
+// ---------------------------------------------------------------------
+function renderActiveQuestion() {
+  const q = state.questions.find(x => x.id === state.activeCardId);
+  if (!q) {
+    activeEditorEl.innerHTML = '';
+    emptyState.classList.toggle('hidden', state.questions.length > 0);
+    return;
+  }
+  emptyState.classList.add('hidden');
+  const index = state.questions.findIndex(x => x.id === q.id);
+  activeEditorEl.innerHTML = activeEditorTemplate(q, index, state.questions.length);
+}
+
+// ---------- Active editor interaction ----------
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1457-1522 (the 'input' and 'change'
+// listeners on activeEditorEl)
+// ---------------------------------------------------------------------
+activeEditorEl.addEventListener('input', (e) => {
+  const card = e.target.closest('.question-card');
+  if (!card) return;
+  const q = state.questions.find(x => x.id === card.dataset.id);
+  if (!q) return;
+  const variant = q.variants[q.activeVariantIndex];
+
+  const field = e.target.dataset.field;
+  if (field === 'targetTerm') {
+    q.targetTerm = e.target.value;
+  } else if (field === 'questionText') {
+    variant.questionText = e.target.value;
+  } else if (field === 'choice') {
+    const i = Number(e.target.dataset.choiceIndex);
+    variant.choices[i] = e.target.value;
+  } else if (field === 'sourcePage') {
+    const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+    q.sourcePage = val;
+    renderDocPage(val);
+  }
+});
+
+activeEditorEl.addEventListener('change', (e) => {
+  const card = e.target.closest('.question-card');
+  if (!card) return;
+  const q = state.questions.find(x => x.id === card.dataset.id);
+  if (!q) return;
+
+  if (e.target.dataset.action === 'setCorrect') {
+    const variant = q.variants[q.activeVariantIndex];
+    variant.correctAnswerIndex = Number(e.target.dataset.choiceIndex);
+    renderActiveQuestion();
+    scheduleAutoSync(q.id); // the correct answer just changed — re-check/resync its snippets
+  } else if (e.target.dataset.action === 'toggleCorrect') {
+    const variant = q.variants[q.activeVariantIndex];
+    const i = Number(e.target.dataset.choiceIndex);
+    const set = new Set(variant.correctAnswerIndices || []);
+    if (set.has(i)) set.delete(i); else set.add(i);
+    variant.correctAnswerIndices = Array.from(set).sort((a, b) => a - b);
+    renderActiveQuestion();
+    scheduleAutoSync(q.id); // the correct answers just changed — re-check/resync its snippets
+  } else if (e.target.dataset.field === 'sourcePage') {
+    // Committed edit (blur / Enter) — re-sort by page and re-index the
+    // nav chips + active editor title to reflect the new position.
+    sortQuestionsByPage();
+    renderQuestionNav();
+    renderActiveQuestion();
+    scheduleAutoSync(q.id); // the source page moved — its old snippets may no longer apply
+  } else if (e.target.dataset.field === 'targetTerm') {
+    // Committed edit (blur / Enter) — a manual rename can just as
+    // easily create or resolve a duplicate as an AI-generated one, so
+    // re-run the checker and refresh the nav badges + banner.
+    renderQuestionNav();
+    renderActiveQuestion();
+    scheduleAutoSync(q.id);
+  } else if (e.target.dataset.field === 'questionText') {
+    // Committed edit (blur / Enter) — the question/answer just
+    // changed, so its highlighted snippets may now point at the wrong
+    // passage (or none at all yet). Auto re-check + resync rather than
+    // requiring a manual button click.
+    scheduleAutoSync(q.id);
+  } else if (e.target.dataset.field === 'choice') {
+    scheduleAutoSync(q.id);
+  }
+});
+
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1523-1645 (the 'click' listener on
+// activeEditorEl)
+// ---------------------------------------------------------------------
+activeEditorEl.addEventListener('click', (e) => {
+  const deleteBtn = e.target.closest('[data-action="delete"]');
+  if (deleteBtn) {
+    const card = e.target.closest('.question-card');
+    if (card) deleteQuestion(card.dataset.id);
+    return;
+  }
+  const tabBtn = e.target.closest('[data-action="switchVariant"]');
+  if (tabBtn) {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    const q = state.questions.find(x => x.id === card.dataset.id);
+    if (!q) return;
+    q.activeVariantIndex = Number(tabBtn.dataset.variantIndex);
+    renderActiveQuestion();
+    return;
+  }
+  const locateBtn = e.target.closest('[data-action="locateSnippet"]');
+  if (locateBtn) {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    locateSnippetInDoc(card.dataset.id, locateBtn.dataset.snippetType);
+    return;
+  }
+  const scanFieldBtn = e.target.closest('[data-action="scanField"]');
+  if (scanFieldBtn) {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    handleScanField(card.dataset.id, scanFieldBtn.dataset.fieldType);
+    return;
+  }
+  const jumpBtn = e.target.closest('[data-action="jumpToDuplicate"]');
+  if (jumpBtn) {
+    setActiveCard(jumpBtn.dataset.jumpId);
+    return;
+  }
+  const dismissBtn = e.target.closest('[data-action="dismissDuplicate"]');
+  if (dismissBtn) {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    const q = state.questions.find(x => x.id === card.dataset.id);
+    if (!q) return;
+    // Manually clears the flag for THIS question only — computeDuplicateMap()
+    // skips any question with dupeDismissed set, so it won't be re-flagged
+    // (or swept up by "Remove Duplicates") until the person edits it enough
+    // to change what it matches against.
+    q.dupeDismissed = true;
+    renderQuestionNav();
+    renderActiveQuestion();
+    return;
+  }
+  const genVariantBtn = e.target.closest('[data-action="generateVariant"]');
+  if (genVariantBtn) {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    handleGenerateVariant(card.dataset.id, genVariantBtn.dataset.variantType);
+    return;
+  }
+  const removeVariantBtn = e.target.closest('[data-action="removeVariant"]');
+  if (removeVariantBtn) {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    removeVariant(card.dataset.id, Number(removeVariantBtn.dataset.variantIndex));
+    return;
+  }
+  const regenChoicesBtn = e.target.closest('[data-action="regenerateChoices"]');
+  if (regenChoicesBtn) {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    handleRegenerateChoices(card.dataset.id);
+    return;
+  }
+  const addChoiceBtn = e.target.closest('[data-action="addChoice"]');
+  if (addChoiceBtn) {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    const q = state.questions.find(x => x.id === card.dataset.id);
+    if (!q) return;
+    const variant = q.variants[q.activeVariantIndex];
+    if (!variant || variant.type === 'true_false') return;
+    variant.choices.push(''); // no upper limit — base is 4, grows from there
+    renderActiveQuestion();
+    requestAnimationFrame(() => {
+      const rows = activeEditorEl.querySelectorAll(`[data-id="${q.id}"] [data-field="choice"]`);
+      const last = rows[rows.length - 1];
+      if (last) last.focus();
+    });
+    return;
+  }
+  const removeChoiceBtn = e.target.closest('[data-action="removeChoice"]');
+  if (removeChoiceBtn) {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    const q = state.questions.find(x => x.id === card.dataset.id);
+    if (!q) return;
+    const variant = q.variants[q.activeVariantIndex];
+    if (!variant || variant.type === 'true_false' || variant.choices.length <= MIN_CHOICES) return;
+    const removedIndex = Number(removeChoiceBtn.dataset.choiceIndex);
+    variant.choices.splice(removedIndex, 1);
+    if (variant.type === 'category') {
+      // Drop the removed index and shift every index after it down by
+      // one, same as the choices array itself just did.
+      variant.correctAnswerIndices = (variant.correctAnswerIndices || [])
+        .filter(i => i !== removedIndex)
+        .map(i => (i > removedIndex ? i - 1 : i));
+    } else if (variant.correctAnswerIndex === removedIndex) {
+      variant.correctAnswerIndex = 0; // the correct choice was removed — fall back to the first
+    } else if (variant.correctAnswerIndex > removedIndex) {
+      variant.correctAnswerIndex -= 1;
+    }
+    renderActiveQuestion();
+    scheduleAutoSync(q.id);
+    return;
+  }
+});
+
+// Scrolls Pane 2 to the <mark>(s) for this question's source ('question')
+// or answer ('answer') snippet and briefly pulses them, independent of
+// the persistent active-highlight state set by setActiveCard. A snippet
+// that spans a block boundary (e.g. across two <li>s) was wrapped as
+// multiple <mark> elements sharing the same qid/snippetType — every one
+// of them gets pulsed so the whole highlighted run flashes together,
+// even though only the first is scrolled into view.
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1646-1662
+// ---------------------------------------------------------------------
+function locateSnippetInDoc(qid, snippetType) {
+  // HIGHLIGHT_DUPLICATE_SHARED_MARK_FIX_PROMPT.md: `~=` (word-match) so
+  // this still finds a shared mark whose data-qid carries several ids.
+  const marks = docTextContainer.querySelectorAll(
+    `mark[data-qid~="${qid}"][data-snippet-type="${snippetType}"]`
+  );
+  if (!marks.length) return; // snippet didn't resolve to a highlight — nothing to jump to
+
+  marks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  marks.forEach(m => {
+    m.classList.remove('locate-pulse');
+    // Force reflow so re-adding the class restarts the animation even
+    // if this same mark was just pulsed a moment ago.
+    void m.offsetWidth;
+    m.classList.add('locate-pulse');
+  });
+  setTimeout(() => marks.forEach(m => m.classList.remove('locate-pulse')), 1800);
+}
+
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1663-1669 (event wiring for this
+// module's own nav element + the add/remove-duplicates buttons, which
+// call straight into question-model.js's addQuestion/removeFlaggedDuplicates)
+// ---------------------------------------------------------------------
+questionNavEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-nav-id]');
+  if (btn) setActiveCard(btn.dataset.navId);
+});
+
+// New (not from source) — Update 1 (paginated nav-chip bar): the
+// pager's own numbered/Prev/Next buttons, plus Left/Right keyboard
+// paging. Bound on questionNavGroup (the wrapper around both
+// questionNav and questionNavPager) rather than `document`, so this
+// only fires while focus is somewhere inside the Questions panel and
+// doesn't compete with ArrowLeft/ArrowRight while typing in the active
+// editor's text fields elsewhere on the page.
+questionNavPager.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-page-goto]');
+  if (!btn || btn.disabled) return;
+  navChipPage = Number(btn.dataset.pageGoto);
+  renderQuestionNav();
+  focusActiveNavPagerButton();
+});
+
+questionNavGroup.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const totalPages = totalNavChipPages();
+  if (totalPages <= 1) return;
+  e.preventDefault();
+  navChipPage = e.key === 'ArrowLeft'
+    ? Math.max(0, navChipPage - 1)
+    : Math.min(totalPages - 1, navChipPage + 1);
+  renderQuestionNav();
+  focusActiveNavPagerButton();
+});
+
+addQuestionBtn.addEventListener('click', addQuestion);
+removeDuplicatesBtn.addEventListener('click', removeFlaggedDuplicates);
+
+// ---------- Bidirectional sync: nav <-> Pane 2 highlight <-> Pane 3 page ----------
+// ---------------------------------------------------------------------
+// Verbatim from source, lines 1672-1685, except the `viaUserClick`
+// param and the aiUnchecked-clearing/unchecked-highlight-toggle lines
+// added by UNCHECKED_AI_CONTENT_AND_FUZZY_HIGHLIGHT_PERSISTENCE_PROMPT.md
+// Part B (see comments below).
+// ---------------------------------------------------------------------
+// setActiveCard() is the single choke point every "view this question"
+// path already goes through — nav chip click, Pane 3 mini-nav click,
+// and clicking a highlight mark directly. `viaUserClick` (default
+// true) distinguishes a real click from a programmatic auto-select —
+// e.g. main.js selecting the first AI-generated question right after
+// import/scan — so that a purely programmatic activation doesn't
+// silently mark a question "checked" before the person has actually
+// looked at it. Every existing call site (nav chip click, Pane 3
+// mini-nav click, the docTextContainer mark-click listener in
+// layout-formatting.js) keeps the default and is unaffected; a future
+// call site can opt out by explicitly passing `false`.
+function setActiveCard(id, viaUserClick = true) {
+  const q = state.questions.find(x => x.id === id);
+  // Clear the "unchecked" flag the moment the person actually views
+  // this question, BEFORE renderQuestionNav()/renderActiveQuestion()
+  // run below, so both immediately reflect the cleared state instead of
+  // needing a second render pass to catch up.
+  if (viaUserClick && q && q.aiUnchecked) {
+    q.aiUnchecked = false;
+  }
+
+  // New (not from source) — Update 1: bring the nav-chip pager to
+  // whichever page the newly-active question lives on, so the
+  // highlighted chip is never hidden behind a page the pager isn't
+  // currently showing. setActiveCard() is the single choke point every
+  // "view this question" path already goes through (see the comment
+  // block above this function), so hooking in here covers nav chip
+  // clicks, Pane 3 mini-nav clicks, highlight-mark clicks, and "jump to
+  // duplicate" links in one place. Deliberately NOT done inside
+  // renderQuestionNav() itself — that would also fire on the pager's
+  // OWN Prev/Next/arrow-key navigation (which never calls
+  // setActiveCard), pulling the person back to the active question's
+  // page every time they tried to just browse.
+  const activeIdx = state.questions.findIndex(x => x.id === id);
+  if (activeIdx !== -1) navChipPage = Math.floor(activeIdx / NAV_CHIPS_PER_PAGE);
+
+  state.activeCardId = id;
+  renderQuestionNav();
+  renderActiveQuestion();
+
+  if (q) renderDocPage(q.sourcePage);
+
+  // HIGHLIGHT_DUPLICATE_SHARED_MARK_FIX_PROMPT.md: a mark's data-qid can
+  // now hold more than one id (a shared duplicate-pair mark — see the
+  // multi-qid mark helpers in highlighting.js), so `m.dataset.qid === id`
+  // would silently stop matching such a mark; read the full id list via
+  // markQidList instead. For unchecked-highlight, a shared mark shows the
+  // ring if ANY of the questions it belongs to still needs a first look
+  // and isn't itself duplicate-suppressed.
+  document.querySelectorAll('mark[data-qid]').forEach(m => {
+    const ids = markQidList(m);
+    m.classList.toggle('active-highlight', ids.includes(id));
+    // Mirror each mark's unchecked state here too, same loop, so Pane 2
+    // stays in sync with the nav-chip/badge indicator without a
+    // separate DOM pass — same pattern used in
+    // recheckHighlights()/recheckHighlightsForQuestion() (highlighting.js)
+    // and renderTextVersion() (layout-formatting.js).
+    // SUPPRESS_UNCHECKED_INDICATOR_FOR_DUPLICATES_PROMPT.md: `&&
+    // !markDup` added — same suppression as the nav chip/badge above,
+    // applied here too so a duplicate-flagged question's highlights
+    // don't show the green outline either.
+    const showUnchecked = ids.some(mid => {
+      const markQ = state.questions.find(x => x.id === mid);
+      const markDup = markQ && getDuplicateMap().get(markQ.id);
+      return !!(markQ && markQ.aiUnchecked && !markDup);
+    });
+    m.classList.toggle('unchecked-highlight', showUnchecked);
+  });
+  const activeMark = docTextContainer.querySelector(`mark[data-qid~="${id}"]`);
+  if (activeMark) activeMark.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+export {
+  escapeHtml,
+  escapeAttr,
+  buildNavChipHtml,
+  renderQuestionNav,
+  renderPane3QuestionNav,
+  variantIndexesOfGroup,
+  variantTabsTemplate,
+  choiceRowsTemplate,
+  activeEditorTemplate,
+  renderActiveQuestion,
+  locateSnippetInDoc,
+  setActiveCard,
+};

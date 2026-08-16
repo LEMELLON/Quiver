@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz Runner — Offline</title>
+<style>
+  :root{
+    --bg:#0f172a;
+    --card:#1e293b;
+    --card-alt:#233047;
+    --accent:#3b82f6;
+    --accent-hover:#2563eb;
+    --text:#f8fafc;
+    --muted:#94a3b8;
+    --border:#334155;
+    --correct:#22c55e;
+    --incorrect:#ef4444;
+    --radius:14px;
+    --k-red:#e21b3c;
+    --k-blue:#1368ce;
+    --k-yellow:#d89e00;
+    --k-green:#26890c;
+  }
+  .key-row{ display:flex; gap:8px; align-items:center; margin-top:8px; }
+  .icon-btn{ background:var(--card-alt); border:1px solid var(--border); color:var(--muted); border-radius:10px; padding:10px 12px; cursor:pointer; }
+  .icon-btn:hover{ color:var(--text); border-color:var(--accent); }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
+    min-height:100vh;
+  }
+  #app{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:100vh;
+    padding:24px;
+  }
+  .screen{ display:none; width:100%; max-width:760px; }
+  .screen.active{ display:block; animation:fadeIn .35s ease; }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+
+  h1{ font-size:1.9rem; margin:0 0 6px; letter-spacing:-0.02em; }
+  h2{ font-size:1.35rem; line-height:1.4; margin:6px 0 22px; }
+  p{ color:var(--muted); margin:4px 0; }
+  label{ display:block; font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:18px 0 8px; }
+
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:28px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+
+  input[type="file"], textarea, select{
+    width:100%;
+    background:var(--card-alt);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:10px;
+    padding:12px;
+    font-size:.95rem;
+    font-family:inherit;
+  }
+  textarea{ min-height:80px; resize:vertical; }
+  select{ appearance:none; cursor:pointer; }
+
+  .divider{
+    display:flex; align-items:center; gap:12px;
+    color:var(--muted); font-size:.75rem; text-transform:uppercase;
+    letter-spacing:.08em; margin:18px 0;
+  }
+  .divider::before, .divider::after{ content:""; flex:1; height:1px; background:var(--border); }
+
+  button{
+    font-family:inherit;
+    cursor:pointer;
+    border:none;
+    border-radius:10px;
+    font-weight:600;
+    transition:transform .12s ease, background .15s ease, box-shadow .15s ease, opacity .15s ease;
+  }
+  .btn-primary{
+    background:var(--accent);
+    color:#fff;
+    width:100%;
+    padding:13px;
+    font-size:1rem;
+    margin-top:10px;
+  }
+  .btn-primary:hover{ background:var(--accent-hover); }
+  .btn-primary:active{ transform:scale(.98); }
+  .btn-primary:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn-secondary{
+    background:var(--card-alt);
+    color:var(--text);
+    width:100%;
+    padding:13px;
+    font-size:.95rem;
+    border:1px solid var(--border);
+  }
+  .btn-secondary:hover{ border-color:var(--accent); color:var(--accent); }
+
+  .hidden{ display:none !important; }
+  .error{ color:var(--incorrect); font-size:.85rem; margin-top:10px; }
+  .success-note{ color:var(--correct); font-size:.8rem; }
+
+  /* Mode select screen */
+  .mode-grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:14px;
+    margin-top:8px;
+  }
+  .mode-card{
+    background:var(--card-alt);
+    border:2px solid var(--border);
+    border-radius:12px;
+    padding:18px 14px;
+    text-align:center;
+    cursor:pointer;
+  }
+  .mode-card:hover{ border-color:var(--accent); }
+  .mode-card.selected{ border-color:var(--accent); background:rgba(59,130,246,.12); }
+  .mode-card .mode-icon{ font-size:1.8rem; display:block; margin-bottom:8px; }
+  .mode-card .mode-title{ font-weight:700; color:var(--text); font-size:.95rem; }
+  .mode-card .mode-desc{ font-size:.78rem; color:var(--muted); margin-top:6px; line-height:1.35; }
+
+  /* Shared quiz header */
+  .quiz-header{
+    display:flex; align-items:center; gap:16px;
+    margin-bottom:20px;
+  }
+  .timer-pill{
+    font-variant-numeric:tabular-nums;
+    font-size:1.1rem; font-weight:700;
+    background:var(--card);
+    border:1px solid var(--border);
+    padding:8px 14px; border-radius:10px;
+    min-width:78px; text-align:center;
+  }
+  .progress-wrap{
+    flex:1; height:10px; background:var(--card);
+    border:1px solid var(--border); border-radius:999px; overflow:hidden;
+  }
+  .progress-fill{
+    height:100%; width:0%; background:linear-gradient(90deg,var(--accent),#60a5fa);
+    transition:width .3s ease;
+  }
+  .score-pill{
+    font-weight:700; background:var(--card);
+    border:1px solid var(--border); padding:8px 14px; border-radius:10px;
+    white-space:nowrap;
+  }
+
+  .q-meta{ font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); margin-bottom:4px; }
+
+  /* Exam choices */
+  #choicesContainer{ display:grid; gap:12px; margin-top:6px; }
+  .choice-btn{
+    background:var(--card-alt);
+    border:1px solid var(--border);
+    color:var(--text);
+    text-align:left;
+    padding:15px 18px;
+    font-size:.98rem;
+    border-radius:10px;
+    display:flex; align-items:center; gap:12px;
+  }
+  .choice-btn:hover:not(:disabled){ border-color:var(--accent); background:#28374f; }
+  .choice-btn:active:not(:disabled){ transform:scale(.99); }
+  .choice-btn:disabled{ cursor:default; }
+  .choice-btn.correct{ background:rgba(34,197,94,.15); border-color:var(--correct); color:#bbf7d0; }
+  .choice-btn.incorrect{ background:rgba(239,68,68,.15); border-color:var(--incorrect); color:#fecaca; }
+
+  #examNextBtn{ margin-top:22px; }
+
+  /* Kahoot mode */
+  .kahoot-timer-wrap{
+    height:8px; background:var(--card); border:1px solid var(--border);
+    border-radius:999px; overflow:hidden; margin:14px 0 4px;
+  }
+  .kahoot-timer-fill{
+    height:100%; width:100%; background:linear-gradient(90deg,#f59e0b,#ef4444);
+    transition:width .1s linear;
+  }
+  .kahoot-timer-num{ text-align:right; font-size:.8rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .kahoot-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px;
+  }
+  .kahoot-tile{
+    display:flex; align-items:center; gap:12px;
+    padding:22px 16px;
+    border-radius:12px;
+    border:none;
+    color:#fff;
+    font-weight:700;
+    font-size:1rem;
+    text-align:left;
+    min-height:80px;
+  }
+  .kahoot-tile .k-shape{ font-size:1.3rem; }
+  .kahoot-tile.k-red{ background:var(--k-red); }
+  .kahoot-tile.k-blue{ background:var(--k-blue); }
+  .kahoot-tile.k-yellow{ background:var(--k-yellow); }
+  .kahoot-tile.k-green{ background:var(--k-green); }
+  .kahoot-tile:disabled{ cursor:default; }
+  .kahoot-tile.k-faded{ opacity:.35; }
+  .kahoot-tile.k-correct{ box-shadow:0 0 0 4px #fff inset; }
+  .kahoot-tile.k-wrong{ box-shadow:0 0 0 4px rgba(0,0,0,.5) inset; }
+  .kahoot-points-flash{
+    text-align:center; font-size:1.3rem; font-weight:800; color:var(--accent);
+    margin-top:14px; min-height:1.6rem;
+  }
+
+  /* Flashcard mode */
+  .flash-scene{ perspective:1400px; margin-top:10px; }
+  .flash-card{
+    position:relative; width:100%; min-height:260px;
+    transform-style:preserve-3d; transition:transform .5s cubic-bezier(.4,.2,.2,1);
+    cursor:pointer;
+  }
+  .flash-card.flipped{ transform:rotateY(180deg); }
+  .flash-face{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    backface-visibility:hidden;
+    border-radius:12px; border:1px solid var(--border);
+    padding:26px; font-size:1.15rem; font-weight:600; line-height:1.5;
+  }
+  .flash-front{ background:var(--card-alt); color:var(--text); }
+  .flash-back{
+    background:rgba(34,197,94,.12); border-color:var(--correct); color:#bbf7d0;
+    transform:rotateY(180deg);
+  }
+  .flash-hint{ text-align:center; font-size:.8rem; color:var(--muted); margin-top:12px; }
+  .flash-grade-btns{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:18px; }
+  .flash-grade-btns button{ padding:14px; font-size:.95rem; }
+  #flashDidntBtn{ background:var(--card-alt); border:1px solid var(--incorrect); color:#fecaca; }
+  #flashDidntBtn:hover{ background:rgba(239,68,68,.15); }
+  #flashKnewBtn{ background:var(--card-alt); border:1px solid var(--correct); color:#bbf7d0; }
+  #flashKnewBtn:hover{ background:rgba(34,197,94,.15); }
+
+  /* Results screen */
+  .results-card{ text-align:center; }
+  .result-stats{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:14px;
+    margin:26px 0 6px;
+  }
+  .stat{
+    background:var(--card-alt); border:1px solid var(--border);
+    border-radius:12px; padding:18px 8px;
+  }
+  .stat span{ display:block; font-size:1.5rem; font-weight:800; color:var(--accent); }
+  .stat label{ margin:6px 0 0; }
+
+  @media (max-width:520px){
+    .card{ padding:20px; }
+    .result-stats{ grid-template-columns:1fr; }
+    .mode-grid{ grid-template-columns:1fr; }
+    .kahoot-grid{ grid-template-columns:1fr; }
+    .quiz-header{ flex-wrap:wrap; }
+    .score-pill{ order:3; width:100%; text-align:center; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- SETUP SCREEN -->
+  <div class="screen active" id="screen-setup">
+    <h1>⚔️ Quiz Runner</h1>
+    <p>Offline • Rogue-like Difficulty Engine</p>
+    <div class="card">
+      <label for="fileInput">Load Quiz File (.json)</label>
+      <input type="file" id="fileInput" accept="application/json,.json">
+
+      <div class="divider">OR</div>
+
+      <label for="quizCodeInput">Paste Quiz Code</label>
+      <textarea id="quizCodeInput" placeholder="Paste compressed Quiz Code here..."></textarea>
+
+      <label for="runnerSecretKey">Secret Key (If Encrypted)</label>
+      <div class="key-row">
+        <input type="password" id="runnerSecretKey" placeholder="Enter secret key used to encrypt Quiz Code (optional)" style="flex:1">
+        <button class="icon-btn" id="toggleRunnerKeyBtn" type="button">Show</button>
+      </div>
+      <button class="btn-secondary" id="decodeCodeBtn" style="margin-top:10px;">Load From Code</button>
+
+      <p id="setupError" class="error hidden"></p>
+    </div>
+  </div>
+
+  <!-- MODE SELECT SCREEN -->
+  <div class="screen" id="screen-mode">
+    <h1 id="quizTitleDisplay">Quiz</h1>
+    <p id="quizCountDisplay"></p>
+    <p id="quizHashDisplay" class="success-note"></p>
+    <div class="card">
+      <label>Choose Game Mode</label>
+      <div class="mode-grid">
+        <div class="mode-card" data-mode="kahoot">
+          <span class="mode-icon">⚡</span>
+          <div class="mode-title">Kahoot Style</div>
+          <div class="mode-desc">Timed rounds, colored tiles, speed-based points.</div>
+        </div>
+        <div class="mode-card" data-mode="flashcard">
+          <span class="mode-icon">🃏</span>
+          <div class="mode-title">Flashcard Style</div>
+          <div class="mode-desc">Flip the card, self-grade what you knew.</div>
+        </div>
+        <div class="mode-card" data-mode="exam">
+          <span class="mode-icon">📝</span>
+          <div class="mode-title">Exam Style</div>
+          <div class="mode-desc">Multiple choice with difficulty levels 1–5.</div>
+        </div>
+      </div>
+
+      <div id="examLevelPanel" class="hidden">
+        <label for="levelSelect">Select Difficulty Level</label>
+        <select id="levelSelect">
+          <option value="1">Level 1 — Familiarization (correct always first)</option>
+          <option value="2">Level 2 — Partial Remembrance (choices shuffled)</option>
+          <option value="3">Level 3 — Memorization (questions + choices shuffled)</option>
+          <option value="4">Level 4 — Deep Application (rephrased + shuffled)</option>
+          <option value="5">Level 5 — Situational (situational-only)</option>
+          <option value="6">Level 6 — Expertise</option>
+        </select>
+      </div>
+
+      <button class="btn-primary hidden" id="startBtn">Start Quiz →</button>
+      <p id="modeError" class="error hidden"></p>
+    </div>
+  </div>
+
+  <!-- EXAM MODE SCREEN -->
+  <div class="screen" id="screen-exam">
+    <div class="quiz-header">
+      <div class="timer-pill" id="examTimerDisplay">00:00</div>
+      <div class="progress-wrap"><div class="progress-fill" id="examProgressBar"></div></div>
+      <div class="score-pill" id="examScoreDisplay">Score: 0</div>
+    </div>
+    <div class="card">
+      <p class="q-meta" id="examMeta"></p>
+      <h2 id="examQuestionText"></h2>
+      <div id="choicesContainer"></div>
+    </div>
+    <button class="btn-primary hidden" id="examNextBtn">Next Question →</button>
+  </div>
+
+  <!-- KAHOOT MODE SCREEN -->
+  <div class="screen" id="screen-kahoot">
+    <div class="quiz-header">
+      <div class="timer-pill" id="kahootElapsedDisplay">00:00</div>
+      <div class="progress-wrap"><div class="progress-fill" id="kahootProgressBar"></div></div>
+      <div class="score-pill" id="kahootScoreDisplay">Points: 0</div>
+    </div>
+    <div class="card">
+      <p class="q-meta" id="kahootMeta"></p>
+      <h2 id="kahootQuestionText"></h2>
+      <div class="kahoot-timer-wrap"><div class="kahoot-timer-fill" id="kahootTimerFill"></div></div>
+      <div class="kahoot-timer-num" id="kahootTimerNum">15s</div>
+      <div class="kahoot-grid" id="kahootGrid"></div>
+      <div class="kahoot-points-flash" id="kahootPointsFlash"></div>
+    </div>
+  </div>
+
+  <!-- FLASHCARD MODE SCREEN -->
+  <div class="screen" id="screen-flashcard">
+    <div class="quiz-header">
+      <div class="timer-pill" id="flashElapsedDisplay">00:00</div>
+      <div class="progress-wrap"><div class="progress-fill" id="flashProgressBar"></div></div>
+      <div class="score-pill" id="flashScoreDisplay">Knew It: 0</div>
+    </div>
+    <div class="card">
+      <p class="q-meta" id="flashMeta"></p>
+      <div class="flash-scene">
+        <div class="flash-card" id="flashCard">
+          <div class="flash-face flash-front" id="flashFront"></div>
+          <div class="flash-face flash-back" id="flashBack"></div>
+        </div>
+      </div>
+      <p class="flash-hint" id="flashHint">Tap the card to reveal the answer</p>
+      <div class="flash-grade-btns hidden" id="flashGradeBtns">
+        <button id="flashDidntBtn">✗ Didn't Know It</button>
+        <button id="flashKnewBtn">✓ Knew It</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS SCREEN -->
+  <div class="screen" id="screen-results">
+    <div class="card results-card">
+      <h1>🏁 Session Results</h1>
+      <p>Here's how you did this run.</p>
+      <div class="result-stats">
+        <div class="stat"><span id="resultValue1">0</span><label id="resultLabel1">Score</label></div>
+        <div class="stat"><span id="resultValue2">0%</span><label id="resultLabel2">Accuracy</label></div>
+        <div class="stat"><span id="resultValue3">00:00</span><label>Total Time</label></div>
+      </div>
+      <button class="btn-primary" id="restartBtn">Choose Another Mode</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- State ----------
+  let quizData = null;
+  let preparedQuestions = [];
+  let currentIndex = 0;
+  let score = 0;
+  let correctCount = 0;
+  let elapsedSeconds = 0;
+  let timerInterval = null;
+  let currentLevel = "1";
+  let selectedMode = null;
+
+  const KAHOOT_TIME_LIMIT = 15; // seconds per question
+  let kahootRemainingMs = 0;
+  let kahootTickInterval = null;
+  let kahootAnswered = false;
+
+  // ---------- DOM refs ----------
+  const screens = {
+    setup: document.getElementById('screen-setup'),
+    mode: document.getElementById('screen-mode'),
+    exam: document.getElementById('screen-exam'),
+    kahoot: document.getElementById('screen-kahoot'),
+    flashcard: document.getElementById('screen-flashcard'),
+    results: document.getElementById('screen-results')
+  };
+
+  const fileInput = document.getElementById('fileInput');
+  const quizCodeInput = document.getElementById('quizCodeInput');
+  const decodeCodeBtn = document.getElementById('decodeCodeBtn');
+  const setupError = document.getElementById('setupError');
+  const runnerSecretKey = document.getElementById('runnerSecretKey');
+  const toggleRunnerKeyBtn = document.getElementById('toggleRunnerKeyBtn');
+
+  const quizTitleDisplay = document.getElementById('quizTitleDisplay');
+  const quizCountDisplay = document.getElementById('quizCountDisplay');
+  const quizHashDisplay = document.getElementById('quizHashDisplay');
+  const modeCards = document.querySelectorAll('.mode-card');
+  const examLevelPanel = document.getElementById('examLevelPanel');
+  const levelSelect = document.getElementById('levelSelect');
+  const startBtn = document.getElementById('startBtn');
+  const modeError = document.getElementById('modeError');
+
+  // Exam
+  const examTimerDisplay = document.getElementById('examTimerDisplay');
+  const examProgressBar = document.getElementById('examProgressBar');
+  const examScoreDisplay = document.getElementById('examScoreDisplay');
+  const examMeta = document.getElementById('examMeta');
+  const examQuestionText = document.getElementById('examQuestionText');
+  const choicesContainer = document.getElementById('choicesContainer');
+  const examNextBtn = document.getElementById('examNextBtn');
+  let examAnswered = false;
+
+  // Kahoot
+  const kahootElapsedDisplay = document.getElementById('kahootElapsedDisplay');
+  const kahootProgressBar = document.getElementById('kahootProgressBar');
+  const kahootScoreDisplay = document.getElementById('kahootScoreDisplay');
+  const kahootMeta = document.getElementById('kahootMeta');
+  const kahootQuestionText = document.getElementById('kahootQuestionText');
+  const kahootTimerFill = document.getElementById('kahootTimerFill');
+  const kahootTimerNum = document.getElementById('kahootTimerNum');
+  const kahootGrid = document.getElementById('kahootGrid');
+  const kahootPointsFlash = document.getElementById('kahootPointsFlash');
+
+  // Flashcard
+  const flashElapsedDisplay = document.getElementById('flashElapsedDisplay');
+  const flashProgressBar = document.getElementById('flashProgressBar');
+  const flashScoreDisplay = document.getElementById('flashScoreDisplay');
+  const flashMeta = document.getElementById('flashMeta');
+  const flashCard = document.getElementById('flashCard');
+  const flashFront = document.getElementById('flashFront');
+  const flashBack = document.getElementById('flashBack');
+  const flashHint = document.getElementById('flashHint');
+  const flashGradeBtns = document.getElementById('flashGradeBtns');
+  const flashDidntBtn = document.getElementById('flashDidntBtn');
+  const flashKnewBtn = document.getElementById('flashKnewBtn');
+  let flashRevealed = false;
+
+  // Results
+  const resultValue1 = document.getElementById('resultValue1');
+  const resultLabel1 = document.getElementById('resultLabel1');
+  const resultValue2 = document.getElementById('resultValue2');
+  const resultLabel2 = document.getElementById('resultLabel2');
+  const resultValue3 = document.getElementById('resultValue3');
+  const restartBtn = document.getElementById('restartBtn');
+
+  // ---------- Screen management ----------
+  function showScreen(name){
+    Object.values(screens).forEach(s => s.classList.remove('active'));
+    screens[name].classList.add('active');
+  }
+
+  function showError(msg){
+    setupError.textContent = msg;
+    setupError.classList.remove('hidden');
+  }
+  function clearError(){
+    setupError.classList.add('hidden');
+    setupError.textContent = '';
+  }
+
+  // ---------- Quiz format normalization ----------
+  // Two possible shapes for entries in data.questions are supported:
+  //  1. Legacy/flat — { questionText, choices, correctAnswerIndex, ... }
+  //     directly on each entry. What this runner has always played.
+  //  2. Current Quiz Maker export ("question collections") — each entry
+  //     instead carries a `variants` array: one or more alternate
+  //     phrasings/types of the same underlying question (Multiple Choice
+  //     /"clamp", True/False, Category Selection), with no top-level
+  //     questionText/choices/correctAnswerIndex of its own. The Multiple
+  //     Choice variant is also no longer guaranteed to be present, since
+  //     it can now be individually removed in the Quiz Maker.
+  // Every mode in this runner (Exam/Kahoot/Flashcard) is built around one
+  // question with a single correct answer, so for format (2) we pick ONE
+  // representative variant per collection here — keeping question count
+  // and pacing exactly like before — preferring Multiple Choice, then
+  // True/False, then Category Selection as a last resort.
+  function pickRepresentativeVariant(variants) {
+    if (!Array.isArray(variants) || variants.length === 0) return null;
+    return variants.find(v => v && v.type === 'clamp')
+      || variants.find(v => v && v.type === 'rephrased')
+      || variants.find(v => v && v.type === 'true_false')
+      || variants.find(v => v && v.type === 'category')
+      || variants[0];
+  }
+
+  function normalizeQuizData(data) {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.questions)) return data;
+    const isCollectionFormat = data.questions.some(q => q && Array.isArray(q.variants));
+    if (!isCollectionFormat) return data; // already flat/legacy — nothing to normalize
+
+    const flatQuestions = [];
+    for (const q of data.questions) {
+      if (!q || !Array.isArray(q.variants) || q.variants.length === 0) continue;
+      const variant = pickRepresentativeVariant(q.variants);
+      if (!variant || typeof variant.questionText !== 'string' || !Array.isArray(variant.choices)) continue;
+
+      let correctAnswerIndex = variant.correctAnswerIndex;
+      if (variant.type === 'category') {
+        // "Select all that apply" type, reduced to a single answer for
+        // this single-answer runner: use its first listed correct choice.
+        // (Only reached when Category Selection is the only variant a
+        // collection has left.)
+        const idxs = Array.isArray(variant.correctAnswerIndices) ? variant.correctAnswerIndices : [];
+        correctAnswerIndex = idxs.length ? idxs[0] : 0;
+      }
+      if (typeof correctAnswerIndex !== 'number' || correctAnswerIndex < 0 || correctAnswerIndex >= variant.choices.length) continue;
+
+      const flat = {
+        questionText: variant.questionText,
+        choices: variant.choices,
+        correctAnswerIndex,
+        sourcePage: q.sourcePage,
+        targetTerm: q.targetTerm || '',
+        tier: q.tier,
+      };
+
+      // Bonus: if this collection also has a *different* Multiple Choice
+      // rephrasing sitting alongside the chosen variant, keep it as
+      // `rephrasedText` — Exam Level 4 ("Keyword Recognition") uses that
+      // field to occasionally swap in the alternate phrasing.
+      const rephrasedVariant = q.variants.find(v => v && v.type === 'rephrased' && v !== variant);
+      if (rephrasedVariant && typeof rephrasedVariant.questionText === 'string') {
+        flat.rephrasedText = rephrasedVariant.questionText;
+      }
+
+      flatQuestions.push(flat);
+    }
+
+    return Object.assign({}, data, { questions: flatQuestions });
+  }
+
+  // ---------- Validation ----------
+  function validateQuiz(data){
+    if(!data || typeof data !== 'object') throw new Error('Quiz data is not a valid object.');
+    if(!Array.isArray(data.questions) || data.questions.length === 0) throw new Error('Quiz must contain a non-empty "questions" array.');
+    for(const q of data.questions){
+      if(typeof q.questionText !== 'string' || !Array.isArray(q.choices) || typeof q.correctAnswerIndex !== 'number'){
+        throw new Error('One or more questions are missing required fields.');
+      }
+    }
+    return true;
+  }
+
+  function goToModeSelect(data){
+    quizData = data;
+    quizTitleDisplay.textContent = data.title || 'Untitled Quiz';
+    quizCountDisplay.textContent = `${data.questions.length} question${data.questions.length === 1 ? '' : 's'} loaded`;
+    selectedMode = null;
+    modeCards.forEach(c => c.classList.remove('selected'));
+    examLevelPanel.classList.add('hidden');
+    startBtn.classList.add('hidden');
+    modeError.classList.add('hidden');
+    clearError();
+    showScreen('mode');
+  }
+
+  // ---------- File upload ----------
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const data = normalizeQuizData(JSON.parse(reader.result));
+        validateQuiz(data);
+        quizHashDisplay.textContent = '';
+        goToModeSelect(data);
+      }catch(err){
+        showError('Failed to load file: ' + err.message);
+      }
+    };
+    reader.onerror = () => showError('Could not read the selected file.');
+    reader.readAsText(file);
+  });
+
+  // ---------- Quiz Code decoding (Base64URL, optional PBKDF2->AES-GCM decryption, gzip) ----------
+  async function decodeQuizCode(code){
+    const trimmed = (code || '').trim();
+    if(!trimmed) throw new Error('Paste a Quiz Code first.');
+
+    // Base64URL -> Base64
+    let b64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+    while(b64.length % 4) b64 += '=';
+
+    let bytes;
+    try{
+      const binaryString = atob(b64);
+      bytes = Uint8Array.from(binaryString, c => c.charCodeAt(0));
+    }catch(e){
+      throw new Error('Quiz Code is not valid Base64URL.');
+    }
+
+    // Optional AES-GCM decryption using PBKDF2-derived key
+    const runnerKeyEl = document.getElementById('runnerSecretKey');
+    const secretKey = runnerKeyEl ? runnerKeyEl.value : '';
+
+    const PBKDF2_ITERATIONS = 150000;
+    const SALT_LEN = 16;
+    const IV_LEN = 12;
+
+    let payloadBytes = bytes;
+
+    if(secretKey && bytes.length > (SALT_LEN + IV_LEN + 0)){
+      try{
+        const salt = bytes.slice(0, SALT_LEN);
+        const iv = bytes.slice(SALT_LEN, SALT_LEN + IV_LEN);
+        const ciphertext = bytes.slice(SALT_LEN + IV_LEN);
+
+        const enc = new TextEncoder();
+        const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(secretKey), { name: 'PBKDF2' }, false, ['deriveKey']);
+        const key = await crypto.subtle.deriveKey(
+          { name: 'PBKDF2', salt: salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+          keyMaterial,
+          { name: 'AES-GCM', length: 256 },
+          false,
+          ['decrypt']
+        );
+
+        let decryptedBuffer;
+        try{
+          decryptedBuffer = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, ciphertext);
+        }catch(e){
+          throw new Error('Decryption failed — wrong secret key or corrupted Quiz Code.');
+        }
+
+        payloadBytes = new Uint8Array(decryptedBuffer);
+      }catch(e){
+        if(e.message && e.message.startsWith('Decryption failed')) throw e;
+        throw new Error('Failed to derive key or decrypt Quiz Code.');
+      }
+    }
+
+    if(typeof DecompressionStream === 'undefined'){
+      throw new Error('This browser does not support DecompressionStream.');
+    }
+
+    const ds = new DecompressionStream('gzip');
+    const decompressedStream = new Blob([payloadBytes]).stream().pipeThrough(ds);
+    const text = await new Response(decompressedStream).text();
+    let data;
+    try{
+      data = JSON.parse(text);
+    }catch(e){
+      throw new Error('Decompressed data is not valid JSON.');
+    }
+    data = normalizeQuizData(data);
+
+    let hashHex = '';
+    if(window.crypto && window.crypto.subtle){
+      const hashBuffer = await crypto.subtle.digest('SHA-256', payloadBytes);
+      hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+
+    return { data, hash: hashHex };
+  }
+
+  // Toggle visibility
+  if(toggleRunnerKeyBtn && runnerSecretKey){
+    toggleRunnerKeyBtn.addEventListener('click', () => {
+      const isPassword = runnerSecretKey.type === 'password';
+      runnerSecretKey.type = isPassword ? 'text' : 'password';
+      toggleRunnerKeyBtn.textContent = isPassword ? 'Hide' : 'Show';
+    });
+  }
+
+  decodeCodeBtn.addEventListener('click', async () => {
+    try{
+      decodeCodeBtn.disabled = true;
+      decodeCodeBtn.textContent = 'Decoding...';
+      const { data, hash } = await decodeQuizCode(quizCodeInput.value);
+      validateQuiz(data);
+      goToModeSelect(data);
+      quizHashDisplay.textContent = hash ? `Integrity hash: ${hash.slice(0,16)}...` : '';
+    }catch(err){
+      showError('Failed to decode Quiz Code: ' + err.message);
+    }finally{
+      decodeCodeBtn.disabled = false;
+      decodeCodeBtn.textContent = 'Load From Code';
+    }
+  });
+
+  // ---------- Mode selection ----------
+  modeCards.forEach(card => {
+    card.addEventListener('click', () => {
+      selectedMode = card.dataset.mode;
+      modeCards.forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      examLevelPanel.classList.toggle('hidden', selectedMode !== 'exam');
+      startBtn.classList.remove('hidden');
+      modeError.classList.add('hidden');
+    });
+  });
+
+  // ---------- Difficulty Engine (Exam mode only) ----------
+  function shuffleArray(arr){
+    const a = arr.slice();
+    for(let i = a.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function shuffleChoicesKeepCorrect(q){
+    const indices = shuffleArray(q.choices.map((_, i) => i));
+    const newChoices = indices.map(i => q.choices[i]);
+    const newCorrectIndex = indices.indexOf(q.correctAnswerIndex);
+    return Object.assign({}, q, { choices: newChoices, correctAnswerIndex: newCorrectIndex });
+  }
+
+  function forceCorrectAtZero(q){
+    const correctChoice = q.choices[q.correctAnswerIndex];
+    const others = q.choices.filter((_, i) => i !== q.correctAnswerIndex);
+    const newChoices = [correctChoice, ...others];
+    return Object.assign({}, q, { choices: newChoices, correctAnswerIndex: 0 });
+  }
+
+  function prepareExamQuestions(questions, level){
+    let qs = questions.map(q => Object.assign({}, q));
+    switch(level){
+      case '1':
+        qs = qs.map(forceCorrectAtZero);
+        break;
+      case '2':
+        qs = qs.map(shuffleChoicesKeepCorrect);
+        break;
+      case '3':
+        qs = shuffleArray(qs).map(shuffleChoicesKeepCorrect);
+        break;
+      case '4':
+        qs = qs.map(q => {
+          let nq = Object.assign({}, q);
+          if(q.rephrasedText && Math.random() < 0.5){
+            nq.questionText = q.rephrasedText;
+          }
+          return shuffleChoicesKeepCorrect(nq);
+        });
+        break;
+      case '5':
+        qs = qs.filter(q => q.type === 'situational');
+        break;
+      case '6':
+        // Expertise mode: prefer explicitly marked expert/expertise questions or high difficulty
+        const filtered = qs.filter(q => q.type === 'expert' || (Array.isArray(q.tags) && q.tags.includes('expertise')) || (typeof q.difficulty === 'number' && q.difficulty >= 6));
+        if(filtered.length === 0){
+          // fallback to shuffled full set
+          qs = shuffleArray(qs).map(shuffleChoicesKeepCorrect);
+        }else{
+          qs = shuffleArray(filtered).map(shuffleChoicesKeepCorrect);
+        }
+        break;
+      default:
+        break;
+    }
+    return qs;
+  }
+
+  // ---------- Shared timer ----------
+  function startTimer(displayEls){
+    stopTimer();
+    displayEls.forEach(el => el.textContent = formatTime(elapsedSeconds));
+    timerInterval = setInterval(() => {
+      elapsedSeconds++;
+      const t = formatTime(elapsedSeconds);
+      displayEls.forEach(el => el.textContent = t);
+    }, 1000);
+  }
+  function stopTimer(){
+    if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
+  }
+  function formatTime(totalSeconds){
+    const mm = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const ss = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${mm}:${ss}`;
+  }
+
+  // ---------- Start button (branches by mode) ----------
+  startBtn.addEventListener('click', () => {
+    if(!selectedMode) return;
+
+    currentIndex = 0;
+    score = 0;
+    correctCount = 0;
+    elapsedSeconds = 0;
+
+    if(selectedMode === 'exam'){
+      currentLevel = levelSelect.value;
+      const prepared = prepareExamQuestions(quizData.questions, currentLevel);
+      if(prepared.length === 0){
+        modeError.textContent = 'No questions available for this level (e.g. no "situational" questions found). Try a different level.';
+        modeError.classList.remove('hidden');
+        return;
+      }
+      preparedQuestions = prepared;
+      startExamMode();
+    }else if(selectedMode === 'kahoot'){
+      preparedQuestions = quizData.questions.map(q => Object.assign({}, q));
+      startKahootMode();
+    }else if(selectedMode === 'flashcard'){
+      preparedQuestions = quizData.questions.map(q => Object.assign({}, q));
+      startFlashcardMode();
+    }
+  });
+
+  // =========================================================
+  // EXAM MODE
+  // =========================================================
+  const LEVEL_LABELS = {
+    '1':'Level 1 · Familiarization',
+    '2':'Level 2 · Partial Remembrance',
+    '3':'Level 3 · Memorization',
+    '4':'Level 4 · Deep Application',
+    '5':'Level 5 · Situational',
+    '6':'Level 6 — Expertise'
+  };
+
+  function startExamMode(){
+    examScoreDisplay.textContent = 'Score: 0';
+    examProgressBar.style.width = '0%';
+    showScreen('exam');
+    startTimer([examTimerDisplay]);
+    renderExamQuestion();
+  }
+
+  function renderExamQuestion(){
+    const q = preparedQuestions[currentIndex];
+    examAnswered = false;
+
+    examMeta.textContent = `Question ${currentIndex + 1} of ${preparedQuestions.length} · ${LEVEL_LABELS[currentLevel]}`;
+    examQuestionText.textContent = q.questionText;
+
+    choicesContainer.innerHTML = '';
+    q.choices.forEach((choice, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'choice-btn';
+      btn.type = 'button';
+      btn.textContent = choice;
+      btn.addEventListener('click', () => selectExamChoice(i));
+      choicesContainer.appendChild(btn);
+    });
+
+    examProgressBar.style.width = `${(currentIndex / preparedQuestions.length) * 100}%`;
+    examNextBtn.classList.add('hidden');
+  }
+
+  function selectExamChoice(selectedIndex){
+    if(examAnswered) return;
+    examAnswered = true;
+
+    const q = preparedQuestions[currentIndex];
+    const buttons = choicesContainer.querySelectorAll('.choice-btn');
+    buttons.forEach((btn, idx) => {
+      btn.disabled = true;
+      if(idx === q.correctAnswerIndex) btn.classList.add('correct');
+      else if(idx === selectedIndex) btn.classList.add('incorrect');
+    });
+
+    if(selectedIndex === q.correctAnswerIndex){
+      score++;
+      correctCount++;
+      examScoreDisplay.textContent = `Score: ${score}`;
+    }
+
+    examNextBtn.textContent = (currentIndex === preparedQuestions.length - 1) ? 'Finish Quiz →' : 'Next Question →';
+    examNextBtn.classList.remove('hidden');
+  }
+
+  examNextBtn.addEventListener('click', () => {
+    currentIndex++;
+    if(currentIndex >= preparedQuestions.length){
+      finishSession('exam');
+    }else{
+      renderExamQuestion();
+    }
+  });
+
+  // =========================================================
+  // KAHOOT MODE
+  // =========================================================
+  const KAHOOT_STYLES = [
+    { cls:'k-red', shape:'▲' },
+    { cls:'k-blue', shape:'♦' },
+    { cls:'k-yellow', shape:'●' },
+    { cls:'k-green', shape:'■' }
+  ];
+
+  function startKahootMode(){
+    kahootScoreDisplay.textContent = 'Points: 0';
+    kahootProgressBar.style.width = '0%';
+    showScreen('kahoot');
+    startTimer([kahootElapsedDisplay]);
+    renderKahootQuestion();
+  }
+
+  function renderKahootQuestion(){
+    const q = preparedQuestions[currentIndex];
+    kahootAnswered = false;
+    kahootPointsFlash.textContent = '';
+
+    kahootMeta.textContent = `Question ${currentIndex + 1} of ${preparedQuestions.length} · Kahoot Mode`;
+    kahootQuestionText.textContent = q.questionText;
+
+    kahootGrid.innerHTML = '';
+    q.choices.forEach((choice, i) => {
+      const style = KAHOOT_STYLES[i % KAHOOT_STYLES.length];
+      const btn = document.createElement('button');
+      btn.className = `kahoot-tile ${style.cls}`;
+      btn.type = 'button';
+      btn.innerHTML = `<span class="k-shape">${style.shape}</span><span>${choice}</span>`;
+      btn.addEventListener('click', () => selectKahootChoice(i));
+      kahootGrid.appendChild(btn);
+    });
+
+    kahootProgressBar.style.width = `${(currentIndex / preparedQuestions.length) * 100}%`;
+
+    kahootRemainingMs = KAHOOT_TIME_LIMIT * 1000;
+    updateKahootTimerUI();
+    if(kahootTickInterval) clearInterval(kahootTickInterval);
+    kahootTickInterval = setInterval(() => {
+      kahootRemainingMs -= 100;
+      if(kahootRemainingMs <= 0){
+        kahootRemainingMs = 0;
+        updateKahootTimerUI();
+        clearInterval(kahootTickInterval);
+        if(!kahootAnswered) handleKahootTimeout();
+      }else{
+        updateKahootTimerUI();
+      }
+    }, 100);
+  }
+
+  function updateKahootTimerUI(){
+    const pct = (kahootRemainingMs / (KAHOOT_TIME_LIMIT * 1000)) * 100;
+    kahootTimerFill.style.width = `${pct}%`;
+    kahootTimerNum.textContent = `${Math.ceil(kahootRemainingMs / 1000)}s`;
+  }
+
+  function selectKahootChoice(selectedIndex){
+    if(kahootAnswered) return;
+    kahootAnswered = true;
+    if(kahootTickInterval) clearInterval(kahootTickInterval);
+
+    const q = preparedQuestions[currentIndex];
+    const tiles = kahootGrid.querySelectorAll('.kahoot-tile');
+    const isCorrect = selectedIndex === q.correctAnswerIndex;
+
+    tiles.forEach((tile, idx) => {
+      tile.disabled = true;
+      if(idx === q.correctAnswerIndex){
+        tile.classList.add('k-correct');
+      }else{
+        tile.classList.add('k-faded');
+        if(idx === selectedIndex) tile.classList.add('k-wrong');
+      }
+    });
+
+    let earned = 0;
+    if(isCorrect){
+      const fraction = kahootRemainingMs / (KAHOOT_TIME_LIMIT * 1000);
+      earned = Math.max(100, Math.round(1000 * fraction));
+      score += earned;
+      correctCount++;
+      kahootPointsFlash.textContent = `+${earned} points!`;
+    }else{
+      kahootPointsFlash.textContent = 'No points';
+    }
+    kahootScoreDisplay.textContent = `Points: ${score}`;
+
+    setTimeout(() => advanceKahoot(), 1400);
+  }
+
+  function handleKahootTimeout(){
+    kahootAnswered = true;
+    const q = preparedQuestions[currentIndex];
+    const tiles = kahootGrid.querySelectorAll('.kahoot-tile');
+    tiles.forEach((tile, idx) => {
+      tile.disabled = true;
+      if(idx === q.correctAnswerIndex) tile.classList.add('k-correct');
+      else tile.classList.add('k-faded');
+    });
+    kahootPointsFlash.textContent = "Time's up!";
+    setTimeout(() => advanceKahoot(), 1400);
+  }
+
+  function advanceKahoot(){
+    currentIndex++;
+    if(currentIndex >= preparedQuestions.length){
+      finishSession('kahoot');
+    }else{
+      renderKahootQuestion();
+    }
+  }
+
+  // =========================================================
+  // FLASHCARD MODE
+  // =========================================================
+  function startFlashcardMode(){
+    flashScoreDisplay.textContent = 'Knew It: 0';
+    flashProgressBar.style.width = '0%';
+    showScreen('flashcard');
+    startTimer([flashElapsedDisplay]);
+    renderFlashcard();
+  }
+
+  function renderFlashcard(){
+    const q = preparedQuestions[currentIndex];
+    flashRevealed = false;
+    flashCard.classList.remove('flipped');
+    flashGradeBtns.classList.add('hidden');
+    flashHint.textContent = 'Tap the card to reveal the answer';
+    flashHint.classList.remove('hidden');
+
+    flashMeta.textContent = `Card ${currentIndex + 1} of ${preparedQuestions.length} · Flashcard Mode`;
+    flashFront.textContent = q.questionText;
+    flashBack.textContent = q.choices[q.correctAnswerIndex];
+
+    flashProgressBar.style.width = `${(currentIndex / preparedQuestions.length) * 100}%`;
+  }
+
+  flashCard.addEventListener('click', () => {
+    if(flashRevealed) return;
+    flashRevealed = true;
+    flashCard.classList.add('flipped');
+    flashHint.classList.add('hidden');
+    flashGradeBtns.classList.remove('hidden');
+  });
+
+  function gradeFlashcard(knewIt){
+    if(knewIt){
+      score++;
+      correctCount++;
+      flashScoreDisplay.textContent = `Knew It: ${score}`;
+    }
+    currentIndex++;
+    if(currentIndex >= preparedQuestions.length){
+      finishSession('flashcard');
+    }else{
+      renderFlashcard();
+    }
+  }
+
+  flashKnewBtn.addEventListener('click', () => gradeFlashcard(true));
+  flashDidntBtn.addEventListener('click', () => gradeFlashcard(false));
+
+  // =========================================================
+  // RESULTS
+  // =========================================================
+  function finishSession(mode){
+    stopTimer();
+    if(kahootTickInterval) clearInterval(kahootTickInterval);
+
+    const total = preparedQuestions.length;
+    const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+
+    if(mode === 'exam'){
+      resultLabel1.textContent = 'Score';
+      resultValue1.textContent = `${score} / ${total}`;
+    }else if(mode === 'kahoot'){
+      resultLabel1.textContent = 'Points';
+      resultValue1.textContent = `${score}`;
+    }else if(mode === 'flashcard'){
+      resultLabel1.textContent = 'Knew It';
+      resultValue1.textContent = `${score} / ${total}`;
+    }
+
+    resultLabel2.textContent = mode === 'flashcard' ? 'Retention' : 'Accuracy';
+    resultValue2.textContent = `${accuracy}%`;
+    resultValue3.textContent = formatTime(elapsedSeconds);
+
+    showScreen('results');
+  }
+
+  restartBtn.addEventListener('click', () => {
+    if(quizData) goToModeSelect(quizData);
+  });
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz Maker — Author &amp; Sync</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          void: '#0b0f14',
+          panel: '#121821',
+          card: '#161e29',
+          cardhover: '#1b2431',
+          edge: '#243040',
+          ink: '#e7edf5',
+          mute: '#8296ab',
+          amber: '#f5b942',
+          amberdim: '#8a6a2a',
+          violet: '#8b7bf0',
+          danger: '#ef5765',
+        },
+        fontFamily: {
+          mono: ['"Space Mono"', 'monospace'],
+          sans: ['Inter', 'sans-serif'],
+        },
+        keyframes: {
+          beacon: {
+            '0%, 100%': { opacity: 1 },
+            '50%': { opacity: 0.35 },
+          },
+        },
+        animation: {
+          beacon: 'beacon 1.6s ease-in-out infinite',
+        },
+      },
+    },
+  };
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="config.js"></script>
+<script src="gemini-classifier.js"></script>
+
+<link rel="stylesheet" href="styles.css">
+
+</head>
+<body class="h-full bg-void text-ink font-sans antialiased">
+
+  <!-- Header -->
+  <header class="h-16 shrink-0 border-b border-edge bg-panel flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-8 h-8 rounded bg-amber/10 border border-amber/40 flex items-center justify-center font-mono text-amber text-sm shrink-0">Q</div>
+      <div class="min-w-0">
+        <p class="font-mono text-[0.65rem] tracking-widest text-mute uppercase leading-none">Quiz Maker</p>
+        <input id="quizTitle" type="text" value="Untitled Quiz"
+          class="bg-transparent border-none p-0 mt-0.5 text-sm font-semibold text-ink focus:outline-none focus:ring-0 w-48 sm:w-72 truncate" />
+      </div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <span id="questionCount" class="hidden sm:inline font-mono text-xs text-mute">0 questions</span>
+      <button id="exportJsonBtn"
+        class="font-mono text-xs tracking-wide uppercase border border-edge hover:border-amber hover:text-amber text-ink px-3 py-2 rounded transition-colors">
+        Export JSON
+      </button>
+      <button id="quizCodeBtn"
+        class="font-mono text-xs tracking-wide uppercase bg-amber hover:bg-amber/90 text-void font-bold px-4 py-2 rounded transition-colors">
+        Quiz Code →
+      </button>
+    </div>
+  </header>
+
+  <!-- Main: fixed 3-column layout (stacks to 1 column below lg) -->
+  <main id="layoutRoot" class="grid grid-cols-1 lg:grid-cols-3 gap-4 max-w-[1700px] mx-auto w-full px-4 lg:px-6 py-6">
+
+    <!-- ================= PANE 1 — Active Question & Choices ================= -->
+    <section id="pane1" class="space-y-4 min-w-0 lg:overflow-y-auto lg:max-h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem] pr-1">
+
+      <!-- Import Document -->
+      <details id="importDetails" class="bg-card border border-edge rounded-lg p-4 lg:p-5" open>
+        <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Import Document</summary>
+        <p class="text-sm text-mute mb-3 mt-2">Upload a PDF or PPTX and an AI model will generate question cards automatically, each mapped back to its source page or slide.</p>
+
+        <div class="grid grid-cols-1 gap-3 mb-3">
+          <div>
+            <label class="field-label" for="apiKeyInput">API Key</label>
+            <div class="flex gap-2">
+              <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false"
+                placeholder="AIza… (Gemini) or sk-… (OpenAI)"
+                class="input-base flex-1" />
+              <button id="toggleApiKeyBtn" type="button" class="icon-btn">Show</button>
+            </div>
+          </div>
+          <div>
+            <label class="field-label" for="modelSelect">Model</label>
+            <div class="flex gap-2">
+              <select id="modelSelect" class="input-base flex-1">
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                <option value="gpt-4o-mini">GPT-4o mini</option>
+                <option value="gpt-4o">GPT-4o</option>
+              </select>
+              <button id="detectModelsBtn" type="button" class="icon-btn" title="Query the key's available models">Detect</button>
+            </div>
+            <p id="modelDetectStatus" class="hidden mt-1 text-[0.65rem] font-mono text-mute"></p>
+          </div>
+        </div>
+        <p class="text-xs text-mute mb-3">Defaults from <code class="text-ink">config.js</code>; overrides you type here are saved to this browser's local storage. Sent directly to the selected provider's API — never to us.</p>
+
+        <label class="inline-flex items-center gap-2 font-mono text-xs tracking-wide uppercase border border-edge hover:border-amber hover:text-amber text-ink px-3 py-2 rounded cursor-pointer transition-colors">
+          Choose file(s)
+          <!-- UPDATE 2A: `multiple` lets a person select more than one
+               PDF/PPTX at once; main.js's change handler now gives each
+               selected file its own state.sources[] entry instead of
+               replacing whatever was already imported. -->
+          <input id="pdfFileInput" type="file" multiple
+            accept=".pdf, .pptx, application/pdf, application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            class="hidden" />
+        </label>
+        <p id="parseStatus" class="hidden mt-3 text-xs font-mono text-mute"></p>
+
+        <!-- UPDATE 2A: minimal, non-draggable placeholder list of every
+             imported source (filename + question count), rendered by
+             main.js's renderSourceList(), so multi-file import is
+             visually confirmable this session. Starts hidden/empty —
+             Update 2B replaces this with the real drag-to-reorder
+             slide-sorter stack; don't mistake this for the final
+             design. -->
+        <div id="sourceList" class="hidden mt-3 space-y-1"></div>
+      </details>
+
+      <!-- Question nav -->
+      <div class="flex items-center justify-between">
+        <h2 class="font-mono text-xs tracking-widest text-mute uppercase">Questions</h2>
+        <div class="flex items-center gap-2">
+          <button id="scanRangeBtn" type="button"
+            title="Run the AI question scan over just a specific page or page range"
+            class="font-mono text-xs tracking-wide uppercase border border-edge hover:border-violet hover:text-violet text-ink px-3 py-1.5 rounded transition-colors">
+            🔎 Scan Pages
+          </button>
+          <button id="removeDuplicatesBtn" type="button"
+            title="Delete every flagged possible-duplicate question, except ones classified as an Extension"
+            class="font-mono text-xs tracking-wide uppercase border border-edge hover:border-danger hover:text-danger text-ink px-3 py-1.5 rounded transition-colors">
+            Remove Duplicates
+          </button>
+          <button id="addQuestionBtn"
+            class="font-mono text-xs tracking-wide uppercase border border-edge hover:border-amber hover:text-amber text-ink px-3 py-1.5 rounded transition-colors">
+            + Add Question
+          </button>
+        </div>
+      </div>
+      <!-- Update 1 (paginated nav-chip bar): questionNavGroup wraps the
+           chip grid + its pager so a single keydown listener on the
+           group (see editor-render.js) can catch Left/Right without a
+           document-level listener. questionNavPager starts hidden;
+           renderQuestionNav() only un-hides it once there's more than
+           one page of chips (20+ questions). -->
+      <div id="questionNavGroup" class="space-y-2">
+        <div id="questionNav" class="flex flex-wrap gap-1.5"></div>
+        <div id="questionNavPager" class="hidden items-center gap-1 font-mono text-xs"></div>
+      </div>
+
+      <!-- Active Question Card + Choices Card -->
+      <div id="activeEditor"></div>
+
+      <div id="emptyState" class="hidden text-center py-16 border border-dashed border-edge rounded-lg">
+        <p class="font-mono text-xs text-mute tracking-wide">No questions yet.</p>
+        <p class="text-sm text-mute mt-1">Add one, or upload a document above to auto-generate a set.</p>
+      </div>
+
+    </section>
+
+    <!-- ================= PANE 2 — Text version of the data ================= -->
+    <section id="pane2" class="bg-panel border border-edge rounded-lg overflow-hidden flex flex-col min-w-0 lg:h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
+      <div class="shrink-0 border-b border-edge px-4 py-3 flex items-center justify-between gap-2">
+        <span class="font-mono text-xs tracking-widest text-mute uppercase">Text version of the data</span>
+        <button id="formatLayoutBtn" type="button"
+          class="font-mono text-[0.62rem] tracking-wide uppercase border border-edge hover:border-amber hover:text-amber text-mute px-2 py-1 rounded transition-colors">
+          ✨ Format Layout (AI)
+        </button>
+        <button id="recheckHighlightsBtn" type="button" title="Re-scan every question's snippet against the current Pane 2 text and re-highlight anything that's missing or only partially highlighted"
+          class="font-mono text-[0.62rem] tracking-wide uppercase border border-edge hover:border-violet hover:text-violet text-mute px-2 py-1 rounded transition-colors">
+          🔄 Sync Highlights
+        </button>
+        <span id="selectionHint" class="hidden sm:inline font-mono text-[0.62rem] text-mute text-right">Highlight text → generate a question</span>
+      </div>
+      <div id="docTextViewport" class="flex-1 overflow-y-auto p-4 lg:p-5">
+        <div id="docTextContainer" class="text-sm leading-relaxed text-ink/90"></div>
+      </div>
+      <div id="selectionGenStatus" class="hidden shrink-0 border-t border-edge px-4 py-2 text-xs font-mono"></div>
+    </section>
+
+    <!-- ================= PANE 3 — Visual document preview ================= -->
+    <section id="pane3" class="flex flex-col bg-panel border border-edge rounded-lg overflow-hidden min-w-0 lg:h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
+
+      <div class="shrink-0 border-b border-edge px-4 py-3 flex flex-wrap items-center gap-3">
+        <span id="docPanelTitle" class="font-mono text-xs text-mute truncate max-w-[10rem]">No document loaded</span>
+
+        <div class="flex items-center gap-1.5 ml-auto">
+          <button id="prevPageBtn" disabled
+            class="w-8 h-8 flex items-center justify-center rounded border border-edge text-ink disabled:opacity-30 disabled:cursor-not-allowed hover:border-amber hover:text-amber transition-colors">
+            ‹
+          </button>
+          <input id="pageInput" type="number" min="1" value="1" disabled
+            class="w-14 text-center bg-void border border-edge rounded py-1.5 font-mono text-sm disabled:opacity-30" />
+          <span class="font-mono text-xs text-mute">/ <span id="totalPages">0</span></span>
+          <button id="nextPageBtn" disabled
+            class="w-8 h-8 flex items-center justify-center rounded border border-edge text-ink disabled:opacity-30 disabled:cursor-not-allowed hover:border-amber hover:text-amber transition-colors">
+            ›
+          </button>
+        </div>
+
+        <select id="scanCurrentPageType" title="Type of question to look for when scanning this page"
+          class="font-mono text-[0.62rem] uppercase tracking-wide bg-void border border-edge rounded px-1.5 py-1.5 text-ink focus:outline-none focus:border-violet">
+          <option value="mixed">Mixed</option>
+          <option value="clamp">Multiple Choice</option>
+          <option value="true_false">True / False</option>
+          <option value="category">Category Selection</option>
+        </select>
+        <button id="scanCurrentPageBtn" type="button" disabled
+          title="Run the AI question scan on just this page"
+          class="font-mono text-[0.62rem] tracking-wide uppercase border border-edge hover:border-violet hover:text-violet text-ink disabled:opacity-30 disabled:cursor-not-allowed px-2 py-1.5 rounded transition-colors whitespace-nowrap">
+          🔎 Scan This Page
+        </button>
+
+        <div id="syncBadge" class="hidden font-mono text-xs items-center gap-1.5 text-amber">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber animate-beacon"></span>
+          <span id="syncBadgeText">synced → p.—</span>
+        </div>
+      </div>
+
+      <!-- Chips for every question sourced from whichever page is
+           currently shown above — lets you jump between several
+           questions tied to the same source page without leaving
+           Pane 3. Hidden whenever the current page has none. -->
+      <div id="pane3QuestionNav" class="hidden shrink-0 border-b border-edge px-4 py-2.5 flex flex-wrap gap-1.5"></div>
+
+      <div id="pdfViewport" class="flex-1 overflow-auto flex items-start justify-center p-4 lg:p-6">
+        <div id="pdfEmptyState" class="text-center py-24 max-w-xs">
+          <p class="font-mono text-xs text-mute tracking-wide">No document loaded.</p>
+          <p class="text-sm text-mute mt-1">Load a PDF or PPTX to preview each question's source page.</p>
+        </div>
+        <canvas id="pdfCanvas" class="hidden shadow-2xl shadow-black/50 rounded"></canvas>
+        <div id="slideTextPreview" class="hidden w-full bg-card border border-edge rounded-lg p-5 text-sm text-ink"></div>
+        <div id="pptxTier1Container" class="hidden w-full"></div>
+        <div id="pptxTier2Container" class="hidden w-full"></div>
+        <div id="pptxLoadingState" class="hidden w-full text-center py-24 max-w-xs mx-auto">
+          <p class="font-mono text-xs text-mute tracking-wide animate-beacon">Loading slide visual…</p>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Floating "generate from selection" toolbar -->
+  <div id="selectionToolbar" class="hidden fixed z-40 flex items-stretch gap-1.5 bg-panel border border-edge rounded shadow-2xl shadow-black/50 p-1.5">
+    <select id="selectionQuestionType" title="Type of question to generate from the selection"
+      class="font-mono text-[0.68rem] uppercase tracking-wide bg-void border border-edge rounded px-2 text-ink focus:outline-none focus:border-amber">
+      <option value="clamp">Multiple Choice</option>
+      <option value="true_false">True / False</option>
+      <option value="category">Category Selection</option>
+    </select>
+    <button id="selectionGenerateBtn" type="button"
+      class="font-mono text-xs tracking-wide bg-amber hover:bg-amber/90 text-void font-bold px-3 py-2 rounded whitespace-nowrap">
+      ⚡ Generate Question from Selection
+    </button>
+  </div>
+
+  <!-- Quiz Code modal -->
+  <div id="quizCodeModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-panel border border-edge rounded-lg max-w-lg w-full p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-mono text-sm uppercase tracking-wide text-amber">Generate Quiz Code</h3>
+        <button id="closeModalBtn" class="text-mute hover:text-ink text-lg leading-none">✕</button>
+      </div>
+      <p class="text-sm text-mute">Compresses (gzip) and encrypts (AES-256-GCM, PBKDF2-derived key) the current quiz into a Base64URL Quiz Code, compatible with <code class="text-ink">offline-quiz-runner.html</code>.</p>
+
+      <div>
+        <label class="field-label">Secret key</label>
+        <div class="flex gap-2">
+          <input id="secretKeyInput" type="text" class="input-base flex-1" placeholder="Auto-generated (optional)">
+          <button id="copySecretBtn" type="button" class="icon-btn">Copy</button>
+          <button id="regenSecretBtn" type="button" class="icon-btn">Regenerate</button>
+        </div>
+      </div>
+
+      <button id="generateCodeBtn" class="w-full font-mono text-xs tracking-wide uppercase bg-amber hover:bg-amber/90 text-void font-bold px-4 py-2.5 rounded transition-colors">
+        Generate →
+      </button>
+
+      <div id="codeResultBox" class="hidden space-y-2">
+        <label class="field-label">Quiz Code</label>
+        <textarea id="quizCodeOutput" readonly rows="4" class="input-base font-mono text-xs"></textarea>
+        <button id="copyCodeBtn" type="button" class="icon-btn">Copy</button>
+      </div>
+
+      <div id="modalError" class="hidden text-xs text-danger font-mono"></div>
+    </div>
+  </div>
+
+  <!-- Scan Page Range modal -->
+  <div id="scanRangeModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-panel border border-edge rounded-lg max-w-lg w-full p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-mono text-sm uppercase tracking-wide text-violet">Scan a Page Range</h3>
+        <button id="closeScanRangeModalBtn" class="text-mute hover:text-ink text-lg leading-none">✕</button>
+      </div>
+      <p class="text-sm text-mute">Runs the same 3-pass AI scan used on import, but only against the pages you pick — handy for re-scanning a slide you edited, or covering pages the first pass skipped. New questions are added alongside your existing ones.</p>
+
+      <div class="flex items-end gap-3">
+        <div class="flex-1">
+          <label class="field-label" for="scanFromPage">From page</label>
+          <input id="scanFromPage" type="number" min="1" class="input-base" />
+        </div>
+        <div class="flex-1">
+          <label class="field-label" for="scanToPage">To page</label>
+          <input id="scanToPage" type="number" min="1" class="input-base" />
+        </div>
+      </div>
+      <div>
+        <label class="field-label" for="scanQuestionType">Question type</label>
+        <select id="scanQuestionType" class="input-base">
+          <option value="mixed">Mixed (AI decides per concept)</option>
+          <option value="clamp">Multiple Choice</option>
+          <option value="true_false">True / False</option>
+          <option value="category">Category Selection</option>
+        </select>
+      </div>
+      <p id="scanRangeHint" class="text-[0.7rem] font-mono text-mute"></p>
+
+      <button id="scanRangeGenerateBtn" class="w-full font-mono text-xs tracking-wide uppercase bg-violet hover:bg-violet/90 text-void font-bold px-4 py-2.5 rounded transition-colors">
+        Scan →
+      </button>
+
+      <p id="scanRangeStatus" class="hidden text-xs font-mono"></p>
+      <div id="scanRangeError" class="hidden text-xs text-danger font-mono"></div>
+    </div>
+  </div>
+
+
+<script type="module" src="main.js"></script>
+
+</body>
+</html>
