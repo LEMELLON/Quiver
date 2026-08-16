@@ -344,6 +344,75 @@ async function renderPptxTier1(container, file, pageNumber) {
 // SWAP note at the top of this file) — a plain container clear is safe
 // again now that Tier 1 never leaves a shared, reused node behind.
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// UPDATE2_SLIDE_PANE_PROMPT.md: factored out of renderPptxTier2 (below)
+// so the new source-stack thumbnail helper (getPptxThumbnailDataUrl,
+// further down) can reuse the exact same <p:pic>/<a:blip> resolution
+// logic instead of duplicating it. Pure extraction — the XML/rels
+// parsing here is byte-for-byte what renderPptxTier2 always did
+// inline. Returns the resolved Blobs (or null on any failure/no-
+// pictures-found case) rather than touching the DOM at all; each
+// caller decides what to do with them.
+// ---------------------------------------------------------------------
+async function resolveSlideImageBlobs(zip, pageNumber) {
+  if (!zip) return null;
+  const slidePath = `ppt/slides/slide${pageNumber}.xml`;
+  const relsPath = `ppt/slides/_rels/slide${pageNumber}.xml.rels`;
+  const slideFile = zip.file(slidePath);
+  const relsFile = zip.file(relsPath);
+  if (!slideFile || !relsFile) {
+    console.log(`[pptx-render] resolveSlideImageBlobs: false — ${slidePath} or its .rels file not found in the zip`, { hasSlideFile: !!slideFile, hasRelsFile: !!relsFile });
+    return null;
+  }
+
+  const [slideXml, relsXml] = await Promise.all([
+    slideFile.async('string'),
+    relsFile.async('string'),
+  ]);
+
+  const parser = new DOMParser();
+  const slideDoc = parser.parseFromString(slideXml, 'application/xml');
+  const relsDoc = parser.parseFromString(relsXml, 'application/xml');
+
+  // rId -> media target, from the slide's own .rels file.
+  const relTargets = {};
+  const relNodes = relsDoc.getElementsByTagName('Relationship');
+  for (let i = 0; i < relNodes.length; i++) {
+    const id = relNodes[i].getAttribute('Id');
+    const target = relNodes[i].getAttribute('Target');
+    if (id && target) relTargets[id] = target;
+  }
+
+  const blipNodes = slideDoc.getElementsByTagName('a:blip');
+  const mediaPaths = [];
+  for (let i = 0; i < blipNodes.length; i++) {
+    const rId = blipNodes[i].getAttribute('r:embed');
+    const target = rId && relTargets[rId];
+    if (!target) continue;
+    // Targets are relative to ppt/slides/, e.g. "../media/image1.png".
+    const resolved = new URL(target, 'https://pptx.local/ppt/slides/').pathname.replace(/^\//, '');
+    mediaPaths.push(resolved);
+  }
+  if (mediaPaths.length === 0) {
+    console.log(`[pptx-render] resolveSlideImageBlobs: false — no <a:blip r:embed> picture references found on slide ${pageNumber}`, { blipNodeCount: blipNodes.length });
+    return null;
+  }
+
+  const blobs = await Promise.all(
+    mediaPaths.map(async (path) => {
+      const entry = zip.file(path);
+      if (!entry) return null;
+      try { return await entry.async('blob'); } catch { return null; }
+    })
+  );
+  const validBlobs = blobs.filter(Boolean);
+  if (validBlobs.length === 0) {
+    console.log(`[pptx-render] resolveSlideImageBlobs: false — found ${mediaPaths.length} media reference(s) but none resolved to a blob`, { mediaPaths });
+    return null;
+  }
+  return validBlobs;
+}
+
 async function renderPptxTier2(container, zip, pageNumber) {
   console.log(`[pptx-render] Tier 2: attempting slide ${pageNumber}`);
 
@@ -352,60 +421,8 @@ async function renderPptxTier2(container, zip, pageNumber) {
     return false;
   }
   try {
-    const slidePath = `ppt/slides/slide${pageNumber}.xml`;
-    const relsPath = `ppt/slides/_rels/slide${pageNumber}.xml.rels`;
-    const slideFile = zip.file(slidePath);
-    const relsFile = zip.file(relsPath);
-    if (!slideFile || !relsFile) {
-      console.log(`[pptx-render] Tier 2: false — ${slidePath} or its .rels file not found in the zip`, { hasSlideFile: !!slideFile, hasRelsFile: !!relsFile });
-      return false;
-    }
-
-    const [slideXml, relsXml] = await Promise.all([
-      slideFile.async('string'),
-      relsFile.async('string'),
-    ]);
-
-    const parser = new DOMParser();
-    const slideDoc = parser.parseFromString(slideXml, 'application/xml');
-    const relsDoc = parser.parseFromString(relsXml, 'application/xml');
-
-    // rId -> media target, from the slide's own .rels file.
-    const relTargets = {};
-    const relNodes = relsDoc.getElementsByTagName('Relationship');
-    for (let i = 0; i < relNodes.length; i++) {
-      const id = relNodes[i].getAttribute('Id');
-      const target = relNodes[i].getAttribute('Target');
-      if (id && target) relTargets[id] = target;
-    }
-
-    const blipNodes = slideDoc.getElementsByTagName('a:blip');
-    const mediaPaths = [];
-    for (let i = 0; i < blipNodes.length; i++) {
-      const rId = blipNodes[i].getAttribute('r:embed');
-      const target = rId && relTargets[rId];
-      if (!target) continue;
-      // Targets are relative to ppt/slides/, e.g. "../media/image1.png".
-      const resolved = new URL(target, 'https://pptx.local/ppt/slides/').pathname.replace(/^\//, '');
-      mediaPaths.push(resolved);
-    }
-    if (mediaPaths.length === 0) {
-      console.log(`[pptx-render] Tier 2: false — no <a:blip r:embed> picture references found on slide ${pageNumber}`, { blipNodeCount: blipNodes.length });
-      return false;
-    }
-
-    const blobs = await Promise.all(
-      mediaPaths.map(async (path) => {
-        const entry = zip.file(path);
-        if (!entry) return null;
-        try { return await entry.async('blob'); } catch { return null; }
-      })
-    );
-    const validBlobs = blobs.filter(Boolean);
-    if (validBlobs.length === 0) {
-      console.log(`[pptx-render] Tier 2: false — found ${mediaPaths.length} media reference(s) but none resolved to a blob`, { mediaPaths });
-      return false;
-    }
+    const validBlobs = await resolveSlideImageBlobs(zip, pageNumber);
+    if (!validBlobs) return false; // resolveSlideImageBlobs already logged the specific reason
 
     container.innerHTML = '';
     validBlobs.forEach((blob) => {
@@ -424,4 +441,56 @@ async function renderPptxTier2(container, zip, pageNumber) {
   }
 }
 
-export { renderPptxTier1, renderPptxTier2, teardownTier1Scaling };
+// ---------------------------------------------------------------------
+// Source-stack thumbnail (new — see UPDATE2_SLIDE_PANE_PROMPT.md,
+// "Which renderer to reuse for the thumbnail"). DELIBERATELY reuses
+// Tier 2's cheap embedded-image extraction (resolveSlideImageBlobs
+// above) rather than Tier 1's full @aiden0z/pptx-renderer visual
+// reconstruction — stated trade-off:
+//   - Tier 1 (renderPptxTier1) is a full OOXML parse + shape/table/
+//     chart/SmartArt render via an external CDN library, built to
+//     serve Pane 3's ONE currently-viewed slide. Running that once per
+//     imported source purely to produce a ~64px card thumbnail nobody
+//     is actively looking at yet is a heavy way to answer "what's
+//     roughly on this slide," and this runs at import time across a
+//     whole batch of sources, not once for a single active view.
+//   - Tier 2's approach (pull the slide's own embedded pictures
+//     straight out of the already-in-memory JSZip, no external library,
+//     no network) is nearly free per source and, at thumbnail scale, a
+//     rough "here's a picture from this slide" preview reads fine even
+//     though it isn't a full laid-out render.
+//   - Honest cost of that choice: a text-only slide with no embedded
+//     picture yields no thumbnail at all — the caller (main.js's
+//     renderSourceList()) falls back to a plain text badge in that
+//     case. Tier 1 could in principle still have produced a real visual
+//     for a text-only slide. Judged an acceptable trade for keeping
+//     import-time cost low across a whole batch, especially since nothing
+//     stops a later pass from upgrading this to Tier 1 if that gap turns
+//     out to matter in practice.
+//
+// Returns a PERSISTENT `data:` URL (via FileReader), not an object URL:
+// Tier 2's own container render revokes its object URLs the instant
+// each <img> loads, which is fine there (Pane 3's pixels are already
+// painted by then) but wrong here — the caller caches this string on
+// source.thumbnailDataUrl and reuses it across many later
+// renderSourceList() redraws, so a revoked object URL would go stale
+// (broken image) the moment the next redraw runs.
+// ---------------------------------------------------------------------
+async function getPptxThumbnailDataUrl(zip, pageNumber) {
+  try {
+    const validBlobs = await resolveSlideImageBlobs(zip, pageNumber);
+    if (!validBlobs) return null;
+    const blob = validBlobs[0]; // first embedded picture only — a thumbnail card has no room for Tier 2's stacked multi-image gallery
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error('[pptx-render] thumbnail generation failed:', e);
+    return null;
+  }
+}
+
+export { renderPptxTier1, renderPptxTier2, teardownTier1Scaling, getPptxThumbnailDataUrl };

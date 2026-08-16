@@ -50,11 +50,22 @@
      more than one file has been imported — draggable to reorder, which
      drives the Q01/Q02/... renumbering (see main.js's renderSourceList()
      and question-model.js's sortQuestionsByPage()). Replaces 2A's
-     plain, non-draggable .source-list-item of the same shape. */
+     plain, non-draggable .source-list-item of the same shape.
+
+     UPDATE2_SLIDE_PANE_PROMPT.md item 1: each row now also carries a
+     thumbnail (.source-stack-thumb) alongside the filename/count, which
+     are now grouped under .source-stack-meta. Rows stay a VERTICAL
+     stack (not a grid) on purpose — main.js's existing drag-reorder
+     dragover math positions the dragged row based on the target row's
+     vertical midpoint (e.rect.top / rect.height), which only makes
+     sense for a top-to-bottom list; that confirmed-working logic was
+     explicitly out of scope to touch, so each "slide" is a wider row
+     with its thumbnail on the left, rather than a PowerPoint-style
+     multi-column grid. */
   .source-stack-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.6rem;
     font-family: 'Space Mono', monospace;
     font-size: 0.72rem;
     color: #8296ab;
@@ -76,12 +87,77 @@
     opacity: 0.4;
     cursor: grabbing;
   }
+
+  /* UPDATE2_SLIDE_PANE_PROMPT.md item 1 — the slide-sorter-style
+     preview box. White background (matches #pptxTier1Container's own
+     convention elsewhere in this file — slides render on white, so a
+     dark card background behind a thumbnail would look like a stray
+     border rather than intentional). Sized for a small stack row, not
+     a big preview — see main.js's generatePdfThumbnail() for how the
+     actual pixel resolution is chosen. */
+  .source-stack-thumb {
+    flex-shrink: 0;
+    width: 64px;
+    height: 48px;
+    border-radius: 0.25rem;
+    overflow: hidden;
+    background: #ffffff;
+    border: 1px solid #243040;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .source-stack-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  /* Shown while main.js's ensureSourceThumbnail() is generating the
+     thumbnail for the first time — a small spinner rather than a blank
+     white box, so an in-progress card doesn't read as broken. */
+  .source-stack-thumb-loading {
+    background: #0f151d;
+    position: relative;
+  }
+  .source-stack-thumb-loading::after {
+    content: '';
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid #243040;
+    border-top-color: #f5b942;
+    animation: source-thumb-spin 0.8s linear infinite;
+  }
+  @keyframes source-thumb-spin {
+    to { transform: rotate(360deg); }
+  }
+  /* Shown when thumbnail generation permanently failed (e.g. a
+     text-only pptx slide with no embedded picture — see
+     pptx-render.js's getPptxThumbnailDataUrl) — a plain type badge
+     instead of retrying forever. */
+  .source-stack-thumb-fallback {
+    background: #0f151d;
+    color: #8296ab;
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+  }
+
   .source-stack-handle {
     flex-shrink: 0;
     color: #8296ab;
     font-size: 0.85rem;
     line-height: 1;
     cursor: grab;
+  }
+  /* UPDATE2_SLIDE_PANE_PROMPT.md item 1 — groups the handle/name/count
+     that used to sit directly in .source-stack-item, now sharing the
+     row with .source-stack-thumb. */
+  .source-stack-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 1;
   }
   .source-list-name {
     flex: 1;
@@ -94,8 +170,19 @@
     color: #8296ab;
   }
 
+  /* UPDATE2_SLIDE_PANE_PROMPT.md item 3 — highlights the whole "Import
+     Document" panel while an OS file drag is over it (see main.js's
+     importDetailsEl dragenter/dragover listeners). #importDetails is an
+     ID selector so this needs to be at least as specific to reliably
+     override the panel's own base Tailwind border classes. */
+  #importDetails.source-dropzone-active {
+    border-color: #f5b942;
+    box-shadow: 0 0 0 1px #f5b942;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .animate-beacon { animation: none; }
+    .source-stack-thumb-loading::after { animation: none; }
   }
 
   /* ---------- Pane 1: question nav chips ---------- */

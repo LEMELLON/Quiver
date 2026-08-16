@@ -50,9 +50,19 @@ import './variant-generation.js';
 import './snippet-question-generation.js';
 import './ai-prompt-builders.js';
 import { generateQuestionsWithAI } from './ai-api-calls.js';
-import { setupNavRange } from './doc-pane-navigation.js';
+// UPDATE2_SLIDE_PANE_PROMPT.md: renderDocPage added to this existing
+// import — the source-stack click-to-open handler (openSource(), below)
+// calls it, reusing the exact function the old renderSourceList()
+// comment already flagged for this ("needs setupNavRange() +
+// renderSourcePage() (doc-pane-navigation.js)").
+import { setupNavRange, renderDocPage } from './doc-pane-navigation.js';
 import './quiz-export.js';
 import './batch-scan.js';
+// UPDATE2_SLIDE_PANE_PROMPT.md: source-stack thumbnail generation for
+// pptx sources — see ensureSourceThumbnail()/generatePptxThumbnail()
+// below, and pptx-render.js's own note on why this reuses Tier 2's
+// cheap embedded-image extraction rather than Tier 1's full render.
+import { getPptxThumbnailDataUrl } from './pptx-render.js';
 
 // UPDATE 2A: createSource() is the multi-source shim's explicit
 // "start a new document entry" call — see core-state.js.
@@ -132,8 +142,17 @@ docTextContainer.addEventListener('click', (e) => {
 // why its declaration itself was still centralized there) for the
 // per-file body; the surrounding loop/batch bookkeeping is new.
 // ---------------------------------------------------------------------
-pdfFileInput.addEventListener('change', async (e) => {
-  const files = Array.from(e.target.files || []);
+// UPDATE2_SLIDE_PANE_PROMPT.md item 3 (drag-and-drop file import): this
+// used to be the `pdfFileInput` 'change' listener's own body inline.
+// Factored out into a standalone `importFiles(fileList)` function —
+// unchanged logic, just callable from more than one place — so the new
+// OS-file-drop listeners further down (see importDetailsEl's
+// dragover/drop) can run the exact same import pipeline instead of
+// duplicating it. `pdfFileInput`'s own 'change' listener is now just a
+// one-line adapter that hands its FileList to this function.
+// ---------------------------------------------------------------------
+async function importFiles(fileList) {
+  const files = Array.from(fileList || []);
   if (files.length === 0) return;
 
   const isFirstImportBatch = state.sources.length === 0;
@@ -233,7 +252,89 @@ pdfFileInput.addEventListener('change', async (e) => {
       'success'
     );
   }
+}
+
+// UPDATE2_SLIDE_PANE_PROMPT.md item 4 (mixed file type handling):
+// verified by re-reading the loop above rather than a live browser test
+// (no network/display in this environment — same caveat pptx-render.js's
+// own header already states about its own untested paths). The loop
+// branches per-file on `isPptx`/`isPdf` (regex on the name + MIME-type
+// check) independently for EVERY file in `files`, and `pdfFileInput`'s
+// `accept` attribute (online-quiz-maker.html) already lists both PDF and
+// PPTX MIME types/extensions together — nothing in the loop, in
+// createSource(), or in the state.sources[]/state.pages shim
+// (core-state.js) assumes a single docType for the whole batch, since
+// each iteration re-points state.activeSourceId at that file's own fresh
+// source before touching state.docType/pages/etc. So a single
+// selection/drop mixing PDFs and PPTXs should already import both types
+// correctly, file by file — please still confirm with an actual mixed
+// selection in a real browser, since "should" here is a code-level
+// verification, not a run one.
+pdfFileInput.addEventListener('change', (e) => {
+  importFiles(e.target.files);
 });
+
+// UPDATE2_SLIDE_PANE_PROMPT.md item 3 (drag-and-drop file import):
+// lets a person drag actual files from the OS onto the "Import
+// Document" panel to import them, in addition to the "Choose file(s)"
+// input above.
+//
+// Listens on `importDetailsEl` (the whole Import Document panel, which
+// wraps both the file-input label and `sourceListEl`) rather than on
+// `sourceListEl` itself. `sourceListEl` is `display:none` (see
+// renderSourceList()) until at least one source has already been
+// imported, which isn't a valid drop target at all — attaching only
+// there would make drag-and-drop import impossible for the very first
+// file, which the wireframe/prompt doesn't call out but would clearly
+// be a broken first-run experience. `importDetailsEl` is always
+// visible and covers both the "no sources yet" and
+// "stack already showing" cases with one set of listeners.
+//
+// This also means the existing drag-**reorder** listeners on
+// `sourceListEl` (dragstart/dragend/dragover/drop, above) don't need
+// ANY changes to branch on "is this an OS file drop" — per the hard
+// constraint against touching that confirmed-working code. A real OS
+// file drag never fires this app's own 'dragstart' listener (that only
+// ever fires for a drag that begins on a '.source-stack-item' row), so
+// `dragSourceRowId` stays null for it; the reorder 'drop' handler's own
+// `if (!dragSourceRowId) return;` guard already no-ops harmlessly for an
+// OS-file drop that happens to land on `sourceListEl` and bubble up to
+// this listener, and the reorder 'dragover' handler's own
+// `!draggingRow` check does the same for dragover. No explicit
+// Files-vs-reorder branching was needed inside those handlers — this
+// listener only ever positively opts IN via
+// `e.dataTransfer.types.includes('Files')`, so it never fires for an
+// internal row-reorder drag either.
+if (importDetailsEl) {
+  const isFileDrag = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
+
+  importDetailsEl.addEventListener('dragenter', (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    importDetailsEl.classList.add('source-dropzone-active');
+  });
+
+  importDetailsEl.addEventListener('dragover', (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault(); // required for this element to accept a drop at all
+    e.dataTransfer.dropEffect = 'copy';
+    importDetailsEl.classList.add('source-dropzone-active');
+  });
+
+  importDetailsEl.addEventListener('dragleave', (e) => {
+    // Only clear the highlight once the drag actually leaves the whole
+    // panel, not just moves between its children (dragleave fires on
+    // every such move too).
+    if (e.target === importDetailsEl) importDetailsEl.classList.remove('source-dropzone-active');
+  });
+
+  importDetailsEl.addEventListener('drop', (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    importDetailsEl.classList.remove('source-dropzone-active');
+    importFiles(e.dataTransfer.files);
+  });
+}
 
 // UPDATE 2B (new, not from source — see UI_UPGRADES_HANDOFF_PROMPT.md,
 // Update 2B item 1): replaces 2A's placeholder, non-draggable list with
@@ -257,15 +358,135 @@ pdfFileInput.addEventListener('change', async (e) => {
 // this as a deliberate deviation from that file list rather than a
 // silent one, per this codebase's own "flag it" convention.
 //
-// Explicitly NOT done here (flagging rather than guessing): clicking a
-// card to make that source the one shown in Pane 2/3. The wireframe's
-// stack strongly suggests that as a natural next affordance, but doing
-// it correctly needs setupNavRange() + renderSourcePage()
-// (doc-pane-navigation.js) and the pdfCanvas/slideTextPreview
-// visibility toggle (currently inlined in this file's own
-// pdfFileInput handler, not factored into a reusable function) — none
-// of which are safe to guess at blind. Left for a follow-up session
-// with doc-pane-navigation.js in scope.
+// UPDATE2_SLIDE_PANE_PROMPT.md item 2 (click-to-open) — this is the
+// follow-up the comment above used to flag as "explicitly not done
+// here." Clicking a card now:
+//  - makes that source active (state.activeSourceId)
+//  - navigates Pane 3 to its page 1, and re-renders Pane 2 for it
+//    (setupNavRange() + renderDocPage(1) + renderTextVersion(), exactly
+//    the trio the old comment already named)
+//  - opens the FIRST question belonging to that source in the editor,
+//    which the old comment didn't cover (that ask came in this session).
+//
+// Order note: renderDocPage(1) runs first, per the prompt's own
+// wording. setActiveCard() below, however, ALWAYS re-navigates Pane 3
+// to ITS question's own sourcePage internally (see editor-render.js) —
+// so if this source's first question isn't actually on page 1, Pane 3
+// ends up on that question's page instead, superseding the page-1 nav
+// that just ran. That's expected, not a bug: state.questions is already
+// kept sourcePage-sorted within a source (sortQuestionsByPage()), so the
+// first question is rarely far from page 1, and landing on the actual
+// first question's page is the more useful outcome anyway.
+function openSource(sourceId) {
+  const source = state.sources.find(s => s.id === sourceId);
+  if (!source) return;
+
+  state.activeSourceId = sourceId;
+  renderSourceList(); // updates which card shows the "active" styling
+
+  setupNavRange();
+  renderDocPage(1);
+  renderTextVersion();
+
+  // Already sourcePage-sorted within a source per sortQuestionsByPage()
+  // (see UPDATE 2A) — the first match is the lowest sourcePage.
+  const firstQuestion = state.questions.find(q => q.sourceId === sourceId);
+  if (firstQuestion) setActiveCard(firstQuestion.id);
+}
+
+// UPDATE2_SLIDE_PANE_PROMPT.md item 1 (thumbnail caching) — generates
+// and caches each source's slide-sorter thumbnail ONCE, lazily, the
+// first time renderSourceList() draws a card that doesn't have one yet.
+// Cached onto `source.thumbnailDataUrl` (a plain extra field on the
+// source object — not one of core-state.js's SHIMMED_SOURCE_KEYS, so no
+// active/inactive-source ambiguity: this is always THIS source's own
+// thumbnail) so every later renderSourceList() redraw (reorder, another
+// file imported, a click activating a different card) reuses the cached
+// string instead of re-rendering a PDF page or re-parsing a pptx zip
+// from scratch again — see the prompt's own "don't re-render on every
+// list redraw" instruction.
+//
+// `source._thumbnailPromise` guards against kicking off a second,
+// redundant generation if renderSourceList() happens to redraw again
+// (e.g. another file in the same batch finishing) while the first
+// generation for this source is still in flight. `source.thumbnailFailed`
+// remembers a failure (e.g. a text-only pptx slide with no embedded
+// picture — see pptx-render.js's getPptxThumbnailDataUrl) so a
+// permanently-thumbnail-less source doesn't retry forever on every
+// redraw; the card falls back to a plain type badge in that case
+// instead.
+function ensureSourceThumbnail(source) {
+  if (source.thumbnailDataUrl || source.thumbnailFailed || source._thumbnailPromise) return;
+
+  source._thumbnailPromise = (async () => {
+    let dataUrl = null;
+    if (source.docType === 'pdf') {
+      dataUrl = await generatePdfThumbnail(source);
+    } else if (source.docType === 'pptx') {
+      dataUrl = await generatePptxThumbnail(source);
+    }
+    source._thumbnailPromise = null;
+    if (dataUrl) {
+      source.thumbnailDataUrl = dataUrl;
+    } else {
+      source.thumbnailFailed = true;
+    }
+    renderSourceList(); // swap the loading placeholder for the real thumbnail (or the failure badge)
+  })();
+}
+
+// PDF thumbnail: pdf.js's page.render() — the same primitive
+// doc-pane-navigation.js's renderSourcePage() already uses for the
+// full-size pdfCanvas — just at a small scale onto an off-screen canvas
+// instead. Reads `source.pdfDoc`/`source.pages` directly (NOT the
+// state.pdfDoc/state.pages shim) so this always renders THIS source's
+// first page regardless of which source happens to be active right now.
+async function generatePdfThumbnail(source) {
+  if (!source.pdfDoc) return null;
+  try {
+    const firstPageNumber = source.pages[0] ? source.pages[0].pageNumber : 1;
+    const page = await source.pdfDoc.getPage(firstPageNumber);
+    const baseViewport = page.getViewport({ scale: 1 });
+    // Rendered at 2x the ~64px CSS display width (see styles.css's
+    // .source-stack-thumb) for a crisper result on high-DPI screens.
+    const targetWidth = 128;
+    const scale = targetWidth / baseViewport.width;
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas.toDataURL('image/png');
+  } catch (e) {
+    console.error('[main] PDF thumbnail render failed:', e);
+    return null;
+  }
+}
+
+// PPTX thumbnail: delegates to pptx-render.js's getPptxThumbnailDataUrl
+// — see that file for the Tier 1 vs Tier 2 trade-off this makes.
+async function generatePptxThumbnail(source) {
+  if (!source.pptxZip) return null;
+  const firstPageNumber = source.pages[0] ? source.pages[0].pageNumber : 1;
+  return getPptxThumbnailDataUrl(source.pptxZip, firstPageNumber);
+}
+
+// UPDATE 2B (new, not from source — see UI_UPGRADES_HANDOFF_PROMPT.md,
+// Update 2B item 1): PowerPoint-slide-sorter-style draggable stack —
+// UPDATE2_SLIDE_PANE_PROMPT.md item 1 adds each card's thumbnail (see
+// the thumb-building block below); filename + question count still sit
+// beside it, same as 2B's original text-only version. Still built with
+// DOM APIs (not innerHTML) so a filename with HTML-special characters
+// can't be misinterpreted as markup — same convention as 2B's version.
+//
+// Kept in main.js rather than moved to editor-render.js, for the same
+// reason 2B's version was: see the block comment above this function's
+// previous form (now superseded by this one) — the render/reorder/
+// thumbnail-cache bookkeeping here reads and writes state.sources
+// directly and doesn't touch anything editor-render.js owns beyond its
+// already-exported renderQuestionNav()/setActiveCard().
 function renderSourceList() {
   if (!sourceListEl) return;
   sourceListEl.innerHTML = '';
@@ -281,6 +502,32 @@ function renderSourceList() {
     row.draggable = true;
     row.dataset.sourceId = source.id;
 
+    // UPDATE2_SLIDE_PANE_PROMPT.md item 1 — the thumbnail preview of
+    // this source's first page/slide. Three states: cached image ready,
+    // still loading (kicks off generation via ensureSourceThumbnail(),
+    // which is a no-op if generation is already cached/in-flight/failed —
+    // see that function), or permanently failed (a plain type badge,
+    // e.g. a text-only pptx slide with no embedded picture — see
+    // pptx-render.js's getPptxThumbnailDataUrl).
+    const thumb = document.createElement('div');
+    thumb.className = 'source-stack-thumb';
+    if (source.thumbnailDataUrl) {
+      const img = document.createElement('img');
+      img.src = source.thumbnailDataUrl;
+      img.alt = '';
+      thumb.appendChild(img);
+    } else if (source.thumbnailFailed) {
+      thumb.classList.add('source-stack-thumb-fallback');
+      thumb.textContent = source.docType === 'pptx' ? 'SLIDE' : 'PDF';
+    } else {
+      thumb.classList.add('source-stack-thumb-loading');
+      ensureSourceThumbnail(source);
+    }
+    row.appendChild(thumb);
+
+    const meta = document.createElement('div');
+    meta.className = 'source-stack-meta';
+
     const handle = document.createElement('span');
     handle.className = 'source-stack-handle';
     handle.textContent = '⠿';
@@ -295,9 +542,11 @@ function renderSourceList() {
     countEl.className = 'source-list-count';
     countEl.textContent = count + (count === 1 ? ' question' : ' questions');
 
-    row.appendChild(handle);
-    row.appendChild(name);
-    row.appendChild(countEl);
+    meta.appendChild(handle);
+    meta.appendChild(name);
+    meta.appendChild(countEl);
+    row.appendChild(meta);
+
     sourceListEl.appendChild(row);
   });
 }
@@ -319,6 +568,22 @@ function renderSourceList() {
 let dragSourceRowId = null;
 
 if (sourceListEl) {
+  // UPDATE2_SLIDE_PANE_PROMPT.md item 2 — click-to-open. Ignores clicks
+  // on the drag handle itself (per the prompt: "clicking a card (not
+  // its drag handle)") since that's a pure drag affordance, not
+  // something a click on should activate the card. Safe to add
+  // alongside `draggable = true` on the whole row: a native HTML5 drag
+  // only starts once the pointer has actually moved past a threshold,
+  // so an ordinary click (press+release with no real drag) still fires
+  // this listener normally and a completed drag-drop reorder does not
+  // additionally fire a spurious click.
+  sourceListEl.addEventListener('click', (e) => {
+    if (e.target.closest('.source-stack-handle')) return;
+    const row = e.target.closest('.source-stack-item');
+    if (!row) return;
+    openSource(row.dataset.sourceId);
+  });
+
   sourceListEl.addEventListener('dragstart', (e) => {
     const row = e.target.closest('.source-stack-item');
     if (!row) return;
