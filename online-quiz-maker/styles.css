@@ -170,14 +170,25 @@
     color: #8296ab;
   }
 
-  /* UPDATE2_SLIDE_PANE_PROMPT.md item 3 — highlights the whole "Import
-     Document" panel while an OS file drag is over it (see main.js's
-     importDetailsEl dragenter/dragover listeners). #importDetails is an
-     ID selector so this needs to be at least as specific to reliably
-     override the panel's own base Tailwind border classes. */
-  #importDetails.source-dropzone-active {
-    border-color: #f5b942;
-    box-shadow: 0 0 0 1px #f5b942;
+  /* UPDATE2_SLIDE_PANE_PROMPT.md item 3, retargeted by
+     UPDATE2_SLIDE_PANE_FIX_PROMPT.md: highlights the source-stack area
+     while an OS file drag is over it (see main.js's sourceStackAreaEl
+     dragenter/dragover listeners). Was `#importDetails.source-dropzone-
+     active` setting `border-color`/`box-shadow`, back when the drop
+     target was `#importDetails` itself (which already has its own
+     border via Tailwind's `border-edge` class). The new drop target,
+     `#sourceStackArea`, is a plain layout wrapper with no border/
+     background of its own (see online-quiz-maker.html) — its CHILDREN
+     (#importDetails, #sourceList) each draw their own — so a
+     `border-color` override here would have nothing to visibly change.
+     `outline` instead draws a highlight around the whole wrapper
+     without needing it to already have a border, and (unlike `border`)
+     doesn't affect layout/box size, so it can't shift #importDetails/
+     #sourceList by so much as a pixel when toggled. */
+  #sourceStackArea.source-dropzone-active {
+    outline: 2px dashed #f5b942;
+    outline-offset: 4px;
+    border-radius: 0.5rem;
   }
 
   @media (prefers-reduced-motion: reduce) {

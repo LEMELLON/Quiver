@@ -76,6 +76,7 @@ import {
   pdfCanvas,
   slideTextPreview,
   importDetailsEl,
+  sourceStackAreaEl,
   sourceListEl,
 } from './dom-refs.js';
 
@@ -242,6 +243,12 @@ async function importFiles(fileList) {
   renderTextVersion();
   updateQuestionCount();
   if (lastGenerated && lastGenerated.length) setActiveCard(lastGenerated[0].id);
+  // UPDATE2_SLIDE_PANE_FIX_PROMPT.md: this used to also hide the source
+  // stack, since #sourceList was a descendant of #importDetails — now
+  // that they're siblings under #sourceStackArea (see
+  // online-quiz-maker.html / dom-refs.js), collapsing this <details>
+  // only tucks away the API-key/model/file-input controls; the stack
+  // stays visible regardless.
   importDetailsEl.open = false;
 
   if (!sawError) {
@@ -274,64 +281,73 @@ pdfFileInput.addEventListener('change', (e) => {
   importFiles(e.target.files);
 });
 
-// UPDATE2_SLIDE_PANE_PROMPT.md item 3 (drag-and-drop file import):
-// lets a person drag actual files from the OS onto the "Import
-// Document" panel to import them, in addition to the "Choose file(s)"
-// input above.
+// UPDATE2_SLIDE_PANE_PROMPT.md item 3 (drag-and-drop file import), as
+// retargeted by UPDATE2_SLIDE_PANE_FIX_PROMPT.md: lets a person drag
+// actual files from the OS onto the source-stack area to import them,
+// in addition to the "Choose file(s)" input above.
 //
-// Listens on `importDetailsEl` (the whole Import Document panel, which
-// wraps both the file-input label and `sourceListEl`) rather than on
-// `sourceListEl` itself. `sourceListEl` is `display:none` (see
-// renderSourceList()) until at least one source has already been
-// imported, which isn't a valid drop target at all — attaching only
-// there would make drag-and-drop import impossible for the very first
-// file, which the wireframe/prompt doesn't call out but would clearly
-// be a broken first-run experience. `importDetailsEl` is always
-// visible and covers both the "no sources yet" and
-// "stack already showing" cases with one set of listeners.
+// Listens on `sourceStackAreaEl` — the wrapper around BOTH
+// `importDetailsEl` and `sourceListEl` (see online-quiz-maker.html and
+// dom-refs.js) — rather than on `importDetailsEl` alone (this
+// function's own original version) or on `sourceListEl` alone.
+// Retargeted for two reasons, both from the DOM-nesting fix:
+//  - `sourceListEl` is `display:none` (see renderSourceList()) until at
+//    least one source has already been imported, so it alone still
+//    isn't a valid drop target for the very first file.
+//  - `importDetailsEl` alone WOULD have been enough back when
+//    `sourceListEl` was still its descendant, but the fix moved
+//    `sourceListEl` OUT of `importDetailsEl` specifically so
+//    `importDetailsEl.open = false` (below, run after every import)
+//    stops hiding the stack — which means `importDetailsEl` no longer
+//    visually covers `sourceListEl` either, so a drop zone scoped to
+//    just `importDetailsEl` would leave the now-separate, always-visible
+//    stack unable to accept a file dropped directly onto it.
+// `sourceStackAreaEl` covers both pieces with one always-visible,
+// collapse-independent target, regardless of what the reader here
+// might guess `importDetailsEl.open` currently equals.
 //
-// This also means the existing drag-**reorder** listeners on
-// `sourceListEl` (dragstart/dragend/dragover/drop, above) don't need
-// ANY changes to branch on "is this an OS file drop" — per the hard
-// constraint against touching that confirmed-working code. A real OS
-// file drag never fires this app's own 'dragstart' listener (that only
-// ever fires for a drag that begins on a '.source-stack-item' row), so
-// `dragSourceRowId` stays null for it; the reorder 'drop' handler's own
-// `if (!dragSourceRowId) return;` guard already no-ops harmlessly for an
-// OS-file drop that happens to land on `sourceListEl` and bubble up to
-// this listener, and the reorder 'dragover' handler's own
-// `!draggingRow` check does the same for dragover. No explicit
+// This still means the existing drag-**reorder** listeners on
+// `sourceListEl` (dragstart/dragend/dragover/drop, further below) don't
+// need ANY changes to branch on "is this an OS file drop" — per the
+// hard constraint against touching that confirmed-working code. A real
+// OS file drag never fires this app's own 'dragstart' listener (that
+// only ever fires for a drag that begins on a '.source-stack-item'
+// row), so `dragSourceRowId` stays null for it; the reorder 'drop'
+// handler's own `if (!dragSourceRowId) return;` guard already no-ops
+// harmlessly for an OS-file drop that happens to land on `sourceListEl`
+// and bubble up to this listener, and the reorder 'dragover' handler's
+// own `!draggingRow` check does the same for dragover. No explicit
 // Files-vs-reorder branching was needed inside those handlers — this
 // listener only ever positively opts IN via
 // `e.dataTransfer.types.includes('Files')`, so it never fires for an
 // internal row-reorder drag either.
-if (importDetailsEl) {
+if (sourceStackAreaEl) {
   const isFileDrag = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
 
-  importDetailsEl.addEventListener('dragenter', (e) => {
+  sourceStackAreaEl.addEventListener('dragenter', (e) => {
     if (!isFileDrag(e)) return;
     e.preventDefault();
-    importDetailsEl.classList.add('source-dropzone-active');
+    sourceStackAreaEl.classList.add('source-dropzone-active');
   });
 
-  importDetailsEl.addEventListener('dragover', (e) => {
+  sourceStackAreaEl.addEventListener('dragover', (e) => {
     if (!isFileDrag(e)) return;
     e.preventDefault(); // required for this element to accept a drop at all
     e.dataTransfer.dropEffect = 'copy';
-    importDetailsEl.classList.add('source-dropzone-active');
+    sourceStackAreaEl.classList.add('source-dropzone-active');
   });
 
-  importDetailsEl.addEventListener('dragleave', (e) => {
+  sourceStackAreaEl.addEventListener('dragleave', (e) => {
     // Only clear the highlight once the drag actually leaves the whole
-    // panel, not just moves between its children (dragleave fires on
+    // wrapper, not just moves between its children (dragleave fires on
     // every such move too).
-    if (e.target === importDetailsEl) importDetailsEl.classList.remove('source-dropzone-active');
+    if (e.target === sourceStackAreaEl) sourceStackAreaEl.classList.remove('source-dropzone-active');
   });
 
-  importDetailsEl.addEventListener('drop', (e) => {
+  sourceStackAreaEl.addEventListener('drop', (e) => {
     if (!isFileDrag(e)) return;
     e.preventDefault();
-    importDetailsEl.classList.remove('source-dropzone-active');
+    sourceStackAreaEl.classList.remove('source-dropzone-active');
     importFiles(e.dataTransfer.files);
   });
 }

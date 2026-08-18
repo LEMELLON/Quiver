@@ -134,10 +134,24 @@ const scanRangeError = document.getElementById('scanRangeError');
 // ---------------------------------------------------------------------
 const importDetailsEl = document.getElementById('importDetails');
 
-// UPDATE 2A (new ref, not from source): the minimal placeholder list of
-// imported sources (filename + question count) main.js's file-input
-// handler renders into — see its renderSourceList(). Replaced by
-// Update 2B's real draggable slide-sorter stack.
+// UPDATE2_SLIDE_PANE_FIX_PROMPT.md (new ref, not from source): the
+// always-visible wrapper around both #importDetails and #sourceList
+// (see online-quiz-maker.html) — main.js's OS-file-drop listeners target
+// THIS, not importDetailsEl, so dropping a file works regardless of
+// whether the Import panel is expanded/collapsed or the stack is
+// currently empty/hidden. Introduced by the same fix that moved
+// #sourceList out from being a descendant of the collapsible
+// <details id="importDetails">, since importDetailsEl.open = false
+// (main.js, run after every import) used to collapse the source stack
+// along with the panel.
+const sourceStackAreaEl = document.getElementById('sourceStackArea');
+
+// UPDATE 2A (new ref, not from source): the draggable slide-sorter stack
+// of imported sources main.js renders into — see its renderSourceList().
+// UPDATE2_SLIDE_PANE_FIX_PROMPT.md: no longer a descendant of
+// importDetailsEl (see sourceStackAreaEl above and the HTML) — its own
+// `.hidden` toggle (on state.sources.length === 0) is now the only thing
+// controlling its visibility.
 const sourceListEl = document.getElementById('sourceList');
 
 // UPDATE 3 (new refs, not from source — see UI_UPGRADES_HANDOFF_PROMPT.md
@@ -217,6 +231,7 @@ export {
   scanRangeStatus,
   scanRangeError,
   importDetailsEl,
+  sourceStackAreaEl,
   sourceListEl,
   termBarEl,
   termFilterIndicatorEl,
