@@ -24,6 +24,15 @@
 // before this round's swap, so doc-pane-navigation.js's call sites
 // needed no edits.
 //
+// SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md: adds
+// renderPptxTier1Thumbnail() (near the bottom of this file, beside
+// getPptxThumbnailDataUrl) — the source-stack thumbnail now tries a
+// real Tier 1 visual render first, falling back to Tier 2's embedded-
+// image extraction (unchanged) only if Tier 1 fails or a slide produces
+// nothing. See that function for the full reasoning; everything else in
+// this file — Tier 1/Tier 2 for Pane 3, the CDN loading, the library
+// swap — is untouched.
+//
 // LIBRARY SWAP (this round): the previous Tier 1 engine, PPTXjs
 // (meshesha/PPTXjs), turned out to have poor real-world fidelity —
 // per its own README, "not Supports most of shapes, audio, video etc."
@@ -442,31 +451,163 @@ async function renderPptxTier2(container, zip, pageNumber) {
 }
 
 // ---------------------------------------------------------------------
-// Source-stack thumbnail (new — see UPDATE2_SLIDE_PANE_PROMPT.md,
-// "Which renderer to reuse for the thumbnail"). DELIBERATELY reuses
-// Tier 2's cheap embedded-image extraction (resolveSlideImageBlobs
-// above) rather than Tier 1's full @aiden0z/pptx-renderer visual
-// reconstruction — stated trade-off:
-//   - Tier 1 (renderPptxTier1) is a full OOXML parse + shape/table/
-//     chart/SmartArt render via an external CDN library, built to
-//     serve Pane 3's ONE currently-viewed slide. Running that once per
-//     imported source purely to produce a ~64px card thumbnail nobody
-//     is actively looking at yet is a heavy way to answer "what's
-//     roughly on this slide," and this runs at import time across a
-//     whole batch of sources, not once for a single active view.
-//   - Tier 2's approach (pull the slide's own embedded pictures
-//     straight out of the already-in-memory JSZip, no external library,
-//     no network) is nearly free per source and, at thumbnail scale, a
-//     rough "here's a picture from this slide" preview reads fine even
-//     though it isn't a full laid-out render.
-//   - Honest cost of that choice: a text-only slide with no embedded
-//     picture yields no thumbnail at all — the caller (main.js's
-//     renderSourceList()) falls back to a plain text badge in that
-//     case. Tier 1 could in principle still have produced a real visual
-//     for a text-only slide. Judged an acceptable trade for keeping
-//     import-time cost low across a whole batch, especially since nothing
-//     stops a later pass from upgrading this to Tier 1 if that gap turns
-//     out to matter in practice.
+// Source-stack thumbnail — Tier 1 attempt (new — see
+// SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md, "reconsider
+// Tier 2-only for this case specifically"). Supersedes the Tier-2-only
+// reasoning that used to sit here (see getPptxThumbnailDataUrl below,
+// still used as the fallback): this thumbnail renders ONCE PER IMPORTED
+// SOURCE, at import time — not once per Pane-3 navigation, which is the
+// case Tier 2-only was actually picked for (see the now-reverted
+// SLIDE_PANEL_LIVE_MIRROR_PROMPT.md mirror, which WOULD have re-run a
+// render on every single navigation). Bounded by "how many documents
+// someone imports in a session," not "how much they browse," so Tier 1
+// — real fidelity, including text-only slides Tier 2 can't produce
+// anything for at all — is worth attempting first here.
+//
+// Reuses Tier 1's own building blocks (loadPptxRendererModule(),
+// getPresentationForFile()'s per-file cache, presentation.slides[]) so
+// a source thumbnailed here and later opened in Pane 3 doesn't re-parse
+// the same deck a second time — same cache, same key (file identity).
+// Deliberately does NOT reuse renderPptxTier1() itself, though: that
+// function mounts into a single shared, page-navigable container
+// (#pptxTier1Container) sized/rescaled to Pane 3's own responsive width
+// via a ResizeObserver tied to a SHARED currentTier1ResizeObserver (see
+// setupTier1ResponsiveScaling above) — wrong shape for a thumbnail that
+// (a) needs its own small, FIXED-size box per source, several of which
+// can exist and be generated concurrently across an import batch, and
+// (b) is cached and reused across many renderSourceList() redraws
+// rather than replaced on every navigation. A one-time fixed-scale
+// wrapper (computed once here, no ResizeObserver) is the right shape
+// for that instead — see below.
+//
+// CONCURRENT-CALL SAFETY (see the revert prompt's "Design decisions to
+// make explicit" — confirming, not assuming, the iframe-reuse fix
+// covers this): each call to the library's renderSlideFn() returns a
+// brand-new `handle.element` (per LIBRARY SWAP note at the top of this
+// file — @aiden0z/pptx-renderer's headless renderSlide() never reuses
+// or reinserts a shared node the way the old PPTXjs iframe did), so
+// several sources thumbnailing at once in the same import batch each
+// get their own independent element/handle and don't contend with each
+// other or with Pane 3's own Tier 1 render. getPresentationForFile()'s
+// cache is keyed per-File-object, so concurrent thumbnail generations
+// for DIFFERENT files simply populate different cache entries; the one
+// case that does serialize is two thumbnail calls (or a thumbnail call
+// and a Pane 3 view) for the SAME file racing on the same
+// presentationPromise — safe, since that promise resolves once and both
+// callers just await the same result.
+//
+// Returns a detached wrapper <div> (not yet in the document) sized to
+// `targetWidth` px wide, or null if Tier 1 can't produce anything for
+// this slide (library/parse failure, out-of-range slide, or a
+// zero-size render). The caller (main.js) caches this element directly
+// on the source and mounts it into that source's card — see
+// generatePptxThumbnail()/ensureSourceThumbnail() and the "no
+// data:/raster URL" note below.
+async function renderPptxTier1Thumbnail(file, pageNumber, targetWidth) {
+  if (!file) return null;
+
+  let renderSlideFn, presentation;
+  try {
+    const mod = await loadPptxRendererModule();
+    renderSlideFn = mod.renderSlide;
+    presentation = await getPresentationForFile(file);
+  } catch (e) {
+    console.error('[pptx-render] Tier 1 thumbnail: library load/parse failed:', e);
+    return null;
+  }
+
+  const index = pageNumber - 1;
+  const slideData = presentation.slides[index];
+  if (!slideData) {
+    console.log(`[pptx-render] Tier 1 thumbnail: no slide at index ${index} (deck has ${presentation.slides.length} slide(s))`);
+    return null;
+  }
+
+  let handle;
+  try {
+    handle = renderSlideFn(presentation, slideData, {
+      onNodeError: (nodeId, err) => console.warn('[pptx-render] Tier 1 thumbnail node render error:', nodeId, err),
+    });
+    await handle.ready;
+  } catch (e) {
+    console.error('[pptx-render] Tier 1 thumbnail render failed:', e);
+    return null;
+  }
+
+  const slideEl = handle.element;
+  slideEl.style.transformOrigin = 'top left';
+
+  // MEASUREMENT: offsetWidth/offsetHeight need slideEl to actually be
+  // laid out in the document (not display:none, not detached) — same
+  // constraint setupTier1ResponsiveScaling() works around for Pane 3,
+  // just via a one-shot measurement here instead of a live
+  // ResizeObserver, since a thumbnail's target box never resizes.
+  // getThumbnailMeasureHost() below is a shared, permanently
+  // off-screen (not display:none — that would also report zero size)
+  // element parked outside the viewport for exactly this: real layout,
+  // invisible to the person using the app.
+  const host = getThumbnailMeasureHost();
+  host.appendChild(slideEl);
+  const nativeWidth = slideEl.offsetWidth;
+  const nativeHeight = slideEl.offsetHeight;
+  host.removeChild(slideEl);
+
+  if (!nativeWidth || !nativeHeight) {
+    handle.dispose();
+    console.log('[pptx-render] Tier 1 thumbnail: false — slide element measured zero size');
+    return null;
+  }
+
+  const scale = targetWidth / nativeWidth;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'source-stack-thumb-tier1-wrapper';
+  wrapper.style.width = `${targetWidth}px`;
+  wrapper.style.height = `${Math.round(nativeHeight * scale)}px`;
+  wrapper.style.overflow = 'hidden';
+  slideEl.style.transform = `scale(${scale})`;
+  wrapper.appendChild(slideEl);
+
+  // Deliberately NOT handle.dispose()'d here, unlike Tier 1's Pane 3
+  // path (renderPptxTier1 disposes the PREVIOUS handle once a new one
+  // supersedes it, since Pane 3 only ever shows one slide at a time).
+  // This wrapper/handle IS the cached, persistently-displayed
+  // thumbnail — main.js keeps it alive on source.thumbnailEl for as
+  // long as that source exists (sources are never removed today — see
+  // core-state.js) and re-mounts the same node into its card on every
+  // renderSourceList() redraw. Disposing it here would tear down the
+  // very blob URLs / chart instances the thumbnail needs to keep
+  // showing.
+  console.log(`[pptx-render] Tier 1 thumbnail: true — slide ${pageNumber} rendered at ${targetWidth}px wide`);
+  return wrapper;
+}
+
+// Shared, permanently off-screen host used only to give a
+// not-yet-mounted slide element a real (non-display:none) layout
+// context long enough to read its native offsetWidth/offsetHeight —
+// see renderPptxTier1Thumbnail() above. Created lazily, once, and left
+// in the document for the rest of the session (cheap: it's empty
+// except for whatever's being measured at any given instant).
+let thumbnailMeasureHost = null;
+function getThumbnailMeasureHost() {
+  if (!thumbnailMeasureHost) {
+    thumbnailMeasureHost = document.createElement('div');
+    thumbnailMeasureHost.style.position = 'fixed';
+    thumbnailMeasureHost.style.left = '-9999px';
+    thumbnailMeasureHost.style.top = '-9999px';
+    thumbnailMeasureHost.style.visibility = 'hidden';
+    thumbnailMeasureHost.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(thumbnailMeasureHost);
+  }
+  return thumbnailMeasureHost;
+}
+
+// ---------------------------------------------------------------------
+// Source-stack thumbnail — Tier 2 fallback (unchanged from before this
+// round; see UPDATE2_SLIDE_PANE_PROMPT.md, "Which renderer to reuse for
+// the thumbnail," for the reasoning that originally picked Tier 2-only —
+// now superseded as the FIRST choice by renderPptxTier1Thumbnail()
+// above, but kept as-is here as the fallback for when Tier 1 fails or a
+// slide produces a zero-size render).
 //
 // Returns a PERSISTENT `data:` URL (via FileReader), not an object URL:
 // Tier 2's own container render revokes its object URLs the instant
@@ -493,4 +634,4 @@ async function getPptxThumbnailDataUrl(zip, pageNumber) {
   }
 }
 
-export { renderPptxTier1, renderPptxTier2, teardownTier1Scaling, getPptxThumbnailDataUrl };
+export { renderPptxTier1, renderPptxTier2, teardownTier1Scaling, renderPptxTier1Thumbnail, getPptxThumbnailDataUrl };

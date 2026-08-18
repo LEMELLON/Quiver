@@ -1,4 +1,15 @@
 // dom-refs.js
+//
+// UPDATE2_SLIDE_PANE_PROMPT.md ("Slide Panel as Its Own Dedicated Layout
+// Column") verification note: #sourceStackArea (containing #importDetails
+// and #sourceList) moved to its own top-level <section id="sourcePane">
+// in online-quiz-maker.html, as a sibling of #pane1/#pane2/#pane3 rather
+// than a descendant of #pane1. All three ids are unchanged, and every ref
+// below is a plain `document.getElementById(...)` keyed on id, not on any
+// assumption about which parent element contains it — so this file needed
+// NO changes for the relocation. Confirmed by inspection of every ref
+// declared below.
+//
 // Shared-context module per MODULARIZATION_SCHEMA.txt's "SHARED CONTEXT"
 // section — every `document.getElementById(...)` ref, declared once here
 // so no other module redefines them. Extracted verbatim from
@@ -153,6 +164,13 @@ const sourceStackAreaEl = document.getElementById('sourceStackArea');
 // `.hidden` toggle (on state.sources.length === 0) is now the only thing
 // controlling its visibility.
 const sourceListEl = document.getElementById('sourceList');
+
+// SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md: the
+// slidePanelMirrorEl/Img/Empty/Fallback refs that used to live here
+// (SLIDE_PANEL_LIVE_MIRROR_PROMPT.md) are removed — that separate
+// live-preview element no longer exists in online-quiz-maker.html. The
+// real slide panel is #sourceList's per-card thumbnails; see
+// sourceListEl below and main.js's renderSourceList().
 
 // UPDATE 3 (new refs, not from source — see UI_UPGRADES_HANDOFF_PROMPT.md
 // Update 3): the term nav bar panel and the "showing filtered term"

@@ -1,3 +1,18 @@
+  /* UPDATE2_SLIDE_PANE_PROMPT.md ("Slide Panel as Its Own Dedicated
+     Layout Column") verification note: #sourceStackArea (and its
+     children #importDetails/#sourceList) moved out of #pane1's
+     <section> into its own top-level <section id="sourcePane"> in
+     online-quiz-maker.html. Checked every rule in this file for a
+     selector scoped under #pane1 that might have (intentionally or
+     accidentally) also matched #sourceStackArea's children — there is
+     none; every source-stack-related rule below (.source-stack-item,
+     .source-stack-thumb, #sourceStackArea.source-dropzone-active, etc.)
+     is either a bare class selector or scoped to #sourceStackArea
+     itself, not #pane1. The #layoutRoot grid-column sizing lives in
+     Tailwind utility classes directly on the <main> tag in
+     online-quiz-maker.html, not in this file, so there was nothing to
+     change here for the grid-track change either. No edits made to
+     this file for this prompt beyond this note. */
   html, body { height: 100%; }
   body { background: #0b0f14; }
 
@@ -190,6 +205,19 @@
     outline-offset: 4px;
     border-radius: 0.5rem;
   }
+
+  /* SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md: the
+     #slidePanelMirror / #slidePanelMirrorImg / .slide-panel-mirror-loading
+     rules that used to live here (SLIDE_PANEL_LIVE_MIRROR_PROMPT.md) are
+     removed along with the element they styled — see
+     online-quiz-maker.html and dom-refs.js. .source-stack-thumb-loading's
+     spinner (above) is the only such pulse left. The new Tier-1-first
+     source-stack thumbnail (see pptx-render.js's
+     renderPptxTier1Thumbnail() and main.js's generatePptxThumbnail())
+     needs no new CSS here — its wrapper is sized/scaled entirely via
+     inline styles set once at render time (fixed px width/height,
+     already matching .source-stack-thumb's box), and .source-stack-thumb
+     above already centers whatever single child it's given. */
 
   @media (prefers-reduced-motion: reduce) {
     .animate-beacon { animation: none; }

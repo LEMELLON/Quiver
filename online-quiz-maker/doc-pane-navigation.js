@@ -60,6 +60,18 @@
 // Implemented here (rather than inside pptx-render.js) since it's pure
 // Pane-3-visibility bookkeeping, the same category of thing `setVisible`
 // already does.
+//
+// SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md: the
+// SLIDE_PANEL_LIVE_MIRROR_PROMPT.md work that used to live here — a
+// single `updateSlidePanelMirror(clamped)` call at the settled point
+// inside renderSourcePage() — has been removed. That mirror was an
+// unrequested second preview mechanism layered on top of the real slide
+// panel (#sourceList's per-card thumbnails, main.js's
+// ensureSourceThumbnail()); see the revert prompt for the full
+// reasoning. Nothing else in this file changed for the revert —
+// renderSourcePage's own cross-source rollover recursion, renderPptxSlide's
+// tier-fallback chain, and the pdfCanvas/renderTaskInFlight pair below
+// are all exactly as they were before the mirror ever existed.
 
 // --- Shared dependencies ---
 import { state } from './core-state.js';

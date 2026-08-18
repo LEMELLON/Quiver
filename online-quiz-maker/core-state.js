@@ -117,6 +117,20 @@ function getActiveSource() {
   return state.sources.find(s => s.id === state.activeSourceId) || null;
 }
 
+// SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md verification
+// note: NO changes made to this file. The #sourcePane live mirror
+// (slide-panel-mirror.js) this comment used to describe has been
+// deleted — see that prompt. The reasoning below still applies,
+// unchanged, to its actual remaining callers: main.js's
+// generatePdfThumbnail()/generatePptxThumbnail() (per-card, once-per-
+// source thumbnails) read a specific source object's own pdfDoc/pptxZip/
+// pptxFile directly — via a captured `source` reference, not through
+// this function a second time mid-async — while pptx-render.js's new
+// renderPptxTier1Thumbnail() takes `file` as a plain parameter and
+// doesn't touch state or getActiveSource() at all. state.sources[]'s
+// shape, SHIMMED_SOURCE_KEYS, and openSource()'s click-to-open logic
+// are all untouched.
+
 // Creates a brand-new source, appends it to state.sources, and makes it
 // the active one — used by main.js's file-input handler so each newly
 // imported file gets its own entry (see UPDATE 2A note there). Exposed

@@ -1,4 +1,17 @@
 // main.js
+//
+// UPDATE2_SLIDE_PANE_PROMPT.md ("Slide Panel as Its Own Dedicated Layout
+// Column") verification note: #sourceStackArea/#sourceList/#importDetails
+// moved to their own top-level <section id="sourcePane"> in
+// online-quiz-maker.html, out of #pane1. Every reference below to
+// sourceStackAreaEl / sourceListEl / importDetailsEl (openSource(),
+// ensureSourceThumbnail(), importFiles(), the OS-drag-drop listeners, the
+// reorder-drag listeners) resolves those elements via the getElementById
+// refs imported from dom-refs.js — none of it does DOM-position/parent
+// traversal (e.g. no `.closest('#pane1')`, no `.parentElement` walking) —
+// so the relocation needed NO changes here. Confirmed by grepping every
+// sourceStackAreaEl/sourceListEl/importDetailsEl usage in this file.
+//
 // Main orchestrator per MODULARIZATION_SCHEMA.txt module [17]: imports
 // every module (so each one's own top-level event-listener wiring runs,
 // same as when it all lived in one IIFE), wires the handful of
@@ -60,9 +73,18 @@ import './quiz-export.js';
 import './batch-scan.js';
 // UPDATE2_SLIDE_PANE_PROMPT.md: source-stack thumbnail generation for
 // pptx sources — see ensureSourceThumbnail()/generatePptxThumbnail()
-// below, and pptx-render.js's own note on why this reuses Tier 2's
-// cheap embedded-image extraction rather than Tier 1's full render.
-import { getPptxThumbnailDataUrl } from './pptx-render.js';
+// below.
+// SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md: added
+// renderPptxTier1Thumbnail to this existing import — generatePptxThumbnail()
+// now tries it first, falling back to getPptxThumbnailDataUrl's Tier 2
+// (unchanged) only if Tier 1 fails or produces nothing. See
+// pptx-render.js for the reasoning on both.
+import { renderPptxTier1Thumbnail, getPptxThumbnailDataUrl } from './pptx-render.js';
+// SLIDE_PANEL_LIVE_MIRROR_PROMPT.md: shared PDF-page-render helper,
+// factored out of this file's own generatePdfThumbnail() below — see
+// pdf-render.js for why it lives in its own module rather than staying
+// inline here.
+import { renderPdfPageToDataUrl } from './pdf-render.js';
 
 // UPDATE 2A: createSource() is the multi-source shim's explicit
 // "start a new document entry" call — see core-state.js.
@@ -410,40 +432,68 @@ function openSource(sourceId) {
   if (firstQuestion) setActiveCard(firstQuestion.id);
 }
 
+// Rendered at 2x the ~64px CSS display width (see styles.css's
+// .source-stack-thumb) for a crisper result on high-DPI screens. Shared
+// by both the PDF and PPTX thumbnail paths below so they stay in sync.
+const THUMBNAIL_TARGET_WIDTH = 128;
+
 // UPDATE2_SLIDE_PANE_PROMPT.md item 1 (thumbnail caching) — generates
 // and caches each source's slide-sorter thumbnail ONCE, lazily, the
 // first time renderSourceList() draws a card that doesn't have one yet.
-// Cached onto `source.thumbnailDataUrl` (a plain extra field on the
-// source object — not one of core-state.js's SHIMMED_SOURCE_KEYS, so no
-// active/inactive-source ambiguity: this is always THIS source's own
-// thumbnail) so every later renderSourceList() redraw (reorder, another
-// file imported, a click activating a different card) reuses the cached
-// string instead of re-rendering a PDF page or re-parsing a pptx zip
-// from scratch again — see the prompt's own "don't re-render on every
-// list redraw" instruction.
+// Cached onto `source.thumbnailDataUrl` / `source.thumbnailEl` (plain
+// extra fields on the source object — not one of core-state.js's
+// SHIMMED_SOURCE_KEYS, so no active/inactive-source ambiguity: this is
+// always THIS source's own thumbnail) so every later renderSourceList()
+// redraw (reorder, another file imported, a click activating a
+// different card) reuses the cached result instead of re-rendering a
+// PDF page or re-parsing a pptx deck from scratch again — see the
+// prompt's own "don't re-render on every list redraw" instruction.
+//
+// SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md: PDF and PPTX
+// now diverge slightly in what they cache, because pptx's new Tier 1
+// path (see generatePptxThumbnail() below) produces a live, rendered
+// DOM element rather than a portable image string — @aiden0z/
+// pptx-renderer's headless renderSlide() paints into a real element,
+// it doesn't hand back a raster/`data:` image the way pdf.js's
+// canvas.toDataURL() or Tier 2's embedded-picture extraction do, and
+// there's no rasterization step in this codebase (no html2canvas or
+// equivalent) to convert one into the other. So:
+//   - `source.thumbnailDataUrl` (string, unchanged) — set for a PDF
+//     thumbnail, or a PPTX thumbnail that fell back to Tier 2.
+//   - `source.thumbnailEl` (a detached DOM node, new) — set for a PPTX
+//     thumbnail that succeeded via Tier 1. renderSourceList() below
+//     appends this node directly into the card's thumb box instead of
+//     building an <img>; since only one card ever shows a given
+//     source's thumbnail at a time, moving the same cached node between
+//     redraws (rather than cloning it) is safe and cheap.
+// Both are mutually exclusive with each other and with
+// `source.thumbnailFailed` — a source only ever ends up with one of the
+// three.
 //
 // `source._thumbnailPromise` guards against kicking off a second,
 // redundant generation if renderSourceList() happens to redraw again
 // (e.g. another file in the same batch finishing) while the first
 // generation for this source is still in flight. `source.thumbnailFailed`
 // remembers a failure (e.g. a text-only pptx slide with no embedded
-// picture — see pptx-render.js's getPptxThumbnailDataUrl) so a
-// permanently-thumbnail-less source doesn't retry forever on every
-// redraw; the card falls back to a plain type badge in that case
-// instead.
+// picture, if even Tier 2 can't find one) so a permanently-thumbnail-
+// less source doesn't retry forever on every redraw; the card falls
+// back to a plain type badge in that case instead.
 function ensureSourceThumbnail(source) {
-  if (source.thumbnailDataUrl || source.thumbnailFailed || source._thumbnailPromise) return;
+  if (source.thumbnailDataUrl || source.thumbnailEl || source.thumbnailFailed || source._thumbnailPromise) return;
 
   source._thumbnailPromise = (async () => {
-    let dataUrl = null;
+    let result = null;
     if (source.docType === 'pdf') {
-      dataUrl = await generatePdfThumbnail(source);
+      const dataUrl = await generatePdfThumbnail(source);
+      result = dataUrl ? { kind: 'dataUrl', value: dataUrl } : null;
     } else if (source.docType === 'pptx') {
-      dataUrl = await generatePptxThumbnail(source);
+      result = await generatePptxThumbnail(source);
     }
     source._thumbnailPromise = null;
-    if (dataUrl) {
-      source.thumbnailDataUrl = dataUrl;
+    if (result && result.kind === 'element') {
+      source.thumbnailEl = result.value;
+    } else if (result && result.kind === 'dataUrl') {
+      source.thumbnailDataUrl = result.value;
     } else {
       source.thumbnailFailed = true;
     }
@@ -457,36 +507,50 @@ function ensureSourceThumbnail(source) {
 // instead. Reads `source.pdfDoc`/`source.pages` directly (NOT the
 // state.pdfDoc/state.pages shim) so this always renders THIS source's
 // first page regardless of which source happens to be active right now.
+// The canvas/viewport render itself lives in the shared
+// renderPdfPageToDataUrl() helper (see pdf-render.js), factored out
+// there for the (now-reverted) live mirror — kept as the shared helper
+// since it's a genuine improvement independent of that revert (see
+// pdf-render.js's own file header). No PDF-side gap to fix here: it
+// succeeds for any valid page unless pdfDoc itself is null.
 async function generatePdfThumbnail(source) {
   if (!source.pdfDoc) return null;
   try {
     const firstPageNumber = source.pages[0] ? source.pages[0].pageNumber : 1;
-    const page = await source.pdfDoc.getPage(firstPageNumber);
-    const baseViewport = page.getViewport({ scale: 1 });
-    // Rendered at 2x the ~64px CSS display width (see styles.css's
-    // .source-stack-thumb) for a crisper result on high-DPI screens.
-    const targetWidth = 128;
-    const scale = targetWidth / baseViewport.width;
-    const viewport = page.getViewport({ scale });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext('2d');
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    return canvas.toDataURL('image/png');
+    return await renderPdfPageToDataUrl(source.pdfDoc, firstPageNumber, THUMBNAIL_TARGET_WIDTH);
   } catch (e) {
     console.error('[main] PDF thumbnail render failed:', e);
     return null;
   }
 }
 
-// PPTX thumbnail: delegates to pptx-render.js's getPptxThumbnailDataUrl
-// — see that file for the Tier 1 vs Tier 2 trade-off this makes.
+// PPTX thumbnail — SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md:
+// tries Tier 1 (real visual, via renderPptxTier1Thumbnail) first, falls
+// back to Tier 2 (getPptxThumbnailDataUrl's embedded-picture extraction,
+// unchanged) if Tier 1 fails or comes back null, and only then leaves
+// it to the caller (ensureSourceThumbnail) to mark thumbnailFailed.
+// Mirrors the exact Tier 1 → Tier 2 → Tier 3 cascade renderPptxSlide()
+// (doc-pane-navigation.js) already uses for Pane 3 itself — same order,
+// same "try, catch, fall through" shape — just without a Tier 3 here,
+// since a thumbnail has no plain-text fallback to fall through to (the
+// caller's badge IS this function's Tier 3).
+//
+// Returns `{ kind: 'element' | 'dataUrl', value }` — see the
+// ensureSourceThumbnail() note above for why Tier 1's result can't be
+// normalized into the same string shape Tier 2/PDF use.
 async function generatePptxThumbnail(source) {
+  if (source.pptxFile) {
+    try {
+      const tier1El = await renderPptxTier1Thumbnail(source.pptxFile, source.pages[0] ? source.pages[0].pageNumber : 1, THUMBNAIL_TARGET_WIDTH);
+      if (tier1El) return { kind: 'element', value: tier1El };
+    } catch (e) {
+      console.error('[main] PPTX Tier 1 thumbnail failed, falling back to Tier 2:', e);
+    }
+  }
   if (!source.pptxZip) return null;
   const firstPageNumber = source.pages[0] ? source.pages[0].pageNumber : 1;
-  return getPptxThumbnailDataUrl(source.pptxZip, firstPageNumber);
+  const tier2Url = await getPptxThumbnailDataUrl(source.pptxZip, firstPageNumber);
+  return tier2Url ? { kind: 'dataUrl', value: tier2Url } : null;
 }
 
 // UPDATE 2B (new, not from source — see UI_UPGRADES_HANDOFF_PROMPT.md,
@@ -519,15 +583,26 @@ function renderSourceList() {
     row.dataset.sourceId = source.id;
 
     // UPDATE2_SLIDE_PANE_PROMPT.md item 1 — the thumbnail preview of
-    // this source's first page/slide. Three states: cached image ready,
-    // still loading (kicks off generation via ensureSourceThumbnail(),
-    // which is a no-op if generation is already cached/in-flight/failed —
-    // see that function), or permanently failed (a plain type badge,
-    // e.g. a text-only pptx slide with no embedded picture — see
-    // pptx-render.js's getPptxThumbnailDataUrl).
+    // this source's first page/slide. Four states: cached Tier-1
+    // element ready (SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md
+    // — a real rendered pptx slide, mounted directly rather than as an
+    // <img>; see generatePptxThumbnail()'s note on why), cached image
+    // ready (PDF, or a PPTX that fell back to Tier 2), still loading
+    // (kicks off generation via ensureSourceThumbnail(), which is a
+    // no-op if generation is already cached/in-flight/failed — see that
+    // function), or permanently failed (a plain type badge, e.g. a
+    // text-only pptx slide with no embedded picture that even Tier 2
+    // couldn't find one for).
     const thumb = document.createElement('div');
     thumb.className = 'source-stack-thumb';
-    if (source.thumbnailDataUrl) {
+    if (source.thumbnailEl) {
+      // Moves the cached node here from wherever it was previously
+      // mounted (a no-op the first time) — safe since only one card
+      // ever shows a given source's thumbnail at once. Not cloned: see
+      // generatePptxThumbnail()'s note on why this node's blob URLs /
+      // chart instances need to stay the single live copy.
+      thumb.appendChild(source.thumbnailEl);
+    } else if (source.thumbnailDataUrl) {
       const img = document.createElement('img');
       img.src = source.thumbnailDataUrl;
       img.alt = '';
