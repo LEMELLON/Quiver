@@ -123,8 +123,22 @@ function renderTextVersion() {
   // initial-import flow in main.js) still ignores the return value
   // entirely, so this is a pure addition — nothing about what gets drawn,
   // or when, has changed.
+  // PER_SOURCE_QUESTION_SCOPING_AND_PERF_FIX_PROMPT.md (Issue 2): Pane 2
+  // only ever shows the ACTIVE source's pages right now, so a question
+  // from any OTHER imported source has no .doc-page in this DOM at all
+  // to be matched against — it was guaranteed to fail the cheap exact
+  // check and fall through locateAndHighlightSnippet()'s entire
+  // expensive fuzzy/term-only fallback ladder before giving up, for
+  // text that was never going to be found here. Skipping it entirely is
+  // the same guard recheckHighlights() (highlighting.js) already
+  // applies for the identical reason — see that file's own comment on
+  // this exact line for the full rationale, including why a question
+  // with no sourceId at all (added via "+ Add Question" before any
+  // import) still gets checked as before: state.activeSourceId is also
+  // null/unset in that case, so the two sides of the comparison agree.
   const results = new Map(); // qid -> { question: LadderResult|null, answer: LadderResult|null }
   [...state.questions].sort((a, b) => (a.tier || 1) - (b.tier || 1)).forEach(q => {
+    if (q.sourceId !== state.activeSourceId) return;
     const entry = { question: null, answer: null };
     if (q.sourceSnippet) entry.question = locateAndHighlightSnippet(docTextContainer, q, 'question', 1);
     if (q.answerSnippet) entry.answer = locateAndHighlightSnippet(docTextContainer, q, 'answer', 1);

@@ -25,6 +25,8 @@ import {
   removeDuplicatesBtn,
   termBarEl,
   termFilterIndicatorEl,
+  termScopeToggleEl,
+  termSearchInputEl,
 } from './dom-refs.js';
 
 // UPDATE 3 (term nav bar — see UI_UPGRADES_HANDOFF_PROMPT.md): pulled in
@@ -119,19 +121,90 @@ let navChipPage = 0;
 // currently shown" instead of two parallel lists to keep in sync.
 let activeTermFilterKey = null;
 
+// UPDATE3_TERM_PANE_PROMPT.md item 2 (show-all vs. active-page-only
+// scope toggle): which set of questions the term PANEL draws its
+// visible rows from — 'all' (every term across the whole quiz, the
+// pre-existing behavior) or 'page' (only terms belonging to a question
+// on the page currently shown in Pane 3, for the active source). Same
+// module-level-`let` treatment as activeTermFilterKey/navChipPage above
+// and for the same reason — only ever read/reassigned from inside this
+// module (this toggle's own click handler and renderTermBar). Note this
+// is a DIFFERENT axis than activeTermFilterKey above: that one filters
+// Pane 1's QUESTION chip grid down to one already-chosen term;
+// termScopeMode instead decides which term ROWS show up in this panel
+// in the first place. DESIGN DECISION (per the handoff prompt's "should
+// toggle/search state reset when activeSourceId changes" question):
+// does NOT reset on source switch — it's a standing display preference
+// ("I always want to see just this page's terms"), not something tied
+// to any one document. See termSearchQuery below for the opposite
+// choice on search text, and resetTermSearchOnSourceSwitch() further
+// down for where that's wired.
+let termScopeMode = 'all'; // 'all' | 'page'
+
+// UPDATE3_TERM_PANE_PROMPT.md item 3 (search bar): live text typed into
+// #termSearchInput, matched case-insensitively as a substring against
+// each term group's label. Same module-level-`let` treatment as
+// termScopeMode above. DESIGN DECISION: combines with termScopeMode
+// rather than overriding it — see filterTermGroupsForPanel() below —
+// and, unlike termScopeMode, IS reset (to '') whenever
+// state.activeSourceId changes, since a leftover query typed against a
+// different document is more likely to confuse than help. See
+// resetTermSearchOnSourceSwitch() further down.
+let termSearchQuery = '';
+
+// PER_SOURCE_QUESTION_SCOPING_AND_PERF_FIX_PROMPT.md (Issue 1): Pane 1's
+// chip grid now shows only the ACTIVE source's own questions, plus any
+// question with no sourceId at all (a manually-added question from
+// before any document was ever imported) — same source-scoping
+// precedent already established by renderPane3QuestionNav() and
+// recheckHighlights() (highlighting.js). ANDed with the existing
+// (optional) term filter below — both conditions apply together if a
+// term filter happens to also be active.
+//
 // Every question that should currently be visible in the Pane 1 chip
 // list, paired with its GLOBAL index in state.questions — every
-// question when no term filter is active, or just the ones sharing the
-// filtered term's normalized key otherwise. The global index (not the
-// filtered subset's own position) is what buildNavChipHtml turns into
-// the Q01/Q02/... label, so a chip's number never disagrees with what
-// the same question shows as everywhere else in the app (the active
-// editor title, a duplicate-warning "possible duplicate of Q07" label)
-// just because a term filter happens to be applied.
+// question in-scope when no term filter is active, or just the ones
+// sharing the filtered term's normalized key otherwise. NOTE: the
+// GLOBAL index `i` here is no longer what gets displayed as Q01/Q02/...
+// — see perSourceDisplayIndex() below, which renderQuestionNav() and
+// renderPane3QuestionNav() both call instead now that numbering must be
+// sequential within a source rather than global (Issue 1b). `i` is kept
+// on these entries because it's still a stable per-question array
+// position other code may rely on incidentally; it's just not the
+// display number anymore.
 function visibleQuestionEntries() {
   return state.questions
     .map((q, i) => ({ q, i }))
+    .filter(({ q }) => q.sourceId === state.activeSourceId || q.sourceId == null)
     .filter(({ q }) => !activeTermFilterKey || normalizeTermKeyLoose(q.targetTerm || '') === activeTermFilterKey);
+}
+
+// Issue 1b/1c: every question belonging to `sourceId`, plus every
+// question with no sourceId at all (mirrors visibleQuestionEntries()'s
+// source filter above, generalized to any source — not just whichever
+// one is currently active). Deliberately NOT further narrowed by
+// activeTermFilterKey: numbering must stay stable regardless of whether
+// a term filter happens to be on, same principle the old global-index
+// numbering used to guarantee before multi-source support existed (see
+// the comment above visibleQuestionEntries()) — a chip's number should
+// never shift around just because someone clicked a term filter.
+function sourceScopedEntries(sourceId) {
+  return state.questions
+    .map((q, i) => ({ q, i }))
+    .filter(({ q }) => q.sourceId === sourceId || q.sourceId == null);
+}
+
+// The canonical "per-source display number" (0-based) for a given
+// question — what buildNavChipHtml turns into its Q01/Q02/... label.
+// Computed from q's OWN sourceId (not state.activeSourceId), so this
+// also gives the right answer for a question belonging to a source that
+// ISN'T currently active — needed by the cross-file duplicate-warning
+// label (Issue 1c) below. For the common case, where q's source IS the
+// active one, this resolves against exactly the same bucket Pane 1 and
+// Pane 3 are both rendering from, so the two can never disagree about
+// what number the same question shows.
+function perSourceDisplayIndex(q) {
+  return sourceScopedEntries(q.sourceId).findIndex(({ q: eq }) => eq.id === q.id);
 }
 
 function totalNavChipPages() {
@@ -183,11 +256,44 @@ function focusActiveNavPagerButton() {
 // of it. `dup` is already this function's own parameter, so no new
 // lookup is needed here.
 // ---------------------------------------------------------------------
+// Issue 1c: dup.matchIndex used to be computeDuplicateMap()'s stored
+// GLOBAL index of the matched question — that no longer corresponds to
+// anything shown on screen now that numbering is per-source, so it's
+// resolved at render time instead via dup.matchId + perSourceDisplayIndex()
+// (matchIndex itself is left unused going forward; still present on the
+// map entry, just not read anymore — see question-model.js). A
+// same-source match keeps a bare "Q0N" label; a cross-file match (a
+// real, expected case — "same target term" duplicate detection has no
+// source restriction) also names the other file, since a bare "Q0N"
+// would refer to a different question in the CURRENTLY-visible file's
+// own numbering otherwise.
+//
+// Shared by buildNavChipHtml's tooltip below AND activeEditorTemplate's
+// duplicate-warning box further down this file — that box read
+// dup.matchIndex directly too (the identical stale-numbering bug, just
+// a second render site), found while making this exact fix here. One
+// shared resolver keeps the two label strings from ever disagreeing,
+// same reasoning already applied to Pane 1/Pane 3's shared
+// perSourceDisplayIndex() above. Returns null if the matched question no
+// longer exists (deleted since the map was last computed).
+function resolveDuplicateMatchLabel(q, dup) {
+  const matchQ = state.questions.find(x => x.id === dup.matchId);
+  if (!matchQ) return null;
+  const num = `Q${String(perSourceDisplayIndex(matchQ) + 1).padStart(2, '0')}`;
+  if (matchQ.sourceId === q.sourceId) return { text: num, matchQ };
+  const matchSource = state.sources.find(s => s.id === matchQ.sourceId);
+  return { text: `${num} in ${matchSource ? matchSource.name : 'another file'}`, matchQ };
+}
+
 function buildNavChipHtml(q, displayIndex, dup) {
   const baseTitle = q.targetTerm || (q.variants[0] && q.variants[0].questionText) || 'Untitled question';
-  const title = dup
-    ? `${baseTitle} — possible duplicate of Q${String(dup.matchIndex + 1).padStart(2, '0')} (${dup.reason})`
-    : baseTitle;
+  let title = baseTitle;
+  if (dup) {
+    const resolved = resolveDuplicateMatchLabel(q, dup);
+    if (resolved) title = `${baseTitle} — possible duplicate of ${resolved.text} (${dup.reason})`;
+    // resolved === null: matched question was deleted since the map was
+    // last computed — fall back to baseTitle rather than show a stale label.
+  }
   return `
     <button type="button" data-nav-id="${q.id}" data-tier="${q.tier || 1}"
       class="nav-chip ${q.id === state.activeCardId ? 'nav-chip-active' : ''} ${q.sourceSnippet ? 'nav-chip-snippet' : ''} ${dup ? 'nav-chip-duplicate' : ''} ${(q.aiUnchecked && !dup) ? 'nav-chip-unchecked' : ''}"
@@ -227,12 +333,12 @@ function renderQuestionNav() {
     questionNavPager.classList.add('hidden');
   } else {
     // UPDATE 3: pageItems now comes from visibleQuestionEntries()
-    // (state.questions itself when unfiltered) rather than slicing
-    // state.questions directly, so a term filter narrows which
-    // questions appear here. displayIndex is each entry's own `.i`
-    // (the GLOBAL array index) rather than a position recomputed
-    // within the filtered subset — see visibleQuestionEntries()'s own
-    // comment for why that still has to hold even while filtered.
+    // (source-scoped per Issue 1, further narrowed by any active term
+    // filter) rather than slicing state.questions directly. Issue 1b:
+    // displayIndex is now perSourceDisplayIndex(q) — the question's
+    // position within its OWN source's numbering — rather than the
+    // entry's global array index `i`, so a second file's questions
+    // still start at Q01 instead of continuing the first file's count.
     const entries = visibleQuestionEntries();
     if (entries.length === 0) {
       questionNavEl.innerHTML = '<p class="text-xs text-mute italic px-1">No questions match this term filter.</p>';
@@ -242,7 +348,7 @@ function renderQuestionNav() {
       const startIdx = navChipPage * NAV_CHIPS_PER_PAGE;
       const pageItems = entries.slice(startIdx, startIdx + NAV_CHIPS_PER_PAGE);
       questionNavEl.innerHTML = pageItems
-        .map(({ q, i }) => buildNavChipHtml(q, i, getDuplicateMap().get(q.id)))
+        .map(({ q }) => buildNavChipHtml(q, perSourceDisplayIndex(q), getDuplicateMap().get(q.id)))
         .join('');
 
       const pagerHtml = buildPagerHtml();
@@ -283,9 +389,13 @@ function renderQuestionNav() {
 // to q.sourceId === state.activeSourceId fixes this.
 function renderPane3QuestionNav() {
   const chips = [];
-  state.questions.forEach((q, i) => {
+  state.questions.forEach((q) => {
     if (q.sourceId !== state.activeSourceId || q.sourcePage !== state.currentPage) return;
-    chips.push(buildNavChipHtml(q, i, getDuplicateMap().get(q.id)));
+    // Issue 1b: call through the same perSourceDisplayIndex() helper
+    // renderQuestionNav() uses for Pane 1's chips, rather than computing
+    // a separate numbering scheme here — this is what guarantees the two
+    // panes can never show different numbers for the same question.
+    chips.push(buildNavChipHtml(q, perSourceDisplayIndex(q), getDuplicateMap().get(q.id)));
   });
   if (chips.length === 0) {
     pane3QuestionNavEl.innerHTML = '';
@@ -329,6 +439,42 @@ pane3QuestionNavEl.addEventListener('click', (e) => {
 // deriving the grouping fresh here instead is cheap (this only ever
 // runs on a nav re-render, over an in-memory array) and keeps this
 // update scoped to Pane 1.
+// UPDATE3_TERM_PANE_PROMPT.md item 2: does `q` qualify for the
+// "This page" scope? Multi-source aware — mirrors the exact check
+// renderPane3QuestionNav() already uses (see above): sourceId AND
+// sourcePage both have to match, since two different imported
+// documents can reuse the same page numbers.
+function questionOnActivePage(q) {
+  return q.sourceId === state.activeSourceId && q.sourcePage === state.currentPage;
+}
+
+// UPDATE3_TERM_PANE_PROMPT.md items 2+3: narrows buildTermGroups()'s
+// full group list down to what the term PANEL should actually render,
+// applying the show-all/active-page scope and the search query
+// TOGETHER (per the handoff prompt's design decision: search filters
+// within the current scope rather than overriding it — the more
+// expected behavior for combined filters). Doesn't touch
+// buildTermGroups() itself or its groups' `questionIds` — a surviving
+// row's "N questions" count still reflects that term's TOTAL usage
+// across the whole quiz, same as before this update; scope/search only
+// decide which term ROWS appear here, not what number each one reports
+// (consistent with computeDuplicateMap()'s own quiz-wide notion of
+// duplicates, which this panel's inline dupe warnings still draw on).
+function filterTermGroupsForPanel(groups) {
+  let visible = groups;
+  if (termScopeMode === 'page') {
+    visible = visible.filter((g) => g.questionIds.some((qid) => {
+      const q = state.questions.find((x) => x.id === qid);
+      return q && questionOnActivePage(q);
+    }));
+  }
+  const query = termSearchQuery.trim().toLowerCase();
+  if (query) {
+    visible = visible.filter((g) => g.label.toLowerCase().includes(query));
+  }
+  return visible;
+}
+
 function buildTermGroups() {
   const groups = new Map(); // normalizeTermKeyLoose key -> { key, label, questionIds }
   state.questions.forEach((q) => {
@@ -392,9 +538,29 @@ function buildTermRowHtml(group) {
 // could hide a question from Pane 3 that's still on-screen in Pane 2.
 function renderTermBar() {
   const groups = buildTermGroups();
-  termBarEl.innerHTML = groups.length
-    ? groups.map(buildTermRowHtml).join('')
-    : '<p class="text-xs text-mute italic">No target terms yet — they show up here once questions have one set.</p>';
+
+  // UPDATE3_TERM_PANE_PROMPT.md item 2: reflect which scope button is
+  // active. Read directly off termScopeMode (the single source of
+  // truth) rather than any state baked into the button markup itself —
+  // same pattern .term-row-active already uses for activeTermFilterKey.
+  if (termScopeToggleEl) {
+    termScopeToggleEl.querySelectorAll('[data-term-scope]').forEach((btn) => {
+      btn.classList.toggle('term-scope-btn-active', btn.dataset.termScope === termScopeMode);
+    });
+  }
+
+  // UPDATE3_TERM_PANE_PROMPT.md items 2+3: render from the
+  // scope+search-filtered list, not the full one. Distinguishes "no
+  // terms exist at all yet" (groups.length === 0) from "terms exist but
+  // none match the current scope/search" (groups.length > 0 but
+  // visibleGroups.length === 0) so the empty message actually explains
+  // what's going on instead of always suggesting the quiz has no terms.
+  const visibleGroups = filterTermGroupsForPanel(groups);
+  termBarEl.innerHTML = visibleGroups.length
+    ? visibleGroups.map(buildTermRowHtml).join('')
+    : groups.length
+      ? '<p class="text-xs text-mute italic">No terms match the current filter.</p>'
+      : '<p class="text-xs text-mute italic">No target terms yet — they show up here once questions have one set.</p>';
 
   termFilterIndicatorEl.classList.toggle('hidden', !activeTermFilterKey);
   if (activeTermFilterKey) {
@@ -442,6 +608,49 @@ termFilterIndicatorEl.addEventListener('click', (e) => {
   navChipPage = 0;
   renderQuestionNav();
 });
+
+// UPDATE3_TERM_PANE_PROMPT.md item 2: scope-toggle clicks. Delegated on
+// the wrapper (same pattern as termBarEl's listener above) rather than
+// one listener per button. Re-renders just the term panel — this scope
+// only affects WHICH TERM ROWS show here, not Pane 1's question chip
+// grid, so renderQuestionNav()'s fuller re-render isn't needed.
+if (termScopeToggleEl) {
+  termScopeToggleEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-term-scope]');
+    if (!btn) return;
+    const mode = btn.dataset.termScope;
+    if (mode !== termScopeMode) {
+      termScopeMode = mode;
+      renderTermBar();
+    }
+  });
+}
+
+// UPDATE3_TERM_PANE_PROMPT.md item 3: live search-as-you-type. Same
+// "only this panel needs to re-render" reasoning as the scope toggle
+// above.
+if (termSearchInputEl) {
+  termSearchInputEl.addEventListener('input', () => {
+    termSearchQuery = termSearchInputEl.value;
+    renderTermBar();
+  });
+}
+
+// UPDATE3_TERM_PANE_PROMPT.md (design decision — see termSearchQuery's
+// own comment above): clears the search box, but deliberately leaves
+// termScopeMode untouched, whenever the active imported source changes.
+// NOT WIRED UP YET: main.js's openSource() is the natural call site
+// (right alongside its existing state.activeSourceId assignment), but
+// main.js wasn't included in this pass's file set (see this prompt's
+// "Files to send to the next agent" list), so this is exported ready to
+// be called from there — add a one-line
+// `resetTermSearchOnSourceSwitch();` call in openSource() to finish
+// wiring it in.
+function resetTermSearchOnSourceSwitch() {
+  termSearchQuery = '';
+  if (termSearchInputEl) termSearchInputEl.value = '';
+  renderTermBar();
+}
 
 // Tab group order is fixed: Multiple Choice, then True/False, then
 // Category Selection. Each is a GROUP that can hold zero or more
@@ -682,9 +891,14 @@ function activeEditorTemplate(q, index, total) {
 
       ${(() => {
         if (!dup) return '';
-        const match = state.questions.find(x => x.id === dup.matchId);
-        const matchLabel = 'Q' + String(dup.matchIndex + 1).padStart(2, '0') +
-          (match && match.targetTerm ? ` (${escapeHtml(match.targetTerm)})` : '');
+        // Issue 1c (and the identical bug found alongside it — see
+        // resolveDuplicateMatchLabel's own comment above): dup.matchIndex
+        // is a stale global index once numbering is per-source; resolve
+        // via the same shared helper buildNavChipHtml uses instead.
+        const resolved = resolveDuplicateMatchLabel(q, dup);
+        if (!resolved) return '';
+        const matchLabel = resolved.text +
+          (resolved.matchQ.targetTerm ? ` (${escapeHtml(resolved.matchQ.targetTerm)})` : '');
         return `
       <div class="mb-3 px-3 py-2 rounded border border-danger/50 bg-danger/10 flex items-center justify-between gap-2">
         <p class="text-xs text-danger leading-snug">⚠ Possible duplicate of <strong>${matchLabel}</strong> — ${escapeHtml(dup.reason)}.</p>
@@ -1179,6 +1393,16 @@ export {
   buildNavChipHtml,
   renderQuestionNav,
   renderPane3QuestionNav,
+  // UPDATE3_TERM_PANE_PROMPT.md: renderTermBar now also exported —
+  // previously only called internally (from renderQuestionNav), but
+  // doc-pane-navigation.js's renderSourcePage() needs to call it
+  // directly too, to keep the "This page" scope's term list in sync
+  // with Pane 3 page navigation (see that file for the call site).
+  renderTermBar,
+  // UPDATE3_TERM_PANE_PROMPT.md: exported for main.js's openSource() to
+  // call — see this function's own comment above for why that wiring
+  // isn't done yet in this pass.
+  resetTermSearchOnSourceSwitch,
   variantIndexesOfGroup,
   variantTabsTemplate,
   choiceRowsTemplate,

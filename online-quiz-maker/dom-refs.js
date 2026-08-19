@@ -179,6 +179,17 @@ const sourceListEl = document.getElementById('sourceList');
 const termBarEl = document.getElementById('termBar');
 const termFilterIndicatorEl = document.getElementById('termFilterIndicator');
 
+// UPDATE3_TERM_PANE_PROMPT.md (new refs, not from source): the show-all
+// vs. active-page-only scope toggle wrapper (its two buttons are read
+// via delegated click, same pattern as termBarEl above — no separate
+// refs per button) and the live term-search input. Both now live inside
+// #termPane rather than #pane1 — see online-quiz-maker.html and this
+// same prompt's relocation of #termBarDetails. See editor-render.js's
+// renderTermBar()/filterTermGroupsForPanel() for how these drive the
+// term list.
+const termScopeToggleEl = document.getElementById('termScopeToggle');
+const termSearchInputEl = document.getElementById('termSearchInput');
+
 export {
   pane1,
   pane2,
@@ -253,4 +264,6 @@ export {
   sourceListEl,
   termBarEl,
   termFilterIndicatorEl,
+  termScopeToggleEl,
+  termSearchInputEl,
 };

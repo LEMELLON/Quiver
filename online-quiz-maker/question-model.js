@@ -322,8 +322,20 @@ function computeDuplicateMap() {
 
       const termA = normalizeTermKeyLoose(a.targetTerm || '');
       if (termA && termB && termA === termB) {
+        // Deliberately NOT source-restricted (Issue 3, per
+        // PER_SOURCE_QUESTION_SCOPING_AND_PERF_FIX_PROMPT.md): a
+        // duplicate target term across two different files is a real,
+        // useful signal (the same concept covered in two decks) — Pane
+        // 1's chip labeling (buildNavChipHtml, editor-render.js) shows
+        // that source's name when this branch matches across files.
         reason = 'same target term';
-      } else if (a.sourcePage === b.sourcePage && a.sourceSnippet && b.sourceSnippet) {
+      } else if (a.sourceId === b.sourceId && a.sourcePage === b.sourcePage && a.sourceSnippet && b.sourceSnippet) {
+        // Issue 3 fix: this "same source passage" check used to compare
+        // sourcePage only. Page 3 of File A and page 3 of File B are
+        // unrelated pages that happen to share a number — without the
+        // sourceId check, overlapping snippets on same-numbered pages of
+        // two different files would get wrongly flagged as duplicates of
+        // each other.
         const snipA = normalizeTermKey(a.sourceSnippet);
         if (snipA && snipB) {
           const shorter = snipA.length <= snipB.length ? snipA : snipB;

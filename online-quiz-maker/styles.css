@@ -12,7 +12,20 @@
      Tailwind utility classes directly on the <main> tag in
      online-quiz-maker.html, not in this file, so there was nothing to
      change here for the grid-track change either. No edits made to
-     this file for this prompt beyond this note. */
+     this file for this prompt beyond this note.
+
+     UPDATE3_TERM_PANE_PROMPT.md verification note: same story for the
+     new 5th column (#termPane) — its grid-track sizing is also a
+     Tailwind utility on <main>, not here. This file's actual edits for
+     that prompt are additive only: new .term-scope-* / .term-search-*
+     rules further down (see that block's own header comment) for the
+     scope toggle and search input now living inside #termPane. Checked
+     every existing #pane1-scoped selector in this file the same way the
+     note above already did for #sourceStackArea — none of them
+     (.term-row-*, .term-filter-*, etc.) are scoped to #pane1 itself,
+     they're all bare class selectors, so relocating #termBarDetails out
+     of #pane1 required no changes to any of the pre-existing term-bar
+     rules either. */
   html, body { height: 100%; }
   body { background: #0b0f14; }
 
@@ -461,6 +474,71 @@
     white-space: nowrap;
   }
   .term-filter-clear:hover { color: #e7edf5; }
+
+  /* ---------- UPDATE3_TERM_PANE_PROMPT.md: term-pane scope toggle + search ----------
+     #termScopeToggle / #termSearchInput now sit above #termBar inside
+     the relocated #termPane column (see online-quiz-maker.html and
+     editor-render.js's renderTermBar()/filterTermGroupsForPanel()).
+     Reuses the exact same palette as the .term-row-* rules above (dark
+     input surface, amber active/focus state) so the new controls read
+     as part of the same panel rather than a bolted-on widget. Stacked
+     vertically (toggle row, then a full-width search input, then the
+     term list) rather than side-by-side — the design-decision note in
+     the handoff prompt about this column's width (narrower than
+     #sourcePane) is exactly why: there isn't horizontal room for a
+     toggle + search input on one line, so each control gets its own
+     row and takes the column's full width instead. */
+  .term-scope-toggle {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .term-scope-btn {
+    flex: 1;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: center;
+    color: #8296ab;
+    background: #0f151d;
+    border: 1px solid #243040;
+    border-radius: 0.375rem;
+    padding: 0.35rem 0.4rem;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  }
+  .term-scope-btn:hover { color: #e7edf5; border-color: #f5b942; }
+  /* Active scope — same treatment as .term-row-active/.nav-pager-btn-active
+     elsewhere in this panel, applied directly to the button (there's no
+     wrapping row here the way .term-row-active wraps .term-row-btn). */
+  .term-scope-btn-active {
+    color: #0b0f14;
+    background: #f5b942;
+    border-color: #f5b942;
+    font-weight: 700;
+  }
+  .term-scope-btn:focus-visible {
+    outline: none;
+    border-color: #f5b942;
+    box-shadow: 0 0 0 1px #f5b942;
+  }
+  .term-search-input {
+    display: block;
+    width: 100%;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    color: #e7edf5;
+    background: #0f151d;
+    border: 1px solid #243040;
+    border-radius: 0.375rem;
+    padding: 0.4rem 0.6rem;
+  }
+  .term-search-input::placeholder { color: #8296ab; }
+  .term-search-input:focus {
+    outline: none;
+    border-color: #f5b942;
+    box-shadow: 0 0 0 1px #f5b942;
+  }
 
   /* ---------- Pane 2: rendered text version — "bond paper" pages ---------- */
   #docTextViewport { background: #0e131a; }

@@ -93,7 +93,10 @@ import {
 } from './dom-refs.js';
 
 // Functions from other modules that these functions call:
-import { renderPane3QuestionNav } from './editor-render.js';
+// UPDATE3_TERM_PANE_PROMPT.md: renderTermBar added to this import — see
+// its call site in renderSourcePage() below, for keeping the term
+// panel's "This page" scope in sync with Pane 3 page navigation.
+import { renderPane3QuestionNav, renderTermBar } from './editor-render.js';
 import { renderPptxTier1, renderPptxTier2, teardownTier1Scaling } from './pptx-render.js';
 
 // ---------------------------------------------------------------------
@@ -245,6 +248,17 @@ function renderSourcePage(num, opts) {
   pageInput.value = clamped;
   updateSyncBadge(clamped);
   renderPane3QuestionNav();
+  // UPDATE3_TERM_PANE_PROMPT.md ("Wire it, don't leave the term list
+  // stale after paging"): when the term panel's scope toggle is set to
+  // "This page", its rows depend on state.currentPage/activeSourceId,
+  // neither of which changes without going through this function. Only
+  // matters when that scope is active, but termScopeMode is
+  // editor-render.js's own private module state (not exported), and
+  // this call is cheap (an in-memory re-render, same cost class as the
+  // renderPane3QuestionNav() call right above it) — so it's simplest to
+  // always call it here rather than exporting scope state across
+  // modules just to gate this one call.
+  renderTermBar();
   if (scrollText) scrollDocTextToPage(clamped);
 
   // New (not from source): the pptx Tier 1/2/loading containers are

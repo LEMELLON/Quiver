@@ -79,29 +79,31 @@
     </div>
   </header>
 
-  <!-- Main: fixed 4-column layout (stacks to 1 column below lg).
+  <!-- Main: fixed 5-column layout (stacks to 1 column below lg).
        UPDATE2_SLIDE_PANE_PROMPT.md ("Slide Panel as Its Own Dedicated
        Layout Column"): grid-cols-3 -> grid-cols-[...] with 4 explicit
        tracks, matching index.html's wireframe left-to-right order for
-       the columns this prompt owns (slide panel -> Pane 1 -> Pane 2 ->
-       Pane 3). The wireframe's full order also has a 5th "terms" column
-       after Pane 3 (see index.html, #terms) — that column is
-       UPDATE3_TERM_PANE_PROMPT.md's responsibility, not this pass's, and
-       that prompt was NOT run in this session (only its file list was
-       referenced for coordination, per this prompt's "Hard constraints"
-       section — its actual content wasn't provided here). Per this
-       prompt's own instruction for that case ("if only one of the two
-       prompts is being run in a given session, say so and note what the
-       grid looks like with just that one column added"): this grid is
-       4 columns, not the wireframe's full 5 — running
-       UPDATE3_TERM_PANE_PROMPT.md later will need to widen this
-       grid-cols list to 5 tracks and add a 5th <section> after #pane3.
-       The wireframe's own literal widths (5% / 29% / 29% / 29% / 5%)
-       are given for POSITION, not pixel-exact targets (styling/naming
-       inside each column was explicitly called out as ignorable) — see
-       the design-decision note on #sourcePane below for why that column
-       is wider than a literal 5% here. -->
-  <main id="layoutRoot" class="grid grid-cols-1 lg:grid-cols-[minmax(220px,0.8fr)_1.4fr_1.4fr_1.4fr] gap-4 max-w-[1700px] mx-auto w-full px-4 lg:px-6 py-6">
+       the columns that prompt owned (slide panel -> Pane 1 -> Pane 2 ->
+       Pane 3).
+       UPDATE3_TERM_PANE_PROMPT.md (this pass): widened to the wireframe's
+       full 5 tracks, adding the trailing "terms" column (index.html,
+       #terms) that Update 2 deliberately left out. New trailing track is
+       `minmax(200px,0.7fr)` — narrower floor and fr-weight than
+       #sourcePane's `minmax(220px,0.8fr)` (see that section's own
+       design-decision comment below), since this column's content (a
+       search input, a 2-button scope toggle, and single-column term
+       chips) is lighter than #sourcePane's API-key/model-select/file-
+       picker controls; 200px is roughly the narrowest the search input
+       plus toggle stay comfortably usable at.
+       DESIGN DECISION (max-w-[1700px] cap): bumped to max-w-[1900px].
+       The previous 4-track cap balanced 0.8fr + 1.4fr×3 = 5.0fr worth of
+       flexible track weight against 1700px; adding the new 0.7fr track
+       (5.7fr total) without raising the cap would have shrunk Panes 1-3
+       by taking a bite out of their existing share, all to feed the new
+       column. 1900px ≈ 1700 × (5.7/5.0) rounded down to a clean number —
+       keeps Panes 1-3 close to their previous rendered width instead of
+       being squeezed by the new track's fr share. -->
+  <main id="layoutRoot" class="grid grid-cols-1 lg:grid-cols-[minmax(220px,0.8fr)_1.4fr_1.4fr_1.4fr_minmax(200px,0.7fr)] gap-4 max-w-[1900px] mx-auto w-full px-4 lg:px-6 py-6">
 
     <!-- ================= SLIDE PANEL — Source stack (imported docs) =================
          UPDATE2_SLIDE_PANE_PROMPT.md ("Slide Panel as Its Own Dedicated
@@ -241,29 +243,13 @@
     <!-- ================= PANE 1 — Active Question & Choices ================= -->
     <section id="pane1" class="space-y-4 min-w-0 lg:overflow-y-auto lg:max-h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem] pr-1">
 
-      <!-- Update 3 (term nav bar): browse-by-term UI on top of the
-           existing duplicate-detection engine (computeDuplicateMap /
-           normalizeTermKeyLoose already existed before this update —
-           see question-model.js and text-normalize.js; this session
-           only adds the browsing/filtering UI and a compact, additional
-           copy of the warning+dismiss action). See
-           editor-render.js's buildTermGroups()/renderTermBar() for the
-           full design-decision notes:
-             - clicking a term FILTERS the existing chip grid below
-               (reusing Update 1's pager) rather than opening a
-               separate modal/view
-             - terms sharing a normalizeTermKeyLoose() key collapse
-               into one row, matching computeDuplicateMap()'s own
-               notion of "same term"
-             - the duplicate warning + dismiss action appears HERE in
-               addition to (not instead of) its existing spot in the
-               single-question editor -->
-      <details id="termBarDetails" class="bg-card border border-edge rounded-lg p-4 lg:p-5">
-        <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Terms</summary>
-        <p class="text-xs text-mute mb-2 mt-2">Every target term used across your questions. Click one to filter the list below to just its question(s).</p>
-        <div id="termFilterIndicator" class="hidden mb-2"></div>
-        <div id="termBar" class="space-y-1.5"></div>
-      </details>
+      <!-- UPDATE3_TERM_PANE_PROMPT.md: the term nav bar (<details
+           id="termBarDetails">, formerly here) has been relocated into
+           its own dedicated #termPane column — last child of
+           #layoutRoot, after #pane3 — matching index.html's #terms
+           wireframe position. See that section, further down this file,
+           for the browse-by-term UI itself and its own design-decision
+           notes. -->
 
       <!-- Question nav -->
       <div class="flex items-center justify-between">
@@ -384,6 +370,62 @@
           <p class="font-mono text-xs text-mute tracking-wide animate-beacon">Loading slide visual…</p>
         </div>
       </div>
+
+    </section>
+
+    <!-- ================= TERM PANE — Browse by target term =================
+         UPDATE3_TERM_PANE_PROMPT.md ("Term Pane as Its Own Dedicated
+         Layout Column"): #termBarDetails relocated here, out of #pane1's
+         <section>, into its own top-level <section>, last child of
+         #layoutRoot — matching index.html's #terms position in the
+         wireframe. This is a pure DOM relocation of the browse-by-term
+         UI that already existed (see the original Update 3 note that
+         used to sit above this block inside #pane1, now moved down to
+         here): clicking a term still FILTERS Pane 1's existing chip grid
+         (reusing Update 1's pager) rather than opening a separate modal;
+         terms sharing a normalizeTermKeyLoose() key still collapse into
+         one row, matching computeDuplicateMap()'s own notion of "same
+         term"; the inline duplicate warning + dismiss action here is
+         still IN ADDITION TO (not instead of) its existing spot in the
+         single-question editor. None of that logic changed — only the
+         container moved. See editor-render.js's buildTermGroups()/
+         renderTermBar() for the full notes, including this pass's two
+         additions (scope toggle + search).
+         DESIGN DECISION: added the `open` attribute to
+         <details id="termBarDetails"> — it had none before. Collapsed-
+         by-default made sense when this shared a column with the
+         question editor; now it's this column's ENTIRE content, so
+         collapsed-by-default would just render an empty column. Matches
+         #sourcePane's own <details id="importDetails" ... open> above,
+         for the same reason. -->
+    <section id="termPane" class="min-w-0 lg:overflow-y-auto lg:max-h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
+
+      <details id="termBarDetails" class="bg-card border border-edge rounded-lg p-4 lg:p-5" open>
+        <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Terms</summary>
+        <p class="text-xs text-mute mb-3 mt-2">Every target term used across your questions. Click one to filter the question list in Pane 1 to just its question(s).</p>
+
+        <!-- UPDATE3_TERM_PANE_PROMPT.md item 2: show-all vs.
+             active-page-only scope toggle. `data-term-scope` read by
+             editor-render.js's delegated click handler on this wrapper;
+             which button reads "active" is set by renderTermBar() itself
+             (same source-of-truth pattern as .term-row-active below),
+             not by any static markup here. -->
+        <div id="termScopeToggle" class="term-scope-toggle mb-2" role="group" aria-label="Term list scope">
+          <button type="button" data-term-scope="all" class="term-scope-btn">All terms</button>
+          <button type="button" data-term-scope="page" class="term-scope-btn" title="Only terms belonging to a question on the page currently shown in Pane 3">This page</button>
+        </div>
+
+        <!-- UPDATE3_TERM_PANE_PROMPT.md item 3: live search, case-
+             insensitive substring match against each term group's
+             label. Combines with (doesn't override) the scope toggle
+             above — both filters apply together. See
+             editor-render.js's filterTermGroupsForPanel(). -->
+        <input id="termSearchInput" type="search" placeholder="Search terms…" autocomplete="off"
+          class="term-search-input mb-2" />
+
+        <div id="termFilterIndicator" class="hidden mb-2"></div>
+        <div id="termBar" class="space-y-1.5"></div>
+      </details>
 
     </section>
 
