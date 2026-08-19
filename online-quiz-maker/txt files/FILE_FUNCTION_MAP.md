@@ -1,7 +1,7 @@
 # File / Function Map — Online Quiz Maker (Modularized)
 
-Table of contents for the codebase. Status of this doc: **19 of 29 files
-confirmed by direct read; 10 files pending** (listed by name only in
+Table of contents for the codebase. Status of this doc: **20 of 29 files
+confirmed by direct read; 9 files pending** (listed by name only in
 upload manifests, content never received — see PENDING section at the
 bottom). Every agent that opens a pending file should replace its
 placeholder entry here with a real one, in the same format as the
@@ -39,7 +39,7 @@ here — carried over from each file's own header comment.
 | editor-render.js | question nav rendering, term bar, escapeHtml | ⏳ pending |
 | styles.css | all styling | ⏳ pending |
 | question-model.js | question CRUD, dedup, sourceId tagging | ⏳ pending |
-| layout-formatting.js | renderTextVersion (Pane 2 text rendering) | ⏳ pending |
+| layout-formatting.js | Pane 2 text rendering + highlight redraw; AI layout reformatting | ✅ confirmed |
 | pptx-render.js | PPTX slide render (Tier 1 lib render + Tier 2 image grid) | ✅ confirmed |
 | highlighting.js | source-text highlight recheck | ✅ confirmed |
 | ai-api-calls.js | generateQuestionsWithAI (3-pass pipeline) | ⏳ pending |
@@ -164,6 +164,14 @@ here — carried over from each file's own header comment.
 **Depends on:** third-party CDN module `@aiden0z/pptx-renderer` (pinned 1.2.0, loaded via jsDelivr `+esm`), globals `JSZip`/`DOMParser`. No import of `core-state.js`/`dom-refs.js` — container/file/zip/pageNumber are all passed in by the caller (doc-pane-navigation.js, main.js).
 **Note:** Tier 1 caches one parsed presentation per File-object identity (`getPresentationForFile`) and cancels superseded in-flight renders via `renderToken`; `currentSlideHandle`/`currentTier1ResizeObserver` track the single currently-mounted Pane-3 slide so they can be torn down before the next one replaces it. Thumbnail rendering (`renderPptxTier1Thumbnail`) is a separate, uncancelled one-shot path that keeps its wrapper alive indefinitely (cached by the caller) rather than disposing it.
 
+### layout-formatting.js
+**Role:** Rebuilds Pane 2's HTML from `state.pages` and re-applies question/answer highlights (`renderTextVersion`); also owns the AI-powered "Format Layout" flow that reconstructs page layout as sanitized HTML (`formatDocumentLayout`/`formatAllPagesLayout`/`sanitizeLayoutHtml`/`LAYOUT_SYSTEM_PROMPT`).
+**Exports:** `renderTextVersion`, `sanitizeLayoutHtml`, `formatDocumentLayout`, `formatAllPagesLayout`.
+**Depends on:** `core-state.js`, `dom-refs.js`, `text-normalize.js` (`renderPageTextHtml`), `status-helpers.js` (`setSelectionGenStatus`), `highlighting.js` (`highlightSnippetInContainer`, `recheckHighlights`, `dedupeMarks`, `logAllHighlights`, `locateAndHighlightSnippet`, `markQidList`), `ai-api-calls.js` (`callGeminiApiWithRetry`, `callOpenAiApi`, `sleep`, `isGeminiModelNotFoundError`), `question-model.js` (`computeDuplicateMap` — 2-file import cycle with this file's own `renderTextVersion` export, safe since `computeDuplicateMap` is only invoked from inside a function body, never at module-evaluation time).
+**Read by:** `main.js`, `question-model.js`, `highlighting.js`, `selection-toolbar.js` (per its own header note), `batch-scan.js`.
+**Flag (repeated from its own file header, not fixed this pass):** source lines 3004-3007 — a `docTextContainer` click listener that calls `setActiveCard` — sit immediately after this file's own event wiring but aren't assigned to any module; likely belongs with `setActiveCard` in `editor-render.js`, or the main orchestrator. Left unassigned per the modularization schema's "flag, don't guess" rule.
+**Note:** `renderTextVersion()` still contains two `logAllHighlights(...)` diagnostic calls (`'end of renderTextVersion'` and, via `formatAllPagesLayout`, `'formatAllPagesLayout: after recheckHighlights (final)'`) — left in place since removing them would be a logic change, out of scope for this pass.
+
 ---
 
 ## Pending files (content not yet received — placeholders only)
@@ -194,11 +202,6 @@ Referenced classes: `.source-stack-thumb`, `.source-stack-thumb-loading`,
 Referenced exports: `newQuestion` (tags `sourceId`, per quiz-export.js's
 UPDATE 2B note), `sortQuestionsByPage`, `updateQuestionCount`,
 `removeFlaggedDuplicates` (reassigns `duplicateMap`).
-
-### layout-formatting.js — *not yet reviewed*
-Referenced export: `renderTextVersion` (Pane 2 text rendering — per
-selection-toolbar.js's note, currently single-source-only; multi-source
-concatenated rendering explicitly out of scope so far).
 
 ### highlighting.js — *confirmed*
 **Role:** Locates and wraps question/answer snippets in `<mark>` elements in Pane 2, handles duplicate-sharing of

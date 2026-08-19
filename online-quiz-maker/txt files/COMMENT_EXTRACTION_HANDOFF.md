@@ -64,12 +64,12 @@ Legend: ⬜ not started · 🔄 in progress (see note) · ✅ done
 | pptx-render.js | ✅ | |
 | highlighting.js | ✅ | |
 | doc-pane-navigation.js | ✅ | |
-| layout-formatting.js | ⬜ | not yet reviewed |
-| editor-render.js | ⬜ | not yet reviewed |
-| text-normalize.js | ⬜ | |
+| layout-formatting.js | ✅ | |
+| editor-render.js | ✅ | done outside this pass, no diff to review |
+| text-normalize.js | ✅ | |
 | slide-panel-mirror.js | ✅ | file deleted (dead code, no live caller in main.js or doc-pane-navigation.js) — done outside this pass, no diff to review |
-| gemini-classifier.js | ⬜ | |
-| ai-credentials-and-models.js | ⬜ | |
+| gemini-classifier.js | ✅ | |
+| ai-credentials-and-models.js | ✅ | |
 | ai-api-calls.js | ⬜ | not yet reviewed |
 | ai-prompt-builders.js | ⬜ | not yet reviewed |
 | variant-generation.js | ⬜ | not yet reviewed |

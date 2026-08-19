@@ -1,19 +1,3 @@
-// ai-credentials-and-models.js
-// Extracted verbatim from online-quiz-maker.html (original lines 749-803,
-// 795-807 event wiring, and the init block at 4930-4936-ish "Seed the
-// classifier's stored key..." comment block just below toggleApiKeyBtn wiring).
-// Function bodies are UNCHANGED from source — only import/export wrapper
-// lines were added.
-
-// --- Shared dependencies this module needs (defined in core-state.js /
-//     dom-refs.js — do NOT redefine here, only wire up the imports once
-//     those modules exist) ---
-// DOM refs used below: apiKeyInput, toggleApiKeyBtn, modelSelect,
-//   detectModelsBtn, modelDetectStatus
-// Constants used below: MODEL_STORAGE, API_KEY_STORAGE, configModel
-// Globals used below: GeminiClassifier (from gemini-classifier.js, already
-//   loaded as a separate <script> — no import needed, it attaches to window)
-
 import {
   apiKeyInput,
   toggleApiKeyBtn,
@@ -28,9 +12,7 @@ import {
   configModel,
 } from './core-state.js';
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 749-765
-// ---------------------------------------------------------------------
+// Repopulates the model dropdown and restores the previously selected model if still valid.
 function refreshModelOptions(models) {
   if (!Array.isArray(models) || models.length === 0) return;
   const previous = modelSelect.value;
@@ -50,9 +32,7 @@ function refreshModelOptions(models) {
   if (preferred) modelSelect.value = preferred;
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 768-793
-// ---------------------------------------------------------------------
+// Detects available AI models for the entered API key and updates the status text.
 async function detectModels() {
   const key = apiKeyInput.value.trim();
   if (!key) {
@@ -80,11 +60,7 @@ async function detectModels() {
   }
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 795-807 (event wiring that belongs to
-// this module's functions — moved here per the "move with handler"
-// strategy noted in the schema. NOT altered.)
-// ---------------------------------------------------------------------
+// Wires API key persistence, model detection triggers, model persistence, and key visibility toggle.
 apiKeyInput.addEventListener('input', () => {
   try { localStorage.setItem(API_KEY_STORAGE, apiKeyInput.value); } catch (e) { /* ignore */ }
 });
@@ -99,11 +75,7 @@ toggleApiKeyBtn.addEventListener('click', () => {
   toggleApiKeyBtn.textContent = isPassword ? 'Hide' : 'Show';
 });
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 809-813
-// Seed the classifier's stored key and run an initial live detection pass
-// if a key was already available from config.js or localStorage.
-// ---------------------------------------------------------------------
+// Seeds the classifier's stored key and runs an initial detection pass if a key is already present.
 if (typeof GeminiClassifier !== 'undefined' && apiKeyInput.value.trim()) {
   GeminiClassifier.setKey(apiKeyInput.value.trim());
   detectModels();
