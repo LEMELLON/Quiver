@@ -1,7 +1,7 @@
 # File / Function Map — Online Quiz Maker (Modularized)
 
-Table of contents for the codebase. Status of this doc: **20 of 29 files
-confirmed by direct read; 9 files pending** (listed by name only in
+Table of contents for the codebase. Status of this doc: **21 of 29 files
+confirmed by direct read; 8 files pending** (listed by name only in
 upload manifests, content never received — see PENDING section at the
 bottom). Every agent that opens a pending file should replace its
 placeholder entry here with a real one, in the same format as the
@@ -43,7 +43,7 @@ here — carried over from each file's own header comment.
 | pptx-render.js | PPTX slide render (Tier 1 lib render + Tier 2 image grid) | ✅ confirmed |
 | highlighting.js | source-text highlight recheck | ✅ confirmed |
 | ai-api-calls.js | generateQuestionsWithAI (3-pass pipeline) | ⏳ pending (skipped per user instruction, not opened) |
-| snippet-question-generation.js | single-snippet question generation | ⏳ pending |
+| snippet-question-generation.js | single-snippet question generation | ✅ confirmed |
 | variant-generation.js | single question-variant generation | ✅ confirmed |
 | ai-prompt-builders.js | prompt construction, collectTargetTerms | ⏳ pending (skipped per user instruction, not opened) |
 
@@ -233,10 +233,14 @@ Referenced export: `generateQuestionsWithAI(pages, seedTerms)` — the
 `state.activeSourceId` at creation time (per batch-scan.js's known-bug
 note — this is why scanning requires switching active source first).
 
-### snippet-question-generation.js — *not yet reviewed*
-Referenced exports: `generateQuestionFromSnippet`, `cleanExtractedText`.
-Reassigns `lastDocSelection`/reads `pendingSelection` via core-state.js
-getters/setters (shared with selection-toolbar.js).
+### snippet-question-generation.js — *confirmed*
+**Role:** Generates a question collection from a user-selected document snippet via AI, re-syncs a question's source/answer snippets after edits (manual "Scan" and debounced auto-sync), and owns `cleanExtractedText`.
+**Exports:** `generateQuestionFromSnippet`, `resyncSnippetsForQuestion`, `handleResyncSnippets`, `handleScanField`, `scheduleAutoSync`, `runAutoSync`, `cleanExtractedText`.
+**Internal only:** `SNIPPET_SYSTEM_PROMPT`, `RESYNC_SNIPPET_SYSTEM_PROMPT`, `autoSyncTimers`, `AUTO_SYNC_DEBOUNCE_MS`.
+**Depends on:** `core-state.js`, `dom-refs.js`, `highlighting.js` (`fuzzyIncludes`, `unwrapMarksForQuestion`, `highlightSnippetInContainer`, `recheckHighlightsForQuestion`), `ai-api-calls.js` (pending, `callGeminiApiWithRetry`/`callOpenAiApi`), `ai-prompt-builders.js` (pending, `safeParseAIJson`), `variant-generation.js` (`parseClampVariantSet`, `handleApiError`), `editor-render.js` (`renderQuestionNav`, `renderActiveQuestion`, `setActiveCard`), `layout-formatting.js` (`renderTextVersion`), `question-model.js` (pending, `updateQuestionCount`/`sortQuestionsByPage`), `selection-toolbar.js` (`hideSelectionToolbar`), `status-helpers.js` (`setSelectionGenStatus`), `batch-scan.js` (`applyPreferredQuestionType`).
+**Reassigns/reads:** `lastDocSelection`/`pendingSelection` via core-state.js getters/setters (shared with selection-toolbar.js).
+**Note:** owns the `selectionGenerateBtn` click listener wiring (moved-with-handler), same pattern as quiz-export.js's modal wiring.
+**Flag:** `handleResyncSnippets` and `runAutoSync` still contain numerous `console.log('[...] DIAGNOSTIC ...')` debug calls left in from development; not removed since that would be a logic change, out of scope for the comment-only pass.
 
 ### variant-generation.js — *not yet reviewed*
 Referenced export: `generateSingleVariant(question, type)`. Likely also
@@ -250,7 +254,7 @@ Referenced export: `collectTargetTerms(questions)`.
 
 ## Cross-file shared state (for quick reference)
 
-- **`state.pendingSelection` / `state.lastDocSelection`** — getter/setter pair in core-state.js; written by selection-toolbar.js and snippet-question-generation.js (pending).
+- **`state.pendingSelection` / `state.lastDocSelection`** — getter/setter pair in core-state.js; written by selection-toolbar.js and snippet-question-generation.js.
 - **`state.duplicateMap`** — getter/setter pair in core-state.js; written by question-model.js (pending) and editor-render.js (pending).
 - **`state.docType`/`pages`/`pdfDoc`/`pptxFile`/`pptxZip`** — accessor shim in core-state.js, transparently proxied to `state.sources.find(active)`. Any file reading/writing these as plain properties is unaffected by the multi-source refactor.
 - **`state.sources[]` / `state.activeSourceId`** — new in UPDATE 2A; touched directly (not via shim) by main.js (pending), doc-pane-navigation.js (pending), batch-scan.js, quiz-export.js, selection-toolbar.js, slide-panel-mirror.js.

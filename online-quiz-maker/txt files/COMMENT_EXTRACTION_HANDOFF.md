@@ -73,7 +73,7 @@ Legend: ⬜ not started · 🔄 in progress (see note) · ✅ done
 | ai-api-calls.js | ✅ | skipped per user instruction — not opened, comments not stripped |
 | ai-prompt-builders.js | ✅ | skipped per user instruction — not opened, comments not stripped |
 | variant-generation.js | ✅ | |
-| snippet-question-generation.js | ⬜ | not yet reviewed |
+| snippet-question-generation.js | ✅ | |
 | question-model.js | ⬜ | not yet reviewed |
 | selection-toolbar.js | ⬜ | |
 | batch-scan.js | ⬜ | |
