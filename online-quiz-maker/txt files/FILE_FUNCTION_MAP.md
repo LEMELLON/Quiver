@@ -42,10 +42,10 @@ here — carried over from each file's own header comment.
 | layout-formatting.js | Pane 2 text rendering + highlight redraw; AI layout reformatting | ✅ confirmed |
 | pptx-render.js | PPTX slide render (Tier 1 lib render + Tier 2 image grid) | ✅ confirmed |
 | highlighting.js | source-text highlight recheck | ✅ confirmed |
-| ai-api-calls.js | generateQuestionsWithAI (3-pass pipeline) | ⏳ pending |
+| ai-api-calls.js | generateQuestionsWithAI (3-pass pipeline) | ⏳ pending (skipped per user instruction, not opened) |
 | snippet-question-generation.js | single-snippet question generation | ⏳ pending |
-| variant-generation.js | single question-variant generation | ⏳ pending |
-| ai-prompt-builders.js | prompt construction, collectTargetTerms | ⏳ pending |
+| variant-generation.js | single question-variant generation | ✅ confirmed |
+| ai-prompt-builders.js | prompt construction, collectTargetTerms | ⏳ pending (skipped per user instruction, not opened) |
 
 ---
 
@@ -219,6 +219,13 @@ overlapping marks, and drives the batch and single-question highlight recheck fl
 its own inline own-page/fuzzy/term-only logic extracts each page's sentences once and scores every open candidate
 against them in the same pass (O(pages) instead of O(candidates x pages)); routing it through the per-slot helper
 would undo that.
+
+### variant-generation.js
+**Role:** On-demand generation and regeneration of individual question variants (rephrased/true_false/category/clamp), separate from the bulk import pipeline.
+**Exports:** `isValidChoiceCount`, `normalizeVariant`, `normalizeClampVariant`, `parseClampVariantSet`, `generateSingleVariant`, `handleGenerateVariant`, `regenerateChoicesForVariant`, `handleRegenerateChoices`, `handleApiError`.
+**Internal only:** `SINGLE_VARIANT_SYSTEM_PROMPTS`, `REGENERATE_CHOICES_SYSTEM_PROMPTS`, `getEmptyChoiceIndices`.
+**Depends on:** `core-state.js`, `dom-refs.js`, `shared-constants.js` (`MIN_CHOICES`), `question-model.js` (`toClampPrompt`), `snippet-question-generation.js` (`cleanExtractedText`), `ai-api-calls.js` (`callGeminiApiWithRetry`/`callOpenAiApi` — pending), `ai-prompt-builders.js` (`safeParseAIJson` — pending), `editor-render.js` (`renderActiveQuestion`).
+**Note:** `SNIPPET_SYSTEM_PROMPT`, though physically adjacent in the original source, belongs to `snippet-question-generation.js` (its only caller), not this file.
 
 ### ai-api-calls.js — *not yet reviewed*
 Referenced export: `generateQuestionsWithAI(pages, seedTerms)` — the

@@ -1,58 +1,19 @@
-// variant-generation.js
-// Extracted verbatim from online-quiz-maker.html, source lines 3097-3570
-// (isValidChoiceCount through handleApiError). Function/const bodies are
-// UNCHANGED from source — only import/export wrapper lines were added.
-//
-// FLAGGED / EXCLUDED: SNIPPET_SYSTEM_PROMPT (source lines 3189-3214) sits
-// physically inside this line range but is used ONLY by
-// generateQuestionFromSnippet at source line 3591/3593 — a function
-// assigned to module [11] snippet-question-generation.js, not this one.
-// Same "constant moves with its sole usage site, not its physical
-// position" precedent already applied to DUPLICATE_SNIPPET_MIN_LEN in
-// question-model.js (see that file's header note). SNIPPET_SYSTEM_PROMPT
-// is therefore NOT included here — it will be extracted verbatim into
-// snippet-question-generation.js when that module is built.
-// SINGLE_VARIANT_SYSTEM_PROMPTS (3223-3282) and REGENERATE_CHOICES_SYSTEM_PROMPTS
-// (3391-3439), by contrast, ARE included below since they're each used
-// only by this module's own functions (generateSingleVariant /
-// regenerateChoicesForVariant respectively).
-
-// --- Shared dependencies ---
 import { state } from './core-state.js';
 import { apiKeyInput, modelSelect } from './dom-refs.js';
-
-// NOTE (structural, not a logic change): MIN_CHOICES was declared inline
-// in the editor-template section of the source but is also read here
-// (isValidChoiceCount, source line 3099). See the same NOTE in
-// editor-render.js — both modules import it from the shared
-// shared-constants.js instead of duplicating it.
 import { MIN_CHOICES } from './shared-constants.js';
-
-// Functions from other modules that these functions call:
 import { toClampPrompt } from './question-model.js';
 import { cleanExtractedText } from './snippet-question-generation.js';
 import { callGeminiApiWithRetry, callOpenAiApi } from './ai-api-calls.js';
 import { safeParseAIJson } from './ai-prompt-builders.js';
 import { renderActiveQuestion } from './editor-render.js';
 
-// ---------- Shared variant normalization (used by both the single-
-// snippet generator and the bulk AI parser) ----------
-// `type === 'true_false'` is always exactly 2 choices (True/False);
-// every other type has no upper limit — MIN_CHOICES (defined up in the
-// editor template section) is the only floor, same rule the "+ Add
-// choice" / "✕" editor controls enforce, so AI-generated and
-// hand-edited variants stay consistent.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3097-3100
-// ---------------------------------------------------------------------
+// true_false requires exactly 2 choices; every other type just needs at least MIN_CHOICES.
 function isValidChoiceCount(type, n) {
   if (type === 'true_false') return n === 2;
   return Number.isInteger(n) && n >= MIN_CHOICES;
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3102-3134
-// ---------------------------------------------------------------------
+// Validates and normalizes a raw AI/manual variant into the { type, questionText, choices, correctAnswerIndex(es) } shape.
 function normalizeVariant(raw, type) {
   if (!raw || typeof raw.questionText !== 'string' || !raw.questionText.trim()) return null;
   if (!Array.isArray(raw.choices) || !isValidChoiceCount(type, raw.choices.length)) return null;
@@ -87,19 +48,7 @@ function normalizeVariant(raw, type) {
   };
 }
 
-// The clamp variant's raw AI shape is { "sentence": "...", "choices":
-// [...], "correctAnswerIndex": N } — same as normalizeVariant's shape,
-// plus a "sentence" instead of "questionText". toClampPrompt strips the
-// leading term from that sentence to produce the actual blanked prompt
-// shown/played, and the result is stored in the same { type,
-// questionText, choices, correctAnswerIndex } shape as every other
-// variant so downstream code (export, validateQuiz, the editor's
-// choiceRowsTemplate) doesn't need a special case for this type.
-// Choice count defaults to 4 (what the import prompt asks for) but
-// isn't capped there — see isValidChoiceCount.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3146-3159
-// ---------------------------------------------------------------------
+// Normalizes a raw clamp variant (sentence + choices) into the standard variant shape via toClampPrompt.
 function normalizeClampVariant(raw, targetTerm) {
   if (!raw || typeof raw.sentence !== 'string' || !raw.sentence.trim()) return null;
   const sentence = cleanExtractedText(raw.sentence);
@@ -115,21 +64,7 @@ function normalizeClampVariant(raw, targetTerm) {
   return { type: 'clamp', questionText, choices, correctAnswerIndex };
 }
 
-// Accepts `variants` as either an object keyed by type ({ clamp, ... })
-// or an array of variant objects each carrying its own "type" field,
-// and returns a single-entry array holding just the normalized clamp
-// variant, or null if it's missing/malformed. Only "clamp" is ever
-// requested from the AI now — rephrased/true_false are generated later,
-// on demand, by generateSingleVariant() (see the question-model note
-// above). Also tolerates the retired "definition" key from older
-// prompt responses or cached data by treating it as the clamp
-// variant's raw sentence source (definition.questionText was already
-// "term not named", so it isn't a usable clamp sentence — this only
-// prevents a hard failure on stale data; fresh generations always
-// send "clamp").
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3173-3187
-// ---------------------------------------------------------------------
+// Extracts and normalizes the clamp variant from a parsed AI response, accepting array or object variant shapes.
 function parseClampVariantSet(parsed) {
   if (!parsed || typeof parsed !== 'object' || !parsed.variants) return null;
   const v = parsed.variants;
@@ -146,16 +81,7 @@ function parseClampVariantSet(parsed) {
   return [clamp];
 }
 
-// ---------- On-demand single-variant generation (Rephrased / True-False) ----------
-// Used by the per-question "Generate" buttons in variantTabsTemplate —
-// NOT part of the bulk import pipeline. Reuses whatever source context
-// the question already has (its sourceSnippet, falling back to the
-// clamp variant's own questionText for manually-added questions with
-// no snippet) so a variant can be generated regardless of how the
-// question was created.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3223-3282
-// ---------------------------------------------------------------------
+// System prompts for on-demand single-variant generation (rephrased/true_false/category) via the per-question "Generate" buttons.
 const SINGLE_VARIANT_SYSTEM_PROMPTS = {
   rephrased: `You are a quiz-writing assistant embedded in a document-to-quiz tool. You'll be given a target term/concept and a passage of context (either the original source snippet or an existing question about the term). Write ONE new "rephrased" multiple-choice question variant testing the same target term.
 
@@ -217,24 +143,12 @@ Rules (follow strictly):
 "choices" should have as many entries as the category genuinely has (4 by default, more if the context supports it — no upper limit). "correctAnswerIndices" is an array of integers indexing into "choices", length at least 2, up to the full choice count.`,
 };
 
-// `statusElement` is optional, same (msg, tone) reporter contract as
-// generateQuestionFromSnippet below — lets a quota/rate-limit failure
-// get reported through the caller's own status UI instead of a raw
-// alert(). Returns one normalized variant object ({ type, questionText,
-// choices, correctAnswerIndex }), ready to push straight into
-// q.variants — never mutates `q` itself.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3290-3344
-// ---------------------------------------------------------------------
+// Generates one normalized variant of the given type for question q, using its snippet or existing variant text as context.
 async function generateSingleVariant(q, type, statusElement) {
   const apiKey = apiKeyInput.value.trim();
   if (!apiKey) throw new Error('Enter your Gemini or OpenAI API key in Pane 1 first.');
 
-  // Prefer the clamp (fill-in-the-blank) variant's text as context when
-  // it exists, since its sentence form reads most like source prose —
-  // but the clamp base is removable now, so fall back to whichever
-  // variant is on hand (e.g. the question's current True/False or
-  // Category Selection stem) rather than requiring clamp specifically.
+  // Prefer the clamp variant's text as context if present, else fall back to whichever variant is on hand.
   const clamp = q.variants.find(v => v.type === 'clamp');
   const fallbackVariant = clamp || q.variants[0];
   const contextText = q.sourceSnippet || (fallbackVariant && fallbackVariant.questionText) || '';
@@ -282,15 +196,7 @@ Generate the question variant now, and return only the JSON object.`;
   return variant;
 }
 
-// Click handler for the "🔒 Rephrased MCQ" / "🔒 True / False" locked
-// tabs and the sub-row's "+ New variation" chip (see
-// variantTabsTemplate). Guards against double-clicks while a call is
-// already in flight for this question, surfaces failures inline under
-// the tab bar (auto-clearing after a few seconds), and lands on the
-// newly-created variant on success.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3352-3381
-// ---------------------------------------------------------------------
+// Click handler for the variant-generation tabs/chip; guards against concurrent calls and appends the new variant on success.
 async function handleGenerateVariant(qid, type) {
   const q = state.questions.find(x => x.id === qid);
   if (!q || q.generatingType) return;
@@ -322,17 +228,7 @@ async function handleGenerateVariant(qid, type) {
   }
 }
 
-// ---------- On-demand choices/correct-answer regeneration ----------
-// Used by the Choices card's "🪄 Auto-fill (AI)" button. Unlike
-// generateSingleVariant (which writes a brand-new questionText), this
-// takes the CURRENT variant.questionText exactly as the person left
-// it — including any manual edits to the question or the answer — and
-// only asks the AI to (re)produce the choices + correctAnswerIndex
-// that fit it, so it's the right tool right after editing an answer
-// without wanting the question stem itself rewritten too.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3391-3439
-// ---------------------------------------------------------------------
+// System prompts for regenerating just the choices/correct answer of an existing variant, without rewriting its question stem.
 const REGENERATE_CHOICES_SYSTEM_PROMPTS = {
   clamp: `You are a quiz-writing assistant. You'll be given a fill-in-the-blank ("clamp") question stem — the blank is written as "___" — plus its target term/concept, optional source context, and the CURRENT choice list. Do NOT change or rewrite the question stem.
 
@@ -392,15 +288,7 @@ Rules (follow strictly):
 "correctAnswerIndices" is an array of integers indexing into "choices".`,
 };
 
-// ---------------------------------------------------------------------
-// FIX (not in original source — QA-reported bug): "Auto-fill (AI)" used
-// to overwrite every choice on the active variant, including ones the
-// person had already typed by hand. This scopes it down to ONLY the
-// currently-blank choice slots. Used both to build the PRESERVE/BLANK
-// listing sent to the AI below, and defensively re-applied after the
-// response comes back (see regenerateChoicesForVariant), so a filled-in
-// choice survives even if the model ignores the PRESERVE instruction.
-// ---------------------------------------------------------------------
+// Returns the indices of choices with empty/blank text.
 function getEmptyChoiceIndices(variant) {
   return variant.choices.reduce((acc, c, i) => {
     if (!c || !c.trim()) acc.push(i);
@@ -408,13 +296,7 @@ function getEmptyChoiceIndices(variant) {
   }, []);
 }
 
-// Returns { choices, correctAnswerIndex } for radio-style variants, or
-// { choices, correctAnswerIndices } for the checkbox-style 'category'
-// type — never touches questionText. `q`/`variant` are read-only here;
-// the caller (handleRegenerateChoices) applies the result.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3445-3509
-// ---------------------------------------------------------------------
+// Regenerates choices (and correct answer(s)) for the given variant via AI, without touching its questionText.
 async function regenerateChoicesForVariant(q, variant) {
   const apiKey = apiKeyInput.value.trim();
   if (!apiKey) throw new Error('Enter your Gemini or OpenAI API key in Pane 1 first.');
@@ -426,15 +308,9 @@ async function regenerateChoicesForVariant(q, variant) {
   const model = modelSelect.value;
   const systemPrompt = REGENERATE_CHOICES_SYSTEM_PROMPTS[variant.type] || REGENERATE_CHOICES_SYSTEM_PROMPTS.rephrased;
   const contextText = q.answerSnippet || q.sourceSnippet || '';
-  // Regenerate the SAME number of choices the variant currently has —
-  // it starts at 4 by default, but the person may have added/removed
-  // some via the editor's "+ Add choice" / "✕" controls, and this
-  // should preserve whatever that count now is rather than resetting
-  // it back to 4. (Not applicable to true_false, which is always 2.)
+  // Preserve the variant's current choice count rather than resetting it back to a default.
   const choiceCount = variant.type === 'true_false' ? 2 : variant.choices.length;
-  // FIX (not in original source): list each current choice as PRESERVE
-  // (has text — must come back unchanged) or BLANK (empty — the AI may
-  // write into it). See getEmptyChoiceIndices above.
+  // Lists each current choice as PRESERVE (has text) or BLANK (empty, AI may fill it).
   const emptyIndices = getEmptyChoiceIndices(variant);
   const currentChoicesListing = variant.type === 'true_false' ? '' : `\nCurrent choices:\n${variant.choices.map((c, i) => emptyIndices.includes(i) ? `[${i}] BLANK` : `[${i}] PRESERVE: "${c}"`).join('\n')}`;
   const userPrompt = `Question stem (do not rewrite this): "${variant.questionText}"
@@ -463,10 +339,7 @@ Generate the choices now, and return only the JSON object.`;
   }
   let choices = parsed.choices.map(c => cleanExtractedText(String(c ?? '')));
   if (choices.some(c => !c)) throw new Error('The AI response was not a usable set of choices. Try again.');
-  // FIX (not in original source): belt-and-suspenders — even though the
-  // prompt instructs the model to copy PRESERVE choices back verbatim,
-  // force the original text back into every non-blank index here so a
-  // person's existing choice can never be silently altered by the AI.
+  // Force the original text back into every non-blank index so an existing choice can't be altered by the AI.
   choices = choices.map((c, i) => (emptyIndices.includes(i) ? c : variant.choices[i]));
 
   if (variant.type === 'category') {
@@ -491,17 +364,13 @@ Generate the choices now, and return only the JSON object.`;
   return { choices, correctAnswerIndex };
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3511-3544
-// ---------------------------------------------------------------------
 async function handleRegenerateChoices(qid) {
   const q = state.questions.find(x => x.id === qid);
   if (!q || q.choicesBusy) return;
   const variant = q.variants[q.activeVariantIndex];
   if (!variant) return;
 
-  // FIX (not in original source): Auto-fill now only ever touches blank
-  // choice slots — if there aren't any, don't call the AI at all.
+  // Skip the AI call entirely if there are no blank choice slots to fill.
   if (getEmptyChoiceIndices(variant).length === 0) {
     q.choicesError = 'All choices already have text — nothing to auto-fill.';
     renderActiveQuestion();
@@ -543,18 +412,7 @@ async function handleRegenerateChoices(qid) {
   }
 }
 
-// Detects a quota-exhausted / rate-limited API error (HTTP 429, or a
-// message mentioning "quota"/"insufficient_quota"/"rate limit") and
-// surfaces a single friendly warning for it — via `statusElement` (any
-// function with the same (msg, tone) signature as setSelectionGenStatus/
-// setParseStatus) if one was given, otherwise console.error + alert as
-// a last resort. Returns true when it recognized and reported a
-// quota/rate-limit error, false for anything else (so the caller knows
-// whether to keep treating it as this special case or just rethrow it
-// as a normal error).
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 3555-3570
-// ---------------------------------------------------------------------
+// Detects a quota-exhausted/rate-limited API error and reports it via statusElement or alert; returns true if handled.
 function handleApiError(err, statusElement) {
   const msg = (err.message || '').toLowerCase();
   const isQuota = msg.includes('quota') || msg.includes('insufficient_quota') || err.status === 429 || msg.includes('rate limit');

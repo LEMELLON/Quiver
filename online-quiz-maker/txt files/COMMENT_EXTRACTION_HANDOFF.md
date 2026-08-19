@@ -70,9 +70,9 @@ Legend: ⬜ not started · 🔄 in progress (see note) · ✅ done
 | slide-panel-mirror.js | ✅ | file deleted (dead code, no live caller in main.js or doc-pane-navigation.js) — done outside this pass, no diff to review |
 | gemini-classifier.js | ✅ | |
 | ai-credentials-and-models.js | ✅ | |
-| ai-api-calls.js | ⬜ | not yet reviewed |
-| ai-prompt-builders.js | ⬜ | not yet reviewed |
-| variant-generation.js | ⬜ | not yet reviewed |
+| ai-api-calls.js | ✅ | skipped per user instruction — not opened, comments not stripped |
+| ai-prompt-builders.js | ✅ | skipped per user instruction — not opened, comments not stripped |
+| variant-generation.js | ✅ | |
 | snippet-question-generation.js | ⬜ | not yet reviewed |
 | question-model.js | ⬜ | not yet reviewed |
 | selection-toolbar.js | ⬜ | |
