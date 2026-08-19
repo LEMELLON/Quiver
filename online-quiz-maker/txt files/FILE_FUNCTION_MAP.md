@@ -20,7 +20,7 @@ here — carried over from each file's own header comment.
 | core-state.js | shared state object + constants | ✅ confirmed |
 | dom-refs.js | all `getElementById` refs | ✅ confirmed |
 | pdf-render.js | shared PDF→dataURL canvas helper | ✅ confirmed |
-| slide-panel-mirror.js | live Pane-3 mirror preview | ⚠️ confirmed, **likely dead code / broken import** |
+| slide-panel-mirror.js | *(deleted)* — was: live Pane-3 mirror preview | ✅ deleted, dead code confirmed |
 | quiz-export.js | JSON export + encrypted Quiz Code export | ✅ confirmed |
 | batch-scan.js | "Scan Pages" modal + "Scan This Page" | ✅ confirmed |
 | selection-toolbar.js | floating "Generate Question from Selection" toolbar | ✅ confirmed |
@@ -41,7 +41,7 @@ here — carried over from each file's own header comment.
 | question-model.js | question CRUD, dedup, sourceId tagging | ⏳ pending |
 | layout-formatting.js | renderTextVersion (Pane 2 text rendering) | ⏳ pending |
 | pptx-render.js | PPTX slide render (Tier 1 lib render + Tier 2 image grid) | ✅ confirmed |
-| highlighting.js | source-text highlight recheck | ⏳ pending |
+| highlighting.js | source-text highlight recheck | ✅ confirmed |
 | ai-api-calls.js | generateQuestionsWithAI (3-pass pipeline) | ⏳ pending |
 | snippet-question-generation.js | single-snippet question generation | ⏳ pending |
 | variant-generation.js | single question-variant generation | ⏳ pending |
@@ -70,11 +70,9 @@ here — carried over from each file's own header comment.
 **Depends on:** nothing (leaf, pdf.js global only).
 **Read by:** `main.js` (thumbnail gen, pending), `slide-panel-mirror.js`.
 
-### slide-panel-mirror.js ⚠️
-**Role (as written):** live-updating preview mirroring whatever page Pane 3 shows.
-**Exports:** `updateSlidePanelMirror(pageNumber)`.
-**Depends on:** `core-state.js` (`state`, `getActiveSource` — OK), `dom-refs.js` (4 refs that **do not exist** in that file — will throw/undefined at import), `pdf-render.js` (OK), `pptx-render.js`'s `getPptxThumbnailDataUrl` (unconfirmed, file pending).
-**Action needed:** `core-state.js` and `dom-refs.js` both state this feature was deleted per `SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md`. **Update:** `doc-pane-navigation.js` confirmed clean — no call site there, and its header documents the removal. Still need `main.js` checked before concluding no live caller exists anywhere.
+### slide-panel-mirror.js — DELETED
+**Status:** file removed. Dead-code question is closed: `doc-pane-navigation.js` and `main.js` (both confirmed) have no import of this file and no call to `updateSlidePanelMirror()`, matching `core-state.js`/`dom-refs.js`'s claim that the feature was already reverted. No archive kept per the handoff's no-archive rule — this entry is the only remaining record.
+**Note for `styles.css` pass (still pending):** check for now-orphaned `#slidePanelMirror` / `.slide-panel-mirror-loading` rules and flag/remove per that file's own workflow step.
 
 ### quiz-export.js
 **Role:** Build/validate quiz JSON, plain JSON export, and encrypted "Quiz Code" export (PBKDF2 → AES-GCM → gzip → base64url).
@@ -126,7 +124,7 @@ here — carried over from each file's own header comment.
 **Role:** Converts extracted page text to HTML (headings/bullets/paragraphs/markdown-lite), plus whitespace/punctuation normalizers used for AI-snippet-to-source matching and term dedup.
 **Exports:** `renderInlineMarkdown`, `isLikelyHeading`, `mergeParagraphLines`, `renderPageTextHtml`, `normalizeWhitespace`, `SNIPPET_PUNCTUATION_RE`, `stripPunctuationForMatch`, `stripListConjunctionsForMatch`, `normalizeTermKey`, `lightSingularizeKey`, `normalizeTermKeyLoose`.
 **Depends on:** `editor-render.js` (pending, `escapeHtml`).
-**Read by (per its own note):** `highlighting.js` (pending) also uses `SNIPPET_PUNCTUATION_RE` directly.
+**Read by (per its own note):** `highlighting.js` (confirmed) also uses `SNIPPET_PUNCTUATION_RE` directly.
 
 ### status-helpers.js
 **Role:** Two tiny status-line setters, used from ~31 call sites app-wide.
@@ -202,10 +200,22 @@ Referenced export: `renderTextVersion` (Pane 2 text rendering — per
 selection-toolbar.js's note, currently single-source-only; multi-source
 concatenated rendering explicitly out of scope so far).
 
-### highlighting.js — *not yet reviewed*
-Referenced export: `recheckHighlights` (calls `cleanExtractedText` from
-snippet-question-generation.js). Uses `SNIPPET_PUNCTUATION_RE` from
-text-normalize.js inside `stripPunctuationKeepMap`.
+### highlighting.js — *confirmed*
+**Role:** Locates and wraps question/answer snippets in `<mark>` elements in Pane 2, handles duplicate-sharing of
+overlapping marks, and drives the batch and single-question highlight recheck flows.
+**Exports:** `fuzzyIncludes`, `highlightBlockAncestorOf`, `buildNormalizedContainerIndex`, `stripPunctuationKeepMap`,
+`stripListConjunctionsKeepMap`, `highlightSnippetInContainer`, `widenRangeToAvoidPartialMarks`,
+`unwrapMarksForQuestion`, `dedupeMarks`, `hasFuzzyMark`, `markedTextLength`, `calculateSimilarity`,
+`extractSentences`, `locateAndHighlightSnippet`, `recheckHighlights`, `recheckHighlightsForQuestion`,
+`logAllHighlights`, `markQidList`, `markHasQid`, `areDuplicateQids`.
+**Depends on:** `core-state.js`, `dom-refs.js`, `classification-meta.js`, `text-normalize.js`, `status-helpers.js`,
+`editor-render.js`, `snippet-question-generation.js` (`cleanExtractedText`), `layout-formatting.js`
+(`renderTextVersion` — 2-file import cycle, safe since `renderTextVersion()` is only invoked from inside
+`recheckHighlights()`'s own function body, never at module-evaluation time).
+**Note:** `recheckHighlights()` is intentionally NOT routed through the shared `locateAndHighlightSnippet()` ladder —
+its own inline own-page/fuzzy/term-only logic extracts each page's sentences once and scores every open candidate
+against them in the same pass (O(pages) instead of O(candidates x pages)); routing it through the per-slot helper
+would undo that.
 
 ### ai-api-calls.js — *not yet reviewed*
 Referenced export: `generateQuestionsWithAI(pages, seedTerms)` — the
