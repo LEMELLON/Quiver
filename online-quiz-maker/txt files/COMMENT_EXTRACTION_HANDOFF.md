@@ -52,16 +52,16 @@ Legend: ⬜ not started · 🔄 in progress (see note) · ✅ done
 
 | File | Status | Note |
 |---|---|---|
-| core-state.js | ⬜ | |
-| dom-refs.js | ⬜ | |
-| shared-constants.js | ⬜ | |
-| classification-meta.js | ⬜ | |
-| status-helpers.js | ⬜ | |
-| config.js | ⬜ | |
-| seed-api-key.js | ⬜ | |
-| doc-extraction.js | ⬜ | |
-| pdf-render.js | ⬜ | |
-| pptx-render.js | ⬜ | not yet reviewed |
+| core-state.js | ✅ | |
+| dom-refs.js | ✅ | |
+| shared-constants.js | ✅ | |
+| classification-meta.js | ✅ | |
+| status-helpers.js | ✅ | |
+| config.js | ✅ | |
+| seed-api-key.js | ✅ | |
+| doc-extraction.js | ✅ | |
+| pdf-render.js | ✅ | |
+| pptx-render.js | ✅ | |
 | highlighting.js | ⬜ | not yet reviewed |
 | doc-pane-navigation.js | ✅ | |
 | layout-formatting.js | ⬜ | not yet reviewed |

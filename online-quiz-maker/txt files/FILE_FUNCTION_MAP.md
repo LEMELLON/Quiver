@@ -1,7 +1,7 @@
 # File / Function Map — Online Quiz Maker (Modularized)
 
-Table of contents for the codebase. Status of this doc: **18 of 29 files
-confirmed by direct read; 11 files pending** (listed by name only in
+Table of contents for the codebase. Status of this doc: **19 of 29 files
+confirmed by direct read; 10 files pending** (listed by name only in
 upload manifests, content never received — see PENDING section at the
 bottom). Every agent that opens a pending file should replace its
 placeholder entry here with a real one, in the same format as the
@@ -40,7 +40,7 @@ here — carried over from each file's own header comment.
 | styles.css | all styling | ⏳ pending |
 | question-model.js | question CRUD, dedup, sourceId tagging | ⏳ pending |
 | layout-formatting.js | renderTextVersion (Pane 2 text rendering) | ⏳ pending |
-| pptx-render.js | PPTX slide render (Tier 1 lib render + Tier 2 image grid) | ⏳ pending |
+| pptx-render.js | PPTX slide render (Tier 1 lib render + Tier 2 image grid) | ✅ confirmed |
 | highlighting.js | source-text highlight recheck | ⏳ pending |
 | ai-api-calls.js | generateQuestionsWithAI (3-pass pipeline) | ⏳ pending |
 | snippet-question-generation.js | single-snippet question generation | ⏳ pending |
@@ -159,6 +159,13 @@ here — carried over from each file's own header comment.
 **Depends on:** `core-state.js`, `dom-refs.js`, `classification-meta.js`, `shared-constants.js`, `seed-api-key.js`, `ai-credentials-and-models.js`, `question-model.js`, `status-helpers.js`, `editor-render.js`, `doc-extraction.js`, `text-normalize.js`, `highlighting.js`, `layout-formatting.js`, `selection-toolbar.js`, `variant-generation.js`, `snippet-question-generation.js`, `ai-prompt-builders.js`, `ai-api-calls.js`, `doc-pane-navigation.js`, `quiz-export.js`, `batch-scan.js`, `pptx-render.js`, `pdf-render.js`. Does **not** import `slide-panel-mirror.js`.
 **Confirms:** no live caller of `slide-panel-mirror.js`'s `updateSlidePanelMirror()` anywhere in the codebase (see slide-panel-mirror.js entry above).
 
+### pptx-render.js
+**Role:** 3-tier fallback visual renderer for Pane 3 on PPTX imports (Tier 3, plain text, lives in doc-pane-navigation.js). Also generates source-stack thumbnails.
+**Exports:** `renderPptxTier1`, `renderPptxTier2`, `teardownTier1Scaling`, `renderPptxTier1Thumbnail`, `getPptxThumbnailDataUrl`.
+**Internal only:** `loadPptxRendererModule`, `getPresentationForFile`, `setupTier1ResponsiveScaling`, `resolveSlideImageBlobs`, `getThumbnailMeasureHost`.
+**Depends on:** third-party CDN module `@aiden0z/pptx-renderer` (pinned 1.2.0, loaded via jsDelivr `+esm`), globals `JSZip`/`DOMParser`. No import of `core-state.js`/`dom-refs.js` — container/file/zip/pageNumber are all passed in by the caller (doc-pane-navigation.js, main.js).
+**Note:** Tier 1 caches one parsed presentation per File-object identity (`getPresentationForFile`) and cancels superseded in-flight renders via `renderToken`; `currentSlideHandle`/`currentTier1ResizeObserver` track the single currently-mounted Pane-3 slide so they can be torn down before the next one replaces it. Thumbnail rendering (`renderPptxTier1Thumbnail`) is a separate, uncancelled one-shot path that keeps its wrapper alive indefinitely (cached by the caller) rather than disposing it.
+
 ---
 
 ## Pending files (content not yet received — placeholders only)
@@ -194,12 +201,6 @@ UPDATE 2B note), `sortQuestionsByPage`, `updateQuestionCount`,
 Referenced export: `renderTextVersion` (Pane 2 text rendering — per
 selection-toolbar.js's note, currently single-source-only; multi-source
 concatenated rendering explicitly out of scope so far).
-
-### pptx-render.js — *not yet reviewed*
-Referenced exports: `getPptxThumbnailDataUrl(zip, pageNumber)`,
-`renderPptxTier1`/`renderPptxTier1Thumbnail` (full OOXML render via
-external CDN lib `@aiden0z/pptx-renderer`), `renderPptxTier2` (embedded-
-image grid, near-free).
 
 ### highlighting.js — *not yet reviewed*
 Referenced export: `recheckHighlights` (calls `cleanExtractedText` from

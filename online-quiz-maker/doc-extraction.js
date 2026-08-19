@@ -1,18 +1,11 @@
 // doc-extraction.js
-// Extracted verbatim from online-quiz-maker.html, source lines 1694-1810.
-// Function bodies are UNCHANGED from source — only import/export wrapper
-// lines were added.
-//
-// Uses these globals directly, same as the source did (loaded via
-// separate <script src="..."> tags already in the HTML — no import
-// needed, they attach to window): Tesseract, pdfjsLib, JSZip, DOMParser.
+// Extracts page text from PDF (pdf.js + Tesseract OCR fallback) and PPTX (JSZip + slide XML parse).
+// Uses globals Tesseract, pdfjsLib, JSZip, DOMParser directly (loaded via separate <script> tags, no import).
 
 import { state } from './core-state.js';
 import { setParseStatus } from './status-helpers.js';
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 1694-1704
-// ---------------------------------------------------------------------
+// OCRs a rendered PDF page via Tesseract when the page has no extractable text layer.
 async function ocrPdfPage(page) {
   const scale = 1.5;
   const viewport = page.getViewport({ scale });
@@ -26,11 +19,7 @@ async function ocrPdfPage(page) {
   return (data && data.text) || '';
 }
 
-// Groups pdf.js text items into visual lines using their y-position,
-// so paragraph/line breaks in the source document survive extraction.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 1709-1725
-// ---------------------------------------------------------------------
+// Groups pdf.js text items into visual lines using their y-position, so paragraph/line breaks survive extraction.
 function groupTextItemsIntoLines(items) {
   if (!items || items.length === 0) return '';
   const Y_TOLERANCE = 3;
@@ -50,9 +39,7 @@ function groupTextItemsIntoLines(items) {
     .join('\n');
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 1728-1745
-// ---------------------------------------------------------------------
+// Extracts per-page text from a PDF file, falling back to OCR for pages with no text layer.
 async function extractPdfPages(file) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
@@ -73,12 +60,7 @@ async function extractPdfPages(file) {
   return pages;
 }
 
-// Walks <a:p> paragraphs so bullet markers (a:buChar / a:buAutoNum) and
-// bold/italic runs (a:rPr b/i) survive as markdown-lite (**bold**, *italic*)
-// plus a leading "• " for bulleted paragraphs and real line breaks.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 1751-1780
-// ---------------------------------------------------------------------
+// Walks <a:p> paragraphs so bullet markers and bold/italic runs survive as markdown-lite text with real line breaks.
 function extractTextFromSlideXml(xml) {
   try {
     const doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -119,20 +101,11 @@ function extractTextFromSlideXml(xml) {
   }
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 1791-1806
-// ---------------------------------------------------------------------
+// Unzips a PPTX, extracts each slide's text, and caches the file/zip on state for the renderer tiers to use.
 async function extractPptxPages(file) {
   const buf = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(buf);
 
-  // GEMINI_FIX_REDO_AND_PPTX_STATE_BUG_PROMPT.md Part B — these two
-  // assignments were the actual root cause of state.pptxFile/state.pptxZip
-  // always being empty at render time: they simply didn't exist in this
-  // function before. pptx-render.js's Tier 1 (renderPptxTier1) and Tier 2
-  // (renderPptxTier2) both take `file`/`zip` as parameters from their
-  // caller in doc-pane-navigation.js, which reads them off `state` — so
-  // without these lines there was never anything for either tier to render.
   state.pptxFile = file; // used by pptx-render.js Tier 1
   state.pptxZip = zip;   // used by pptx-render.js Tier 2
   console.log('[doc-extraction] pptx state set', { fileName: file.name, hasZip: !!zip });

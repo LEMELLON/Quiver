@@ -1,14 +1,5 @@
 // config.js
-// Default AI provider settings for Quiz Maker.
-//
-// SECURITY NOTE: This file is loaded directly in the browser, so anything
-// in it — including apiKey — is visible to anyone who opens this page,
-// views source, or inspects network/script requests. Only use a real key
-// here for a local/personal copy of this tool. Do not commit this file to
-// a public repository or ship it to other users; add it to .gitignore.
-// For anything multi-user or public-facing, have each person paste their
-// own key into the app's API Key field instead (it stays in their browser's
-// localStorage and is never bundled into a shared file).
+// Default AI provider config, editable by a self-hosting user. Never commit a real key here — it's visible in browser source.
 
 const AI_CONFIG = {
   // Replace with your actual API key (Gemini or OpenAI)
