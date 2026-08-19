@@ -371,6 +371,7 @@
      reads as part of the same control language rather than a
      bolted-on widget. */
   .term-row {
+    position: relative; /* NAV_CHIP_DUPE_STYLE_AND_SOURCE_SCOPE_PROMPT.md Issue 1 — anchors .term-row-dupe-actions' overlay positioning below */
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
@@ -414,38 +415,79 @@
     font-size: 0.65rem;
     opacity: 0.75;
   }
-  /* Inline duplicate-warning row for a flagged question under this
-     term — a compact copy of the existing warning box in the active
-     editor (see .text-danger usage in activeEditorTemplate), not a
-     replacement for it. */
-  .term-row-dupe {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.35rem 0.6rem;
-    border: 1px solid #ef576555;
-    background: #ef576514;
-    border-radius: 0.375rem;
+  /* NAV_CHIP_DUPE_STYLE_AND_SOURCE_SCOPE_PROMPT.md Issue 1 — replaces
+     the old stacked-box duplicate warning (.term-row-dupe /
+     .term-row-dupe-text / .term-row-dupe-btn, removed) with a
+     nav-chip-style treatment applied to the row itself, mirroring
+     .nav-chip-duplicate above: red border, no added row/box. The row's
+     `.term-row-btn` gets the border color directly (rather than a
+     ::before glyph like .nav-chip-duplicate uses) because the ⚠/⚠×N
+     prefix here is dynamic (depends on how many of this term's
+     questions are flagged) and has to live in the label markup itself —
+     see .term-row-dupe-flag below and buildTermRowHtml(). */
+  .term-row-duplicate .term-row-btn {
+    border-color: #ef5765;
   }
-  .term-row-dupe-text {
-    flex: 1;
-    min-width: 0;
-    font-size: 0.68rem;
+  .term-row-active.term-row-duplicate .term-row-btn {
+    /* Active-filter amber still wins visually when a duplicate term is
+       also the one currently filtering Pane 1 — same precedence
+       .nav-chip-active already has over .nav-chip-duplicate elsewhere
+       in this file (an active/selected state reads as more important
+       than a passive warning). Only the border needs restating here;
+       .term-row-active's background/color rule above already applies
+       since both classes sit on the same element. */
+    border-color: #f5b942;
+  }
+  .term-row-dupe-flag {
     color: #ef5765;
+    margin-right: 0.35rem;
   }
-  .term-row-dupe-btn {
+  .term-row-active .term-row-dupe-flag {
+    color: #0b0f14;
+  }
+  /* Compact icon-only View/Dismiss actions — DESIGN DECISION (Issue 1,
+     option (b)): a nav-chip-style row has no room for the old
+     full-width "View →" / "Not a duplicate" buttons, so they're kept as
+     an overlay that only appears on hover/focus rather than being
+     dropped. Positioned over the row's trailing edge (where
+     .term-row-count normally sits) so the row never reflows to make
+     room for them. */
+  .term-row-dupe-actions {
+    position: absolute;
+    top: 50%;
+    right: 0.5rem;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 0.3rem;
+    padding: 0.15rem 0.35rem;
+    background: #151b24;
+    border: 1px solid #ef576555;
+    border-radius: 0.375rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+  .term-row:hover .term-row-dupe-actions,
+  .term-row:focus-within .term-row-dupe-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .term-row-dupe-icon-btn {
     font-family: 'Space Mono', monospace;
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #8296ab;
+    font-size: 0.7rem;
+    line-height: 1;
+    color: #ef5765;
     background: none;
     border: none;
     cursor: pointer;
-    white-space: nowrap;
+    padding: 0.1rem 0.25rem;
   }
-  .term-row-dupe-btn:hover { color: #e7edf5; }
+  .term-row-dupe-icon-btn:hover { color: #e7edf5; }
+  .term-row-dupe-icon-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px #f5b942;
+    border-radius: 0.25rem;
+  }
   /* "Showing questions for X" strip above the chip grid, shown only
      while a term filter is active (see #termFilterIndicator /
      renderTermBar()'s termFilterIndicatorEl.classList.toggle). */

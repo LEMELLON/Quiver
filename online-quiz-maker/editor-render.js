@@ -124,22 +124,27 @@ let activeTermFilterKey = null;
 // UPDATE3_TERM_PANE_PROMPT.md item 2 (show-all vs. active-page-only
 // scope toggle): which set of questions the term PANEL draws its
 // visible rows from — 'all' (every term across the whole quiz, the
-// pre-existing behavior) or 'page' (only terms belonging to a question
-// on the page currently shown in Pane 3, for the active source). Same
-// module-level-`let` treatment as activeTermFilterKey/navChipPage above
-// and for the same reason — only ever read/reassigned from inside this
-// module (this toggle's own click handler and renderTermBar). Note this
-// is a DIFFERENT axis than activeTermFilterKey above: that one filters
-// Pane 1's QUESTION chip grid down to one already-chosen term;
-// termScopeMode instead decides which term ROWS show up in this panel
-// in the first place. DESIGN DECISION (per the handoff prompt's "should
-// toggle/search state reset when activeSourceId changes" question):
-// does NOT reset on source switch — it's a standing display preference
-// ("I always want to see just this page's terms"), not something tied
-// to any one document. See termSearchQuery below for the opposite
-// choice on search text, and resetTermSearchOnSourceSwitch() further
-// down for where that's wired.
-let termScopeMode = 'all'; // 'all' | 'page'
+// pre-existing behavior), 'source' (every term used anywhere in the
+// currently active source, any page — added by
+// NAV_CHIP_DUPE_STYLE_AND_SOURCE_SCOPE_PROMPT.md Issue 2), or 'page'
+// (only terms belonging to a question on the page currently shown in
+// Pane 3, for the active source). Same module-level-`let` treatment as
+// activeTermFilterKey/navChipPage above and for the same reason — only
+// ever read/reassigned from inside this module (this toggle's own click
+// handler and renderTermBar). Note this is a DIFFERENT axis than
+// activeTermFilterKey above: that one filters Pane 1's QUESTION chip
+// grid down to one already-chosen term; termScopeMode instead decides
+// which term ROWS show up in this panel in the first place. DESIGN
+// DECISION (per the handoff prompt's "should toggle/search state reset
+// when activeSourceId changes" question): does NOT reset on source
+// switch — it's a standing display preference ("I always want to see
+// just this page's terms"), not something tied to any one document.
+// Applies equally to 'source' — switching the active source just
+// re-filters against whichever mode was already selected, it doesn't
+// force the mode back to 'all'. See termSearchQuery below for the
+// opposite choice on search text, and resetTermSearchOnSourceSwitch()
+// further down for where that's wired.
+let termScopeMode = 'all'; // 'all' | 'source' | 'page'
 
 // UPDATE3_TERM_PANE_PROMPT.md item 3 (search bar): live text typed into
 // #termSearchInput, matched case-insensitively as a substring against
@@ -448,21 +453,38 @@ function questionOnActivePage(q) {
   return q.sourceId === state.activeSourceId && q.sourcePage === state.currentPage;
 }
 
-// UPDATE3_TERM_PANE_PROMPT.md items 2+3: narrows buildTermGroups()'s
-// full group list down to what the term PANEL should actually render,
-// applying the show-all/active-page scope and the search query
-// TOGETHER (per the handoff prompt's design decision: search filters
-// within the current scope rather than overriding it — the more
-// expected behavior for combined filters). Doesn't touch
-// buildTermGroups() itself or its groups' `questionIds` — a surviving
-// row's "N questions" count still reflects that term's TOTAL usage
-// across the whole quiz, same as before this update; scope/search only
-// decide which term ROWS appear here, not what number each one reports
-// (consistent with computeDuplicateMap()'s own quiz-wide notion of
-// duplicates, which this panel's inline dupe warnings still draw on).
+// NAV_CHIP_DUPE_STYLE_AND_SOURCE_SCOPE_PROMPT.md Issue 2: does `q`
+// qualify for the new "This file" scope? Deliberately NOT a reuse of
+// questionOnActivePage() above — that one also requires the SAME PAGE,
+// a narrower, different condition. This only checks sourceId, so a
+// question qualifies regardless of which page of the active source it
+// sits on.
+function questionInActiveSource(q) {
+  return q.sourceId === state.activeSourceId;
+}
+
+// UPDATE3_TERM_PANE_PROMPT.md items 2+3, extended by
+// NAV_CHIP_DUPE_STYLE_AND_SOURCE_SCOPE_PROMPT.md Issue 2 for the new
+// 'source' scope: narrows buildTermGroups()'s full group list down to
+// what the term PANEL should actually render, applying the selected
+// scope and the search query TOGETHER (per the handoff prompt's design
+// decision: search filters within the current scope rather than
+// overriding it — the more expected behavior for combined filters).
+// Doesn't touch buildTermGroups() itself or its groups' `questionIds` —
+// a surviving row's "N questions" count still reflects that term's
+// TOTAL usage across the whole quiz, same as before this update;
+// scope/search only decide which term ROWS appear here, not what number
+// each one reports (consistent with computeDuplicateMap()'s own
+// quiz-wide notion of duplicates, which this panel's duplicate styling
+// still draws on).
 function filterTermGroupsForPanel(groups) {
   let visible = groups;
-  if (termScopeMode === 'page') {
+  if (termScopeMode === 'source') {
+    visible = visible.filter((g) => g.questionIds.some((qid) => {
+      const q = state.questions.find((x) => x.id === qid);
+      return q && questionInActiveSource(q);
+    }));
+  } else if (termScopeMode === 'page') {
     visible = visible.filter((g) => g.questionIds.some((qid) => {
       const q = state.questions.find((x) => x.id === qid);
       return q && questionOnActivePage(q);
@@ -488,37 +510,59 @@ function buildTermGroups() {
   return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
-// One term row: the clickable filter button, plus — DESIGN DECISION
-// (flagged per the handoff doc) — an inline duplicate-warning row for
-// each of this term's questions that's currently flagged, with its own
-// "View →" / "Not a duplicate" actions. This is IN ADDITION TO, not
-// instead of, the existing warning box in the single-question editor
-// (activeEditorTemplate above) — that box is untouched and still shows
-// exactly as before. The inline copy here is a convenience for
-// triaging several flagged questions under one term without leaving
-// this panel; "View →" (viewFlaggedQuestion) opens the flagged
-// question itself in the editor, where the full warning box (with its
-// own View-the-original-match / dismiss actions) is still available.
+// One term row. NAV_CHIP_DUPE_STYLE_AND_SOURCE_SCOPE_PROMPT.md Issue 1
+// replaced the old stacked-box duplicate warning (a separate
+// `.term-row-dupe` block per flagged question, underneath the term's
+// own button) with a nav-chip-style treatment applied to the row itself
+// — red border + a ⚠ prefix, mirroring `.nav-chip-duplicate` in
+// styles.css, no added row/box. DESIGN DECISION (flagged per that
+// prompt's "don't silently assume" instruction, choosing its option
+// (b)): the old inline "View →" / "Not a duplicate" actions were
+// genuinely useful for triaging several flagged questions under one
+// term without leaving this panel, so they're kept rather than dropped
+// — but since a nav-chip-style row has no room for full-width buttons,
+// they're now a compact icon-only affordance (`.term-row-dupe-actions`)
+// that overlays the row and only appears on hover/focus, so the
+// collapsed state matches nav-chip's compactness. This is still IN
+// ADDITION TO, not instead of, the existing warning box in the
+// single-question editor (activeEditorTemplate above) — that box is
+// untouched. One view/dismiss icon pair renders per flagged question
+// under this term (there can be more than one); each pair's title
+// attribute carries that question's number and reason, since the
+// icon-only buttons have no room to show that text directly.
+// DESIGN DECISION (count in the prefix): a term with more than one
+// flagged question shows "⚠ ×N" rather than a bare ⚠, so multi-question
+// duplication is visible before clicking through; a single flagged
+// question keeps the plain ⚠ (the hover actions' title tooltip already
+// gives the Q# and reason without cluttering the label at rest).
+// DESIGN NOTE: `dupQids` is still recomputed fresh from
+// getDuplicateMap() on every render (unchanged from before this pass) —
+// no caching to invalidate, so a row reverts to its normal unstyled
+// state automatically the moment none of its questionIds remain
+// flagged.
 function buildTermRowHtml(group) {
   const isActive = group.key === activeTermFilterKey;
   const dupQids = group.questionIds.filter((qid) => getDuplicateMap().has(qid));
+  const isDuplicate = dupQids.length > 0;
+  const dupFlag = isDuplicate ? `⚠${dupQids.length > 1 ? ` ×${dupQids.length}` : ''}` : '';
   return `
-    <div class="term-row ${isActive ? 'term-row-active' : ''}">
+    <div class="term-row ${isActive ? 'term-row-active' : ''} ${isDuplicate ? 'term-row-duplicate' : ''}">
       <button type="button" data-action="filterByTerm" data-term-key="${escapeAttr(group.key)}"
         class="term-row-btn" title="Show only questions using this term">
-        <span class="term-row-label">${escapeHtml(group.label)}</span>
+        <span class="term-row-label">${isDuplicate ? `<span class="term-row-dupe-flag">${dupFlag}</span>` : ''}${escapeHtml(group.label)}</span>
         <span class="term-row-count">${group.questionIds.length} ${group.questionIds.length === 1 ? 'question' : 'questions'}</span>
       </button>
-      ${dupQids.map((qid) => {
-        const dup = getDuplicateMap().get(qid);
-        const idx = state.questions.findIndex((x) => x.id === qid);
-        return `
-        <div class="term-row-dupe">
-          <span class="term-row-dupe-text">⚠ Q${String(idx + 1).padStart(2, '0')} possible duplicate — ${escapeHtml(dup.reason)}</span>
-          <button type="button" data-action="viewFlaggedQuestion" data-qid="${qid}" class="term-row-dupe-btn">View →</button>
-          <button type="button" data-action="dismissDuplicateInline" data-qid="${qid}" class="term-row-dupe-btn">Not a duplicate</button>
-        </div>`;
-      }).join('')}
+      ${isDuplicate ? `
+      <div class="term-row-dupe-actions" role="group" aria-label="Duplicate question actions">
+        ${dupQids.map((qid) => {
+          const dup = getDuplicateMap().get(qid);
+          const idx = state.questions.findIndex((x) => x.id === qid);
+          const qLabel = `Q${String(idx + 1).padStart(2, '0')} possible duplicate — ${escapeAttr(dup.reason)}`;
+          return `
+          <button type="button" data-action="viewFlaggedQuestion" data-qid="${qid}" class="term-row-dupe-icon-btn" title="View ${qLabel}">→</button>
+          <button type="button" data-action="dismissDuplicateInline" data-qid="${qid}" class="term-row-dupe-icon-btn" title="Not a duplicate — ${qLabel}">✕</button>`;
+        }).join('')}
+      </div>` : ''}
     </div>
   `;
 }

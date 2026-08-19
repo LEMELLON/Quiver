@@ -409,9 +409,17 @@
              editor-render.js's delegated click handler on this wrapper;
              which button reads "active" is set by renderTermBar() itself
              (same source-of-truth pattern as .term-row-active below),
-             not by any static markup here. -->
+             not by any static markup here.
+             NAV_CHIP_DUPE_STYLE_AND_SOURCE_SCOPE_PROMPT.md Issue 2: added
+             the "This file" button between the two existing ones, so the
+             three read narrowing left to right (all -> this file -> this
+             page). Markup/attribute pattern matches the other two
+             buttons exactly — renderTermBar()'s existing
+             `querySelectorAll('[data-term-scope]')` loop needed no
+             change to pick it up. -->
         <div id="termScopeToggle" class="term-scope-toggle mb-2" role="group" aria-label="Term list scope">
           <button type="button" data-term-scope="all" class="term-scope-btn">All terms</button>
+          <button type="button" data-term-scope="source" class="term-scope-btn" title="Every term used anywhere in the currently active source, across all its pages">This file</button>
           <button type="button" data-term-scope="page" class="term-scope-btn" title="Only terms belonging to a question on the page currently shown in Pane 3">This page</button>
         </div>
 
