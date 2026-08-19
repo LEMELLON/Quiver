@@ -1,7 +1,7 @@
 # File / Function Map — Online Quiz Maker (Modularized)
 
-Table of contents for the codebase. Status of this doc: **22 of 29 files
-confirmed by direct read; 7 files pending** (listed by name only in
+Table of contents for the codebase. Status of this doc: **24 of 29 files
+confirmed by direct read; 5 files pending** (listed by name only in
 upload manifests, content never received — see PENDING section at the
 bottom). Every agent that opens a pending file should replace its
 placeholder entry here with a real one, in the same format as the
@@ -35,9 +35,9 @@ here — carried over from each file's own header comment.
 | config.js | AI_CONFIG defaults (apiKey/model) | ✅ confirmed |
 | main.js | app orchestrator, multi-source import flow | ✅ confirmed |
 | doc-pane-navigation.js | Pane 3 render/nav, PDF/PPTX slide display | ✅ confirmed |
-| online-quiz-maker.html | live HTML shell, loads main.js as module | ⏳ pending |
+| online-quiz-maker.html | live HTML shell, loads main.js as module | ✅ confirmed |
 | editor-render.js | question nav rendering, term bar, escapeHtml | ⏳ pending |
-| styles.css | all styling | ⏳ pending |
+| styles.css | all styling | ✅ confirmed |
 | question-model.js | question CRUD, dedup, sourceId tagging | ✅ confirmed |
 | layout-formatting.js | Pane 2 text rendering + highlight redraw; AI layout reformatting | ✅ confirmed |
 | pptx-render.js | PPTX slide render (Tier 1 lib render + Tier 2 image grid) | ✅ confirmed |
@@ -178,6 +178,18 @@ here — carried over from each file's own header comment.
 **Flag (repeated from its own file header, not fixed this pass):** source lines 3004-3007 — a `docTextContainer` click listener that calls `setActiveCard` — sit immediately after this file's own event wiring but aren't assigned to any module; likely belongs with `setActiveCard` in `editor-render.js`, or the main orchestrator. Left unassigned per the modularization schema's "flag, don't guess" rule.
 **Note:** `renderTextVersion()` still contains two `logAllHighlights(...)` diagnostic calls (`'end of renderTextVersion'` and, via `formatAllPagesLayout`, `'formatAllPagesLayout: after recheckHighlights (final)'`) — left in place since removing them would be a logic change, out of scope for this pass.
 
+### online-quiz-maker.html
+**Role:** Live HTML shell — not a legacy monolith despite the filename; loads `<script type="module" src="main.js">`. Contains the 5-column `#layoutRoot` grid (`#sourcePane`, `#pane1`, `#pane2`, `#pane3`, `#termPane`), the floating selection toolbar, the Quiz Code modal, and the Scan Page Range modal.
+**Exports:** none (plain HTML; DOM ids referenced by `dom-refs.js`).
+**Depends on:** `styles.css`, `config.js`, `gemini-classifier.js` (loaded as plain scripts), pdf.js/JSZip/Tesseract.js CDN libs, `main.js` (ES module entry point).
+**Read by:** `dom-refs.js` (every element id), effectively every module transitively via `dom-refs.js`.
+
+### styles.css
+**Role:** All app styling — dark chrome/scrollbars, the draggable source-stack (slide-sorter) rows and thumbnails, Pane 1 nav-chips/pager, the term nav bar and term-pane scope-toggle/search controls, Pane 2's "bond paper" text rendering and highlighter `<mark>` styling (tier 1-4 backgrounds + V1-V4 verification badges), and Pane 3's PPTX Tier 1/Tier 2 render containers.
+**Depends on:** nothing (leaf; selectors target ids/classes from `online-quiz-maker.html`, populated at runtime by various JS modules).
+**Confirms `slide-panel-mirror.js`'s open flag:** no orphaned `#slidePanelMirror`/`.slide-panel-mirror-loading` rules exist in this file — the file's own (now-removed) comment already documented that those rules were deleted along with the element, and a direct read confirms it.
+**Flag (pre-existing, not fixed this pass):** `.nav-chip-duplicate` and `.nav-chip-unchecked` both target the same `::before` pseudo-element on a nav-chip; if a question is ever both a flagged duplicate and unchecked, only one glyph shows (`.nav-chip-unchecked` wins since it's declared later in the cascade). Not touched — comment-only pass.
+
 ---
 
 ## Pending files (content not yet received — placeholders only)
@@ -186,23 +198,12 @@ Everything below is **inferred from cross-references in the confirmed
 files**, not from reading the file itself. Treat as a starting hypothesis
 only; the agent who actually opens each file should overwrite this entry.
 
-### online-quiz-maker.html — *not yet reviewed*
-The live HTML shell; loads `<script type="module" src="main.js">` (per
-dom-refs.js's confirmation this is NOT a legacy monolith despite the
-filename). Contains `#sourcePane`, `#pane1/2/3`, scan/quiz-code modals,
-term bar markup, etc.
-
 ### editor-render.js — *not yet reviewed*
 Referenced exports: `escapeHtml` (used by text-normalize.js),
 `renderQuestionNav`, `setActiveCard`, `renderPane3QuestionNav`,
 `renderTermBar`, `buildTermGroups`, `filterTermGroupsForPanel`. Also
 reassigns `duplicateMap` via core-state.js's getter/setter (shared with
 question-model.js).
-
-### styles.css — *not yet reviewed*
-Referenced classes: `.source-stack-thumb`, `.source-stack-thumb-loading`,
-`.source-stack-thumb-fallback`, `#slidePanelMirror`,
-`.slide-panel-mirror-loading` (dead-feature CSS, check if still present).
 
 ### highlighting.js — *confirmed*
 **Role:** Locates and wraps question/answer snippets in `<mark>` elements in Pane 2, handles duplicate-sharing of

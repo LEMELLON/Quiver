@@ -1,31 +1,3 @@
-// quiz-export.js
-// Extracted verbatim from online-quiz-maker.html, source lines 4586-4794
-// (module [15] per MODULARIZATION_SCHEMA.txt): buildQuizObject,
-// validateQuiz, exportJson, bufferToBase64Url, gzipCompress, deriveKey,
-// exportToQuizCode, generateSecretKey, openModal, closeModal, plus the
-// event-wiring lines for each (moved with handler, per the schema's
-// "move with handler" strategy — none of the listener callback bodies
-// were altered). Function bodies are UNCHANGED from source — only
-// import/export wrapper lines were added.
-//
-// SOURCE LINE RANGES (in original file order):
-//   4589-4611  buildQuizObject
-//   4613-4642  validateQuiz
-//   4644-4658  exportJson
-//   4659       exportJsonBtn listener (moved with handler)
-//   4662-4668  bufferToBase64Url
-//   4671-4677  gzipCompress
-//   4680-4693  deriveKey
-//   4695-4715  exportToQuizCode
-//   4718-4725  generateSecretKey
-//   4727-4733  openModal
-//   4734       closeModal
-//   4736-4794  quizCodeBtn/closeModalBtn/quizCodeModal/copySecretBtn/
-//              regenSecretBtn/generateCodeBtn/copyCodeBtn listeners
-//              (all moved with handler — each wires a function defined
-//              in this module, and none of them call out to any other
-//              module, so nothing further needed importing)
-
 // --- Shared dependencies ---
 import { state } from './core-state.js';
 import { PBKDF2_ITERATIONS, SALT_LEN, IV_LEN } from './core-state.js';
@@ -45,24 +17,7 @@ import {
   quizCodeModal,
 } from './dom-refs.js';
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4589-4611, EXCEPT the additive
-// sourceId/sourceName fields — see UPDATE 2B note below.
-// ---------------------------------------------------------------------
-// UPDATE 2B (new feature work, not extraction — see
-// UI_UPGRADES_HANDOFF_PROMPT.md, Update 2B item 5): every question now
-// carries a sourceId (see the UPDATE 2A note in question-model.js's
-// newQuestion()), so exported JSON can stay traceable to which imported
-// document a question came from. sourceName is looked up fresh from
-// state.sources rather than duplicated onto the question object itself
-// — a source's display name is a source-level fact, not a per-question
-// one, so this keeps the two from ever drifting out of sync if sources
-// are ever renamed later. Both fields are OMITTED (not just left
-// blank) for a question with no sourceId at all — e.g. one added via
-// "+ Add Question" before any document was ever imported — so a quiz
-// with no imported sources exports in exactly the same shape as before
-// this update, and validateQuiz()/offline-quiz-runner.html never see
-// an unexpected sourceId: '' / sourceName: '' pair to account for.
+// builds the exportable quiz object (title + questions) from state, including source lineage where available
 function buildQuizObject() {
   return {
     title: quizTitleInput.value.trim() || 'Untitled Quiz',
@@ -91,17 +46,11 @@ function buildQuizObject() {
   };
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4613-4642
-// ---------------------------------------------------------------------
+// validates a quiz object has at least one question, each with valid variants and answers, before export
 function validateQuiz(data) {
   if (!data || typeof data !== 'object') throw new Error('Quiz data is not a valid object.');
   if (!Array.isArray(data.questions) || data.questions.length === 0) throw new Error('Add at least one question first.');
   for (const q of data.questions) {
-    // Every collection needs at least one variant to export — the
-    // clamp (Multiple Choice) base is no longer required specifically,
-    // since it can now be removed like any other variant (see
-    // removeVariant) as long as another one takes its place.
     if (!Array.isArray(q.variants) || q.variants.length === 0) {
       throw new Error('One or more question collections have no variants left — add at least one question type.');
     }
@@ -125,9 +74,7 @@ function validateQuiz(data) {
   return true;
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4644-4658
-// ---------------------------------------------------------------------
+// exports the current quiz as a downloaded JSON file
 function exportJson() {
   const quiz = buildQuizObject();
   console.log('Quiz JSON export:', quiz);
@@ -143,16 +90,10 @@ function exportJson() {
   a.remove();
   URL.revokeObjectURL(url);
 }
-// ---------------------------------------------------------------------
-// Verbatim from source, line 4659 (event wiring that belongs to this
-// module's own function — moved with handler per the schema's strategy)
-// ---------------------------------------------------------------------
 exportJsonBtn.addEventListener('click', exportJson);
 
 // ---------- Base64URL helpers ----------
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4662-4668
-// ---------------------------------------------------------------------
+// converts a byte buffer to a URL-safe base64 string (no padding)
 function bufferToBase64Url(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = '';
@@ -162,9 +103,7 @@ function bufferToBase64Url(buffer) {
 }
 
 // ---------- Native gzip compression ----------
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4671-4677
-// ---------------------------------------------------------------------
+// gzip-compresses a string using the browser's CompressionStream API
 async function gzipCompress(text) {
   if (typeof CompressionStream === 'undefined') throw new Error('This browser does not support CompressionStream.');
   const cs = new CompressionStream('gzip');
@@ -174,9 +113,7 @@ async function gzipCompress(text) {
 }
 
 // ---------- Key derivation (PBKDF2 -> AES-GCM) ----------
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4680-4693
-// ---------------------------------------------------------------------
+// derives an AES-GCM encryption key from a secret key and salt via PBKDF2
 async function deriveKey(secretKey, saltBytes) {
   if (!window.crypto || !window.crypto.subtle) throw new Error('This browser does not support the Web Crypto API.');
   const enc = new TextEncoder();
@@ -192,9 +129,7 @@ async function deriveKey(secretKey, saltBytes) {
   );
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4695-4715
-// ---------------------------------------------------------------------
+// encrypts and encodes the quiz as a shareable Quiz Code string (PBKDF2 + AES-GCM + gzip + base64url)
 async function exportToQuizCode(quizObject, secretKey) {
   if (!secretKey) throw new Error('Enter a secret key before generating a Quiz Code.');
   validateQuiz(quizObject);
@@ -218,9 +153,7 @@ async function exportToQuizCode(quizObject, secretKey) {
 }
 
 // ---------- Quiz Code modal wiring ----------
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4718-4725
-// ---------------------------------------------------------------------
+// generates a random secret key for Quiz Code encryption
 function generateSecretKey() {
   try {
     const bytes = crypto.getRandomValues(new Uint8Array(24));
@@ -230,9 +163,7 @@ function generateSecretKey() {
   }
 }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4727-4733
-// ---------------------------------------------------------------------
+// opens the Quiz Code modal, resetting its fields and seeding a secret key if empty
 function openModal() {
   modalError.classList.add('hidden');
   codeResultBox.classList.add('hidden');
@@ -240,16 +171,8 @@ function openModal() {
   if (!secretKeyInput.value) secretKeyInput.value = generateSecretKey();
   quizCodeModal.classList.remove('hidden');
 }
-// ---------------------------------------------------------------------
-// Verbatim from source, line 4734
-// ---------------------------------------------------------------------
 function closeModal() { quizCodeModal.classList.add('hidden'); }
 
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4736-4794 (event wiring that belongs to
-// this module's own functions — moved with handler per the schema's
-// strategy. NOT altered.)
-// ---------------------------------------------------------------------
 quizCodeBtn.addEventListener('click', openModal);
 closeModalBtn.addEventListener('click', closeModal);
 quizCodeModal.addEventListener('click', (e) => { if (e.target === quizCodeModal) closeModal(); });

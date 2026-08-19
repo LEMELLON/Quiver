@@ -77,10 +77,10 @@ Legend: ⬜ not started · 🔄 in progress (see note) · ✅ done
 | question-model.js | ✅ | |
 | selection-toolbar.js | ✅ | |
 | batch-scan.js | ✅ | |
-| quiz-export.js | ⬜ | |
+| quiz-export.js | ✅ | |
 | main.js | ✅ | |
-| online-quiz-maker.html | ⬜ | not yet reviewed |
-| styles.css | ⬜ | not yet reviewed |
+| online-quiz-maker.html | ✅ | |
+| styles.css | ✅ | |
 
 ---
 

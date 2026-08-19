@@ -1,31 +1,3 @@
-  /* UPDATE2_SLIDE_PANE_PROMPT.md ("Slide Panel as Its Own Dedicated
-     Layout Column") verification note: #sourceStackArea (and its
-     children #importDetails/#sourceList) moved out of #pane1's
-     <section> into its own top-level <section id="sourcePane"> in
-     online-quiz-maker.html. Checked every rule in this file for a
-     selector scoped under #pane1 that might have (intentionally or
-     accidentally) also matched #sourceStackArea's children — there is
-     none; every source-stack-related rule below (.source-stack-item,
-     .source-stack-thumb, #sourceStackArea.source-dropzone-active, etc.)
-     is either a bare class selector or scoped to #sourceStackArea
-     itself, not #pane1. The #layoutRoot grid-column sizing lives in
-     Tailwind utility classes directly on the <main> tag in
-     online-quiz-maker.html, not in this file, so there was nothing to
-     change here for the grid-track change either. No edits made to
-     this file for this prompt beyond this note.
-
-     UPDATE3_TERM_PANE_PROMPT.md verification note: same story for the
-     new 5th column (#termPane) — its grid-track sizing is also a
-     Tailwind utility on <main>, not here. This file's actual edits for
-     that prompt are additive only: new .term-scope-* / .term-search-*
-     rules further down (see that block's own header comment) for the
-     scope toggle and search input now living inside #termPane. Checked
-     every existing #pane1-scoped selector in this file the same way the
-     note above already did for #sourceStackArea — none of them
-     (.term-row-*, .term-filter-*, etc.) are scoped to #pane1 itself,
-     they're all bare class selectors, so relocating #termBarDetails out
-     of #pane1 required no changes to any of the pre-existing term-bar
-     rules either. */
   html, body { height: 100%; }
   body { background: #0b0f14; }
 
@@ -73,23 +45,8 @@
   }
   .icon-btn:hover { color: #e7edf5; border-color: #f5b942; }
 
-  /* ---------- UPDATE 2B: draggable source stack ----------
-     Filename + question-count rows shown under "Import Document" once
-     more than one file has been imported — draggable to reorder, which
-     drives the Q01/Q02/... renumbering (see main.js's renderSourceList()
-     and question-model.js's sortQuestionsByPage()). Replaces 2A's
-     plain, non-draggable .source-list-item of the same shape.
-
-     UPDATE2_SLIDE_PANE_PROMPT.md item 1: each row now also carries a
-     thumbnail (.source-stack-thumb) alongside the filename/count, which
-     are now grouped under .source-stack-meta. Rows stay a VERTICAL
-     stack (not a grid) on purpose — main.js's existing drag-reorder
-     dragover math positions the dragged row based on the target row's
-     vertical midpoint (e.rect.top / rect.height), which only makes
-     sense for a top-to-bottom list; that confirmed-working logic was
-     explicitly out of scope to touch, so each "slide" is a wider row
-     with its thumbnail on the left, rather than a PowerPoint-style
-     multi-column grid. */
+  /* ---------- draggable source stack ----------
+     filename + question-count rows shown once more than one file is imported; drag order drives Q01/Q02/... renumbering (main.js's renderSourceList(), question-model.js's sortQuestionsByPage()). Rows stay a vertical stack since the drag-reorder math positions by row midpoint. */
   .source-stack-item {
     display: flex;
     align-items: center;
@@ -108,21 +65,13 @@
     border-color: #f5b942;
     color: #e7edf5;
   }
-  /* Applied to the row currently mid-drag — dimmed rather than hidden,
-     so its place in the stack stays visible while dragover (main.js)
-     moves it live between the other rows. */
+  /* the row currently mid-drag — dimmed rather than hidden so its place stays visible while dragover (main.js) moves it live. */
   .source-stack-item-dragging {
     opacity: 0.4;
     cursor: grabbing;
   }
 
-  /* UPDATE2_SLIDE_PANE_PROMPT.md item 1 — the slide-sorter-style
-     preview box. White background (matches #pptxTier1Container's own
-     convention elsewhere in this file — slides render on white, so a
-     dark card background behind a thumbnail would look like a stray
-     border rather than intentional). Sized for a small stack row, not
-     a big preview — see main.js's generatePdfThumbnail() for how the
-     actual pixel resolution is chosen. */
+  /* thumbnail preview box; white background matches how slides render elsewhere, sized for a small stack row not a big preview (see main.js's generatePdfThumbnail()). */
   .source-stack-thumb {
     flex-shrink: 0;
     width: 64px;
@@ -140,9 +89,7 @@
     height: 100%;
     object-fit: contain;
   }
-  /* Shown while main.js's ensureSourceThumbnail() is generating the
-     thumbnail for the first time — a small spinner rather than a blank
-     white box, so an in-progress card doesn't read as broken. */
+  /* shown while main.js's ensureSourceThumbnail() is generating the thumbnail — a spinner so an in-progress card doesn't read as broken. */
   .source-stack-thumb-loading {
     background: #0f151d;
     position: relative;
@@ -159,10 +106,7 @@
   @keyframes source-thumb-spin {
     to { transform: rotate(360deg); }
   }
-  /* Shown when thumbnail generation permanently failed (e.g. a
-     text-only pptx slide with no embedded picture — see
-     pptx-render.js's getPptxThumbnailDataUrl) — a plain type badge
-     instead of retrying forever. */
+  /* shown when thumbnail generation permanently failed (e.g. a text-only slide — see pptx-render.js's getPptxThumbnailDataUrl) — a plain badge instead of retrying forever. */
   .source-stack-thumb-fallback {
     background: #0f151d;
     color: #8296ab;
@@ -177,9 +121,7 @@
     line-height: 1;
     cursor: grab;
   }
-  /* UPDATE2_SLIDE_PANE_PROMPT.md item 1 — groups the handle/name/count
-     that used to sit directly in .source-stack-item, now sharing the
-     row with .source-stack-thumb. */
+  /* groups the handle/name/count within the row, alongside .source-stack-thumb. */
   .source-stack-meta {
     display: flex;
     align-items: center;
@@ -198,39 +140,12 @@
     color: #8296ab;
   }
 
-  /* UPDATE2_SLIDE_PANE_PROMPT.md item 3, retargeted by
-     UPDATE2_SLIDE_PANE_FIX_PROMPT.md: highlights the source-stack area
-     while an OS file drag is over it (see main.js's sourceStackAreaEl
-     dragenter/dragover listeners). Was `#importDetails.source-dropzone-
-     active` setting `border-color`/`box-shadow`, back when the drop
-     target was `#importDetails` itself (which already has its own
-     border via Tailwind's `border-edge` class). The new drop target,
-     `#sourceStackArea`, is a plain layout wrapper with no border/
-     background of its own (see online-quiz-maker.html) — its CHILDREN
-     (#importDetails, #sourceList) each draw their own — so a
-     `border-color` override here would have nothing to visibly change.
-     `outline` instead draws a highlight around the whole wrapper
-     without needing it to already have a border, and (unlike `border`)
-     doesn't affect layout/box size, so it can't shift #importDetails/
-     #sourceList by so much as a pixel when toggled. */
+  /* highlights the source-stack area during an OS file drag (see main.js's sourceStackAreaEl dragenter/dragover listeners); outline avoids affecting layout since the wrapper itself has no border of its own. */
   #sourceStackArea.source-dropzone-active {
     outline: 2px dashed #f5b942;
     outline-offset: 4px;
     border-radius: 0.5rem;
   }
-
-  /* SLIDE_PANEL_MIRROR_REVERT_AND_THUMBNAIL_FIX_PROMPT.md: the
-     #slidePanelMirror / #slidePanelMirrorImg / .slide-panel-mirror-loading
-     rules that used to live here (SLIDE_PANEL_LIVE_MIRROR_PROMPT.md) are
-     removed along with the element they styled — see
-     online-quiz-maker.html and dom-refs.js. .source-stack-thumb-loading's
-     spinner (above) is the only such pulse left. The new Tier-1-first
-     source-stack thumbnail (see pptx-render.js's
-     renderPptxTier1Thumbnail() and main.js's generatePptxThumbnail())
-     needs no new CSS here — its wrapper is sized/scaled entirely via
-     inline styles set once at render time (fixed px width/height,
-     already matching .source-stack-thumb's box), and .source-stack-thumb
-     above already centers whatever single child it's given. */
 
   @media (prefers-reduced-motion: reduce) {
     .animate-beacon { animation: none; }
@@ -267,12 +182,7 @@
     margin-left: 0.35rem;
     vertical-align: middle;
   }
-  /* Tier glow indicators — override the plain dot above with a colored,
-     glowing dot matching the question's scan tier: 1 = top-tier essential
-     concept (Pass 1), 2 = per-bullet detail (Pass 2, new or extension),
-     3 = final-sweep minor detail (Pass 3). Tier 1 & 2 share the same
-     yellow, matching the Pane 2 source-snippet highlight colors; Tier 3
-     stays grey. */
+  /* tier glow dot: colored per scan tier (1=top-tier/Pass1, 2=per-bullet/Pass2, 3=final-sweep/Pass3); tiers 1-2 share yellow (matches Pane 2 highlights), tier 3 is grey. */
   .nav-chip-snippet[data-tier="1"]::after {
     background: #facc15;
     opacity: 1;
@@ -288,11 +198,7 @@
     opacity: 1;
     box-shadow: 0 0 6px #94a3b8;
   }
-  /* Possible-duplicate marker — set on a nav-chip whose question was
-     flagged by computeDuplicateMap() (same target term after light
-     singularization, or the same source passage highlighted twice under
-     different target terms). Independent of the tier dot above; a
-     question can be both a snippet chip and a flagged duplicate. */
+  /* marks a nav-chip whose question was flagged by computeDuplicateMap() (same term after singularization, or the same passage highlighted under different terms); independent of the tier dot above. */
   .nav-chip-duplicate {
     border-color: #ef5765;
   }
@@ -302,20 +208,7 @@
     color: #ef5765;
   }
 
-  /* UNCHECKED_AI_CONTENT_AND_FUZZY_HIGHLIGHT_PERSISTENCE_PROMPT.md
-     Part B — green "unchecked" marker for a nav-chip whose question was
-     AI-autogenerated and hasn't been viewed yet (cleared by
-     setActiveCard() on view — see editor-render.js). Same pattern as
-     nav-chip-duplicate just above, but a plain bold ASCII "!" rather
-     than an emoji glyph: most browsers render color emoji (e.g. ❗)
-     with their own fixed color regardless of a CSS `color:` override,
-     so an emoji here would not reliably render green.
-     NOTE: a chip can in principle be both a flagged duplicate AND
-     unchecked. Both rules target the same ::before pseudo-element, so
-     only one glyph can show — this rule is declared after
-     nav-chip-duplicate, so unchecked (⚠ -> !) wins the stacking case.
-     Not fixed here (out of this pass's scope) since it wasn't asked
-     for; flagging it in case both-at-once turns out to matter. */
+  /* green marker for an AI-autogenerated question not yet viewed (cleared by setActiveCard() in editor-render.js); plain "!" not emoji since color emoji ignores CSS color overrides. */
   .nav-chip-unchecked {
     border-color: #22c55e;
   }
@@ -326,11 +219,7 @@
     color: #22c55e;
   }
 
-  /* Update 1 — nav-chip pager (Google-classic numbered pages + Prev/Next),
-     shown below questionNav once there are more than NAV_CHIPS_PER_PAGE
-     (20) questions. Same visual language as .nav-chip above — reuses
-     the same base colors/border/radius so the pager reads as part of
-     the same control rather than a bolted-on widget. */
+  /* nav-chip pager (numbered pages + Prev/Next), shown below questionNav once there are more than NAV_CHIPS_PER_PAGE (20) questions; reuses .nav-chip's palette. */
   .nav-pager-btn,
   .nav-pager-arrow {
     font-family: 'Space Mono', monospace;
@@ -362,16 +251,10 @@
     box-shadow: 0 0 0 1px #f5b942;
   }
 
-  /* ---------- Update 3: term nav bar ----------
-     New panel (Terms) above the chip grid — see editor-render.js's
-     buildTermGroups()/buildTermRowHtml()/renderTermBar() and
-     online-quiz-maker.html's #termBarDetails. Reuses the same base
-     palette as .nav-chip / .nav-pager-btn above (dark input background,
-     amber active state, danger red for the duplicate warning) so this
-     reads as part of the same control language rather than a
-     bolted-on widget. */
+  /* ---------- term nav bar ----------
+     panel above the chip grid (see editor-render.js's buildTermGroups()/buildTermRowHtml()/renderTermBar() and #termBarDetails); reuses .nav-chip/.nav-pager-btn's palette. */
   .term-row {
-    position: relative; /* NAV_CHIP_DUPE_STYLE_AND_SOURCE_SCOPE_PROMPT.md Issue 1 — anchors .term-row-dupe-actions' overlay positioning below */
+    position: relative; /* anchors .term-row-dupe-actions' overlay positioning below */
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
@@ -394,11 +277,7 @@
     transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
   }
   .term-row-btn:hover { color: #e7edf5; border-color: #f5b942; }
-  /* Active filter state — same treatment as .nav-chip-active /
-     .nav-pager-btn-active above, applied via the wrapping .term-row so
-     the whole row (including any duplicate rows nested inside it,
-     which keep their own red styling below) reads as "currently
-     filtering on this". */
+  /* active-filter state — same treatment as .nav-chip-active/.nav-pager-btn-active above, applied via the wrapping .term-row so the whole row reads as "currently filtering on this". */
   .term-row-active .term-row-btn {
     color: #0b0f14;
     background: #f5b942;
@@ -415,27 +294,12 @@
     font-size: 0.65rem;
     opacity: 0.75;
   }
-  /* NAV_CHIP_DUPE_STYLE_AND_SOURCE_SCOPE_PROMPT.md Issue 1 — replaces
-     the old stacked-box duplicate warning (.term-row-dupe /
-     .term-row-dupe-text / .term-row-dupe-btn, removed) with a
-     nav-chip-style treatment applied to the row itself, mirroring
-     .nav-chip-duplicate above: red border, no added row/box. The row's
-     `.term-row-btn` gets the border color directly (rather than a
-     ::before glyph like .nav-chip-duplicate uses) because the ⚠/⚠×N
-     prefix here is dynamic (depends on how many of this term's
-     questions are flagged) and has to live in the label markup itself —
-     see .term-row-dupe-flag below and buildTermRowHtml(). */
+  /* red border marks a term row with a flagged duplicate, mirroring .nav-chip-duplicate; the ⚠×N count lives in the label markup itself (dynamic) rather than a ::before glyph — see .term-row-dupe-flag below and buildTermRowHtml(). */
   .term-row-duplicate .term-row-btn {
     border-color: #ef5765;
   }
   .term-row-active.term-row-duplicate .term-row-btn {
-    /* Active-filter amber still wins visually when a duplicate term is
-       also the one currently filtering Pane 1 — same precedence
-       .nav-chip-active already has over .nav-chip-duplicate elsewhere
-       in this file (an active/selected state reads as more important
-       than a passive warning). Only the border needs restating here;
-       .term-row-active's background/color rule above already applies
-       since both classes sit on the same element. */
+    /* active-filter amber wins over the duplicate red border when both apply; background/color already come from .term-row-active above. */
     border-color: #f5b942;
   }
   .term-row-dupe-flag {
@@ -445,13 +309,7 @@
   .term-row-active .term-row-dupe-flag {
     color: #0b0f14;
   }
-  /* Compact icon-only View/Dismiss actions — DESIGN DECISION (Issue 1,
-     option (b)): a nav-chip-style row has no room for the old
-     full-width "View →" / "Not a duplicate" buttons, so they're kept as
-     an overlay that only appears on hover/focus rather than being
-     dropped. Positioned over the row's trailing edge (where
-     .term-row-count normally sits) so the row never reflows to make
-     room for them. */
+  /* icon-only View/Dismiss actions, shown as a hover/focus overlay over the row's trailing edge so the row never reflows to make room for them. */
   .term-row-dupe-actions {
     position: absolute;
     top: 50%;
@@ -517,19 +375,8 @@
   }
   .term-filter-clear:hover { color: #e7edf5; }
 
-  /* ---------- UPDATE3_TERM_PANE_PROMPT.md: term-pane scope toggle + search ----------
-     #termScopeToggle / #termSearchInput now sit above #termBar inside
-     the relocated #termPane column (see online-quiz-maker.html and
-     editor-render.js's renderTermBar()/filterTermGroupsForPanel()).
-     Reuses the exact same palette as the .term-row-* rules above (dark
-     input surface, amber active/focus state) so the new controls read
-     as part of the same panel rather than a bolted-on widget. Stacked
-     vertically (toggle row, then a full-width search input, then the
-     term list) rather than side-by-side — the design-decision note in
-     the handoff prompt about this column's width (narrower than
-     #sourcePane) is exactly why: there isn't horizontal room for a
-     toggle + search input on one line, so each control gets its own
-     row and takes the column's full width instead. */
+  /* ---------- term-pane scope toggle + search ----------
+     #termScopeToggle / #termSearchInput sit above #termBar inside #termPane (see renderTermBar()/filterTermGroupsForPanel()); reuses the .term-row-* palette. Stacked vertically, each control taking the column's full width, since there isn't horizontal room for both on one line. */
   .term-scope-toggle {
     display: flex;
     gap: 0.4rem;
@@ -550,9 +397,7 @@
     transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
   }
   .term-scope-btn:hover { color: #e7edf5; border-color: #f5b942; }
-  /* Active scope — same treatment as .term-row-active/.nav-pager-btn-active
-     elsewhere in this panel, applied directly to the button (there's no
-     wrapping row here the way .term-row-active wraps .term-row-btn). */
+  /* active scope — same treatment as .term-row-active/.nav-pager-btn-active, applied directly to the button since there's no wrapping row here. */
   .term-scope-btn-active {
     color: #0b0f14;
     background: #f5b942;
@@ -629,25 +474,8 @@
   #docTextContainer .doc-page-body strong { color: #b45309; font-weight: 700; }
   #docTextContainer .doc-page-body em { color: #6d28d9; font-style: italic; }
 
-  /* Solid, opaque highlighter-marker look on white paper (like an actual
-     highlighter pen) rather than translucent overlays — text color is
-     left as `inherit` rather than overridden, so it reads like ink under
-     a marker instead of recolored text. Source-passage highlights are
-     colored by scan tier (green/yellow/grey); the exact answer/target-
-     term substring always gets a bright-green overlay nested inside,
-     regardless of its parent's tier. Both are plain <mark> elements so
-     an answer mark can safely nest inside a tier mark when the answer
-     text is a substring of it — since these are solid fills, the nested
-     green mark fully covers the tier color behind it. */
-  /* A single match can be split across several <mark> elements when it
-     crosses a structural boundary (see highlightSnippetInContainer) —
-     one <mark> per block-level segment, since one inline element can't
-     validly wrap partial <li>/<p> content. box-decoration-break: clone
-     makes each of those separately-inserted marks render its own
-     background/border/padding independently (rather than only the first
-     or last segment getting them), so the split marks still read as one
-     continuous highlighter stroke instead of looking like it "leaks" or
-     cuts off mid-run. */
+  /* opaque highlighter-pen look (not translucent); text stays `inherit` so it reads like ink under a marker. Source-passage marks are colored by scan tier; a bright-green answer mark nests inside, covering the tier color where it overlaps. */
+  /* box-decoration-break: clone lets a match split across multiple <mark> elements (crossing block boundaries — see highlightSnippetInContainer) still render as one continuous highlighter stroke instead of leaking or cutting off. */
   mark.source-highlight-tier1,
   mark.source-highlight-tier2,
   mark.source-highlight-tier3,
@@ -669,11 +497,7 @@
     transition: background-color 150ms ease, box-shadow 150ms ease;
   }
 
-  /* Tier 1 — light yellow: importance (AI judged this a top-tier /
-     essential concept). Tier 1 and Tier 2 now share the same yellow —
-     only the V-badge (verification tier, not this background) still
-     distinguishes them. Independent of verification status — see the
-     V1-V4 badge rules below for that. */
+  /* Tier 1 — light yellow (top-tier/essential concept); tiers 1-2 share this yellow, only the V-badge below still distinguishes them. */
   mark.source-highlight-tier1 { background-color: #fef08a; }
   mark.source-highlight-tier1:hover { background-color: #fde047; }
   mark.source-highlight-tier1.active-highlight {
@@ -681,8 +505,7 @@
     box-shadow: 0 0 0 1px #ca8a04;
   }
 
-  /* Tier 2 — light yellow: importance (per-bullet detail/extension,
-     Pass 2 of question generation). Same yellow as Tier 1 above. */
+  /* Tier 2 — light yellow (per-bullet detail/extension, Pass 2); same yellow as Tier 1. */
   mark.source-highlight-tier2 { background-color: #fef08a; }
   mark.source-highlight-tier2:hover { background-color: #fde047; }
   mark.source-highlight-tier2.active-highlight {
@@ -690,8 +513,7 @@
     box-shadow: 0 0 0 1px #ca8a04;
   }
 
-  /* Tier 3 — light grey: importance (final-sweep / lower-priority
-     concept, Pass 3 of question generation). */
+  /* Tier 3 — light grey (final-sweep/lower-priority concept, Pass 3). */
   mark.source-highlight-tier3 { background-color: #e2e8f0; }
   mark.source-highlight-tier3:hover { background-color: #cbd5e1; }
   mark.source-highlight-tier3.active-highlight {
@@ -699,10 +521,7 @@
     box-shadow: 0 0 0 1px #475569;
   }
 
-  /* Tier 4 — light red. Importance never reaches 4 (question generation
-     only assigns 1-3), so this background is currently unused; kept for
-     backward compatibility with old data. Verification's own "4" state
-     (unclassified) is shown via the V4 badge below, not this color. */
+  /* Tier 4 — light red; unused (question generation only assigns tiers 1-3), kept for backward compatibility with old data. */
   mark.source-highlight-tier4 { background-color: #fecaca; }
   mark.source-highlight-tier4:hover { background-color: #fca5a5; }
   mark.source-highlight-tier4.active-highlight {
@@ -719,15 +538,7 @@
     transition: background-color 150ms ease, box-shadow 150ms ease;
   }
 
-  /* Verification badge — layered on every mark, independent of the
-     importance background color underneath it. Reflects how
-     recheckHighlights most recently located this snippet:
-       V1 = exact/near match on its own stated page
-       V2 = relocated after a light re-search on its own page
-       V3 = unverified — best-guess sentence from a doc-wide fuzzy scan
-       V4 = unclassified — only the raw answer/target term was found
-     Uses blue->red, never green/yellow/grey, so it never gets read as
-     the same signal as the importance background. */
+  /* verification badge, independent of the tier background: V1=exact match on stated page, V2=relocated via light re-search, V3=unverified fuzzy doc-wide guess, V4=unclassified (only raw term found). Blue→red so it never reads as the tier signal. */
   mark[data-tier]::after {
     content: "V" attr(data-tier);
     display: inline-block;
@@ -745,17 +556,7 @@
   mark[data-tier="3"]::after { background: #ddd6fe; color: #6d28d9; }
   mark[data-tier="4"]::after { background: #fecdd3; color: #9f1239; }
 
-  /* UNCHECKED_AI_CONTENT_AND_FUZZY_HIGHLIGHT_PERSISTENCE_PROMPT.md
-     Part B — Pane 2 indicator for a highlight belonging to an
-     AI-autogenerated, not-yet-viewed question (toggled alongside
-     active-highlight in the same DOM pass — see renderTextVersion() in
-     layout-formatting.js, recheckHighlights()/recheckHighlightsForQuestion()
-     in highlighting.js, and setActiveCard() in editor-render.js).
-     An outline (rather than another background fill) layers cleanly on
-     top of the existing tier background colors and the V-badge without
-     fighting either for the same visual channel; outline-offset pulls
-     it in slightly so it doesn't get clipped by box-decoration-break's
-     per-segment fragment boundaries on a multi-segment highlight. */
+  /* outline marks an AI-autogenerated, not-yet-viewed question's highlight (cleared via setActiveCard() in editor-render.js); layers over the tier background/V-badge without adding a new fill. */
   mark.unchecked-highlight {
     outline: 2px solid #22c55e;
     outline-offset: -2px;
@@ -783,23 +584,7 @@
   /* ---------- Pane 3 ---------- */
   #slideTextPreview { white-space: pre-wrap; line-height: 1.65; }
 
-  /* Pane 3 — PPTX Tier 1: real visual reconstruction, via
-     @aiden0z/pptx-renderer's headless renderSlide() (see
-     pptx-render.js). Renders onto a white "slide" background, so the
-     container itself stays white rather than the app's usual dark card
-     tone — a dark seam around a white slide would look like a
-     rendering bug.
-     No more fixed `min-height: 420px` guess here (see
-     PPTX_RENDER_TIER1_SIZING_FIX_PROMPT.md) — that ignored the deck's
-     actual aspect ratio (4:3 vs 16:9) and, combined with `overflow:
-     hidden` and pptx-render.js doing no scaling of its own, is what
-     produced the narrower-than-container / mid-word-clipped rendering
-     bug. pptx-render.js now measures the rendered slide's native size
-     via ResizeObserver and sets its `.pptx-tier1-slide-wrapper` child's
-     width/height in JS to the slide scaled to fill this container's
-     width, aspect ratio preserved — so this container's own height is
-     just whatever that wrapper ends up needing. `overflow: hidden`
-     stays as a safety net, not the thing doing the fitting. */
+  /* PPTX Tier 1: real slide render via @aiden0z/pptx-renderer (pptx-render.js); white background since slides render on white. Height follows the rendered wrapper's JS-computed size (ResizeObserver-scaled to container width, aspect ratio preserved); overflow:hidden is just a safety net. */
   #pptxTier1Container {
     width: 100%;
     background: #ffffff;
@@ -808,19 +593,12 @@
     overflow: hidden;
   }
 
-  /* The scaling wrapper pptx-render.js creates around the library's
-     rendered slide element (`.pptx-tier1-slide-wrapper`, sized in JS —
-     see the note above and setupTier1ResponsiveScaling() in
-     pptx-render.js). overflow: hidden here too so the one frame before
-     JS computes the real scale never shows the slide at its native,
-     unscaled size. */
+  /* scaling wrapper pptx-render.js creates around the rendered slide (.pptx-tier1-slide-wrapper, sized in JS — see setupTier1ResponsiveScaling()); overflow:hidden here too hides the unscaled slide before JS computes the real scale. */
   #pptxTier1Container .pptx-tier1-slide-wrapper {
     overflow: hidden;
   }
 
-  /* Pane 3 — PPTX Tier 2: embedded-image fallback. A simple stacked
-     preview of whatever pictures the slide embeds, shown alongside
-     slideTextPreview (Tier 3's text) rather than replacing it. */
+  /* PPTX Tier 2: embedded-image fallback — a simple stacked preview of the slide's pictures, shown alongside slideTextPreview (Tier 3's text) rather than replacing it. */
   #pptxTier2Container {
     width: 100%;
     display: flex;
@@ -832,22 +610,7 @@
     padding: 1rem;
     margin-bottom: 1rem;
   }
-  /* CSS-SPECIFICITY BUG FIX (PPTX_RENDER_TIER1_VERIFY_AND_TIER2_HIDDEN_FIX_PROMPT.md
-     item 2): Tailwind's `.hidden` utility is a class selector
-     (specificity 0-1-0). The bare `#pptxTier2Container` rule above is
-     an ID selector (specificity 1-0-0), which always wins regardless of
-     which rule appears later in the cascade — so doc-pane-navigation.js
-     toggling the `hidden` class on this element never actually
-     collapsed it; `display: flex` from the ID rule kept winning, and
-     the empty container sat there still claiming its padding/border/
-     margin-bottom box, eating vertical space from #pptxTier1Container
-     above it even when nothing was rendered into it (i.e. essentially
-     always, since Tier 1 succeeding is the normal case). This rule
-     raises the hidden state's specificity to 1-1-0 so it wins instead.
-     Swept the rest of this stylesheet for other bare `#id { display:
-     ... }` rules that could fight `.hidden` the same way — this is the
-     only one; #pptxTier1Container doesn't set `display` in its own
-     rule, so it isn't affected. */
+  /* .hidden alone (class selector) loses to the bare #pptxTier2Container ID rule above; this class+id combo raises specificity so hidden actually wins. */
   #pptxTier2Container.hidden {
     display: none;
   }
@@ -858,9 +621,5 @@
     border-radius: 0.25rem;
   }
 
-  /* Pane 3 — PPTX loading placeholder, shown while Tier 1/2 are being
-     attempted (FOLLOW-UP Fix 4, PPTX_RENDER_FOLLOWUP_PROMPT.md). Reuses
-     pdfEmptyState's layout (centered, max-w-xs, py-24 — see the HTML)
-     and the app's existing `.animate-beacon` pulse (already used by
-     syncBadge) rather than introducing a new animation. */
+  /* PPTX loading placeholder, shown while Tier 1/2 are being attempted; reuses pdfEmptyState's layout and the existing .animate-beacon pulse. */
   #pptxLoadingState p { color: #8296ab; }
