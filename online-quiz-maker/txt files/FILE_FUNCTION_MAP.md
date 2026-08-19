@@ -1,7 +1,7 @@
 # File / Function Map — Online Quiz Maker (Modularized)
 
-Table of contents for the codebase. Status of this doc: **21 of 29 files
-confirmed by direct read; 8 files pending** (listed by name only in
+Table of contents for the codebase. Status of this doc: **22 of 29 files
+confirmed by direct read; 7 files pending** (listed by name only in
 upload manifests, content never received — see PENDING section at the
 bottom). Every agent that opens a pending file should replace its
 placeholder entry here with a real one, in the same format as the
@@ -38,7 +38,7 @@ here — carried over from each file's own header comment.
 | online-quiz-maker.html | live HTML shell, loads main.js as module | ⏳ pending |
 | editor-render.js | question nav rendering, term bar, escapeHtml | ⏳ pending |
 | styles.css | all styling | ⏳ pending |
-| question-model.js | question CRUD, dedup, sourceId tagging | ⏳ pending |
+| question-model.js | question CRUD, dedup, sourceId tagging | ✅ confirmed |
 | layout-formatting.js | Pane 2 text rendering + highlight redraw; AI layout reformatting | ✅ confirmed |
 | pptx-render.js | PPTX slide render (Tier 1 lib render + Tier 2 image grid) | ✅ confirmed |
 | highlighting.js | source-text highlight recheck | ✅ confirmed |
@@ -86,6 +86,12 @@ here — carried over from each file's own header comment.
 **Internal only:** `getScanTargetSourceId`, `getScanTargetPages`, `populateScanSourcePicker`, `refreshScanRangeBounds`.
 **Depends on:** `core-state.js`, `dom-refs.js`, `status-helpers.js` (`setParseStatus`), `variant-generation.js` (pending, `generateSingleVariant`), `ai-prompt-builders.js` (pending, `collectTargetTerms`), `ai-api-calls.js` (pending, `generateQuestionsWithAI`), `question-model.js` (pending, `sortQuestionsByPage`/`updateQuestionCount`), `layout-formatting.js` (pending, `renderTextVersion`), `editor-render.js` (pending, `renderQuestionNav`/`setActiveCard`).
 **Known follow-up bug (per its own comment):** scanning a non-active source switches `state.activeSourceId` but does NOT re-sync Pane 3 — left as flagged, not fixed.
+
+### question-model.js
+**Role:** Question/variant CRUD (`newQuestion`, `addQuestion`, `deleteQuestion`, `removeVariant`), sourceId tagging, sort order, and duplicate detection.
+**Exports:** `newVariant`, `computeDataClassification`, `newQuestion`, `toClampPrompt`, `addQuestion`, `deleteQuestion`, `removeFlaggedDuplicates`, `removeVariant`, `updateQuestionCount`, `sortQuestionsByPage`, `answerKeyOf`, `computeDuplicateMap`.
+**Depends on:** `core-state.js` (`state`, `getDuplicateMap`/`setDuplicateMap`), `dom-refs.js` (`activeEditorEl`, `questionCountEl`), `classification-meta.js` (`DATA_STATUS_META`), `editor-render.js` (pending, `setActiveCard`/`renderActiveQuestion`/`renderQuestionNav`), `layout-formatting.js` (`renderTextVersion`), `text-normalize.js` (`normalizeTermKey`/`normalizeTermKeyLoose`).
+**Note:** `sortQuestionsByPage` sorts by each question's source's position in `state.sources` first, then by `sourcePage`; a question with no matching source sorts first. `computeDuplicateMap` flags same-target-term matches across any files, and same-source-passage matches only within the same `sourceId`+`sourcePage`.
 
 ### selection-toolbar.js
 **Role:** Floating toolbar that appears on text selection in Pane 2, plus the two-way scroll sync (Pane 2 scroll → Pane 3 page).
@@ -197,11 +203,6 @@ question-model.js).
 Referenced classes: `.source-stack-thumb`, `.source-stack-thumb-loading`,
 `.source-stack-thumb-fallback`, `#slidePanelMirror`,
 `.slide-panel-mirror-loading` (dead-feature CSS, check if still present).
-
-### question-model.js — *not yet reviewed*
-Referenced exports: `newQuestion` (tags `sourceId`, per quiz-export.js's
-UPDATE 2B note), `sortQuestionsByPage`, `updateQuestionCount`,
-`removeFlaggedDuplicates` (reassigns `duplicateMap`).
 
 ### highlighting.js — *confirmed*
 **Role:** Locates and wraps question/answer snippets in `<mark>` elements in Pane 2, handles duplicate-sharing of

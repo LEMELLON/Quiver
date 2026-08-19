@@ -74,9 +74,9 @@ Legend: ⬜ not started · 🔄 in progress (see note) · ✅ done
 | ai-prompt-builders.js | ✅ | skipped per user instruction — not opened, comments not stripped |
 | variant-generation.js | ✅ | |
 | snippet-question-generation.js | ✅ | |
-| question-model.js | ⬜ | not yet reviewed |
-| selection-toolbar.js | ⬜ | |
-| batch-scan.js | ⬜ | |
+| question-model.js | ✅ | |
+| selection-toolbar.js | ✅ | |
+| batch-scan.js | ✅ | |
 | quiz-export.js | ⬜ | |
 | main.js | ✅ | |
 | online-quiz-maker.html | ⬜ | not yet reviewed |
