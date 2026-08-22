@@ -30,6 +30,11 @@ import { handleGenerateVariant, handleRegenerateChoices } from './variant-genera
 // markQidList reads a mark's data-qid, which may hold more than one id (a shared duplicate-pair mark).
 import { markQidList } from './highlighting.js';
 
+// Injected by main.js (registerSourceSwitcher) so term-panel handlers can trigger a full source switch
+// (state.activeSourceId update, pane re-renders, etc.) without editor-render.js importing main.js back.
+let switchActiveSource = null;
+function registerSourceSwitcher(fn) { switchActiveSource = fn; }
+
 // Escapes HTML-unsafe characters for safe interpolation into markup/attributes.
 function escapeHtml(str) {
   return (str || '').replace(/[&<>"']/g, c => ({
@@ -304,13 +309,36 @@ termBarEl.addEventListener('click', (e) => {
   if (filterBtn) {
     const key = filterBtn.dataset.termKey;
     // Clicking the already-active term again clears the filter (toggle behavior).
-    activeTermFilterKey = (activeTermFilterKey === key) ? null : key;
+    const nextKey = (activeTermFilterKey === key) ? null : key;
+    if (nextKey && switchActiveSource) {
+      const group = buildTermGroups().find((g) => g.key === nextKey);
+      const matchesActiveSource = group && group.questionIds.some((qid) => {
+        const q = state.questions.find((x) => x.id === qid);
+        return q && q.sourceId === state.activeSourceId;
+      });
+      if (group && !matchesActiveSource) {
+        // None of this term's matches are in the active source — switch to the first match's
+        // source (existing page-sort order) before applying the filter, so the switch happens
+        // before the filter/re-render rather than after.
+        const target = group.questionIds
+          .map((qid) => state.questions.find((x) => x.id === qid))
+          .find((q) => q);
+        if (target) switchActiveSource(target.sourceId);
+      }
+    }
+    activeTermFilterKey = nextKey;
     navChipPage = 0;
     renderQuestionNav();
     return;
   }
   const viewBtn = e.target.closest('[data-action="viewFlaggedQuestion"]');
   if (viewBtn) {
+    const targetQ = state.questions.find((x) => x.id === viewBtn.dataset.qid);
+    if (targetQ && targetQ.sourceId !== state.activeSourceId && switchActiveSource) {
+      // setActiveCard(viewBtn.dataset.qid) runs right below, so skip openSource's own auto-select
+      // of the new source's first question — no point rendering it just to immediately replace it.
+      switchActiveSource(targetQ.sourceId, { skipAutoSelect: true });
+    }
     setActiveCard(viewBtn.dataset.qid);
     return;
   }
@@ -920,7 +948,8 @@ export {
   renderQuestionNav,
   renderPane3QuestionNav,
   renderTermBar, // also called by doc-pane-navigation.js's renderSourcePage()
-  resetTermSearchOnSourceSwitch, // exported for future call from main.js's openSource(); not yet wired up
+  resetTermSearchOnSourceSwitch, // called by main.js's openSource()
+  registerSourceSwitcher, // called once by main.js to wire openSource() into the term-panel handlers above
   variantIndexesOfGroup,
   variantTabsTemplate,
   choiceRowsTemplate,

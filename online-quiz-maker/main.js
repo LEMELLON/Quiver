@@ -10,7 +10,7 @@ import './ai-credentials-and-models.js';
 
 import { addQuestion, sortQuestionsByPage, updateQuestionCount } from './question-model.js';
 import { setParseStatus } from './status-helpers.js';
-import { setActiveCard, renderQuestionNav, resetTermSearchOnSourceSwitch } from './editor-render.js';
+import { setActiveCard, renderQuestionNav, resetTermSearchOnSourceSwitch, registerSourceSwitcher } from './editor-render.js';
 import { extractPptxPages, extractPdfPages } from './doc-extraction.js';
 import './text-normalize.js';
 import { markQidList } from './highlighting.js';
@@ -176,7 +176,10 @@ if (sourceStackAreaEl) {
 }
 
 // Makes the given source active, updates Pane 3/2 to its first page, and opens its first question in the editor.
-function openSource(sourceId) {
+// { skipAutoSelect: true } skips that last auto-select step — used when the caller (e.g. the term-panel
+// flows in editor-render.js) is about to call setActiveCard itself with a specific target question, so
+// Pane 1/2/3 don't render twice in a row for the same source switch.
+function openSource(sourceId, { skipAutoSelect = false } = {}) {
   const source = state.sources.find(s => s.id === sourceId);
   if (!source) return;
 
@@ -188,6 +191,8 @@ function openSource(sourceId) {
   setupNavRange();
   renderDocPage(1);
   renderTextVersion();
+
+  if (skipAutoSelect) return;
 
   // Questions are already sourcePage-sorted within a source, so the first match is the earliest page.
   const firstQuestion = state.questions.find(q => q.sourceId === sourceId);
@@ -357,6 +362,10 @@ if (sourceListEl) {
     renderSourceList();
   });
 }
+
+// Lets editor-render.js's term-panel handlers (filterByTerm, viewFlaggedQuestion) trigger a full
+// source switch — same dependency direction as resetTermSearchOnSourceSwitch, just the opposite way.
+registerSourceSwitcher(openSource);
 
 // ---------- Init ----------
 renderTextVersion();
