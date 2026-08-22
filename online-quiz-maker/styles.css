@@ -121,23 +121,61 @@
     line-height: 1;
     cursor: grab;
   }
-  /* groups the handle/name/count within the row, alongside .source-stack-thumb. */
+  /* groups the handle/name/count within the row, alongside .source-stack-thumb. Hidden by default —
+     collapsed panel state (step 4) shows only .source-stack-thumb; the expanded-panel rule below
+     (keyed off the same '.source-panel-expanded' class the width toggle uses) reveals it. */
   .source-stack-meta {
-    display: flex;
+    display: none;
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
     flex: 1;
+  }
+  #sourcePane.source-panel-expanded .source-stack-meta {
+    display: flex;
   }
   .source-list-name {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    cursor: text;
+  }
+  /* replaces .source-list-name while renaming (main.js's startRenamingSource()). */
+  .source-list-name-input {
+    flex: 1;
+    min-width: 0;
+    background: #0b0f14;
+    border: 1px solid #f5b942;
+    border-radius: 0.25rem;
+    color: #e7edf5;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    padding: 0.1rem 0.35rem;
+  }
+  .source-list-name-input:focus {
+    outline: none;
   }
   .source-list-count {
     flex-shrink: 0;
     color: #8296ab;
+  }
+
+  /* ---------- source panel width toggle (batch 3, step 1) ----------
+     Width only — column height keeps tracking the section's normal 100%/flex height in both states via the
+     unchanged lg:sticky/lg:max-h-[...] utilities on #sourcePane itself; only the grid column's size changes.
+     Scoped to the same 1024px breakpoint the base lg:grid-cols-[...] utility already uses, so the
+     single-column mobile layout (grid-cols-1) is untouched. The collapsed width here is sized for a
+     thumb-only row (see the .source-stack-meta rule above); expanded restores the original wider column.
+     main.js's sourcePanelToggleBtn listener toggles '.source-panel-expanded' on both #sourcePane (keys the
+     row layout above) and #layoutRoot (keys the column width below) so one class drives both effects. */
+  @media (min-width: 1024px) {
+    #layoutRoot {
+      grid-template-columns: 96px 1.4fr 1.4fr 1.4fr minmax(200px, 0.7fr);
+    }
+    #layoutRoot.source-panel-expanded {
+      grid-template-columns: minmax(220px, 0.8fr) 1.4fr 1.4fr 1.4fr minmax(200px, 0.7fr);
+    }
   }
 
   /* highlights the source-stack area during an OS file drag (see main.js's sourceStackAreaEl dragenter/dragover listeners); outline avoids affecting layout since the wrapper itself has no border of its own. */

@@ -31,14 +31,11 @@ const selectionToolbar = document.getElementById('selectionToolbar');
 const selectionGenerateBtn = document.getElementById('selectionGenerateBtn');
 const selectionQuestionType = document.getElementById('selectionQuestionType');
 const selectionGenStatus = document.getElementById('selectionGenStatus');
-const formatLayoutBtn = document.getElementById('formatLayoutBtn');
 const recheckHighlightsBtn = document.getElementById('recheckHighlightsBtn');
 
 const docPanelTitle = document.getElementById('docPanelTitle');
 const prevPageBtn = document.getElementById('prevPageBtn');
 const nextPageBtn = document.getElementById('nextPageBtn');
-const scanCurrentPageBtn = document.getElementById('scanCurrentPageBtn');
-const scanCurrentPageType = document.getElementById('scanCurrentPageType');
 const pane3QuestionNavEl = document.getElementById('pane3QuestionNav');
 const pageInput = document.getElementById('pageInput');
 const totalPagesEl = document.getElementById('totalPages');
@@ -65,27 +62,20 @@ const quizCodeOutput = document.getElementById('quizCodeOutput');
 const copyCodeBtn = document.getElementById('copyCodeBtn');
 const modalError = document.getElementById('modalError');
 
-const scanRangeBtn = document.getElementById('scanRangeBtn');
-const scanRangeModal = document.getElementById('scanRangeModal');
-const closeScanRangeModalBtn = document.getElementById('closeScanRangeModalBtn');
-// Source picker for the Scan Pages modal; scanSourceFieldEl (wrapper) hides when 0-1 sources exist.
-const scanSourceSelect = document.getElementById('scanSourceSelect');
-const scanSourceFieldEl = document.getElementById('scanSourceField');
-const scanFromPage = document.getElementById('scanFromPage');
-const scanToPage = document.getElementById('scanToPage');
-const scanQuestionType = document.getElementById('scanQuestionType');
-const scanRangeHint = document.getElementById('scanRangeHint');
-const scanRangeGenerateBtn = document.getElementById('scanRangeGenerateBtn');
-const scanRangeStatus = document.getElementById('scanRangeStatus');
-const scanRangeError = document.getElementById('scanRangeError');
-
+// importDetails now lives in the top nav bar (moved out of the source panel); id is unchanged so this ref still resolves.
 const importDetailsEl = document.getElementById('importDetails');
 
-// Wrapper around importDetails + sourceList; OS file-drop listeners target this so drops work regardless of panel/stack state.
+// Wrapper around sourceList; OS file-drop listeners target this so drops still work now that importDetails has moved out.
 const sourceStackAreaEl = document.getElementById('sourceStackArea');
 
 // Draggable stack of imported sources rendered by main.js's renderSourceList(); visibility toggled on state.sources.length.
 const sourceListEl = document.getElementById('sourceList');
+
+// Source panel column and the grid container it sits in; both take the '.source-panel-expanded' class toggle
+// (width-only expand/collapse — see main.js's sourcePanelToggleBtn listener and styles.css's #layoutRoot rules).
+const sourcePaneEl = document.getElementById('sourcePane');
+const layoutRootEl = document.getElementById('layoutRoot');
+const sourcePanelToggleBtn = document.getElementById('sourcePanelToggleBtn');
 
 // Term nav bar panel and the filtered-term indicator strip; see editor-render.js's renderTermBar().
 const termBarEl = document.getElementById('termBar');
@@ -123,13 +113,10 @@ export {
   selectionGenerateBtn,
   selectionQuestionType,
   selectionGenStatus,
-  formatLayoutBtn,
   recheckHighlightsBtn,
   docPanelTitle,
   prevPageBtn,
   nextPageBtn,
-  scanCurrentPageBtn,
-  scanCurrentPageType,
   pane3QuestionNavEl,
   pageInput,
   totalPagesEl,
@@ -152,21 +139,12 @@ export {
   quizCodeOutput,
   copyCodeBtn,
   modalError,
-  scanRangeBtn,
-  scanRangeModal,
-  closeScanRangeModalBtn,
-  scanSourceSelect,
-  scanSourceFieldEl,
-  scanFromPage,
-  scanToPage,
-  scanQuestionType,
-  scanRangeHint,
-  scanRangeGenerateBtn,
-  scanRangeStatus,
-  scanRangeError,
   importDetailsEl,
   sourceStackAreaEl,
   sourceListEl,
+  sourcePaneEl,
+  layoutRootEl,
+  sourcePanelToggleBtn,
   termBarEl,
   termFilterIndicatorEl,
   termScopeToggleEl,

@@ -1,5 +1,5 @@
 import { state, getDuplicateMap, setDuplicateMap } from './core-state.js';
-import { docTextContainer, apiKeyInput, modelSelect, formatLayoutBtn } from './dom-refs.js';
+import { docTextContainer, apiKeyInput, modelSelect } from './dom-refs.js';
 import { renderPageTextHtml } from './text-normalize.js';
 import { setSelectionGenStatus } from './status-helpers.js';
 
@@ -139,8 +139,6 @@ async function formatDocumentLayout(rawText) {
 // Runs formatDocumentLayout across every page sequentially, stores each result on state.pages[i].formattedHtml, then re-renders Pane 2.
 async function formatAllPagesLayout() {
   if (state.pages.length === 0) return;
-  formatLayoutBtn.disabled = true;
-  formatLayoutBtn.textContent = 'Formatting…';
   setSelectionGenStatus('Reformatting page layout with AI…');
 
   // Throttle only for Gemini: this loop runs concurrently with the 3-pass Gemini question-generation scan, and together they can exceed the ~15 RPM free-tier quota.
@@ -171,13 +169,8 @@ async function formatAllPagesLayout() {
     logAllHighlights('formatAllPagesLayout: after recheckHighlights (final)');
   } catch (err) {
     setSelectionGenStatus(err.message || 'Layout formatting failed.', 'error');
-  } finally {
-    formatLayoutBtn.disabled = false;
-    formatLayoutBtn.textContent = '✨ Format Layout (AI)';
   }
 }
-
-formatLayoutBtn.addEventListener('click', formatAllPagesLayout);
 
 export {
   renderTextVersion,

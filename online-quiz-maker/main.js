@@ -38,6 +38,9 @@ import {
   importDetailsEl,
   sourceStackAreaEl,
   sourceListEl,
+  sourcePaneEl,
+  layoutRootEl,
+  sourcePanelToggleBtn,
 } from './dom-refs.js';
 
 // Clicking a shared highlight mark activates the first question id in its data-qid list.
@@ -175,6 +178,20 @@ if (sourceStackAreaEl) {
   });
 }
 
+// Expands/collapses the source panel column. Width-only: the class is toggled on both #sourcePane (styles.css
+// keys the collapsed thumb-only row layout off it) and #layoutRoot (keys the grid-template-columns width off
+// it, scoped to the same lg breakpoint the column widths were already defined at) so nothing about row height
+// or the panel's vertical layout changes. Batch #4's drag-resize work can replace this later without touching
+// the collapsed/expanded CSS itself.
+if (sourcePanelToggleBtn && sourcePaneEl) {
+  sourcePanelToggleBtn.addEventListener('click', () => {
+    const expanded = sourcePaneEl.classList.toggle('source-panel-expanded');
+    if (layoutRootEl) layoutRootEl.classList.toggle('source-panel-expanded', expanded);
+    sourcePanelToggleBtn.setAttribute('aria-expanded', String(expanded));
+    sourcePanelToggleBtn.title = expanded ? 'Collapse source panel' : 'Expand source panel';
+  });
+}
+
 // Makes the given source active, updates Pane 3/2 to its first page, and opens its first question in the editor.
 // { skipAutoSelect: true } skips that last auto-select step — used when the caller (e.g. the term-panel
 // flows in editor-render.js) is about to call setActiveCard itself with a specific target question, so
@@ -302,10 +319,17 @@ function renderSourceList() {
     const name = document.createElement('span');
     name.className = 'source-list-name';
     name.textContent = source.name;
+    name.title = 'Double-click to rename';
+    // stopPropagation keeps the double-click from also reaching openSource() via the row's click delegation
+    // below (the delegated handler already excludes .source-list-name, but this keeps the intent local too).
+    name.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      startRenamingSource(source, name);
+    });
 
     const countEl = document.createElement('span');
     countEl.className = 'source-list-count';
-    countEl.textContent = count + (count === 1 ? ' question' : ' questions');
+    countEl.textContent = count;
 
     meta.appendChild(handle);
     meta.appendChild(name);
@@ -316,13 +340,57 @@ function renderSourceList() {
   });
 }
 
+// Swaps a source-stack row's name span for a text input so the source can be renamed in place.
+// Commits on blur or Enter; Escape or an emptied field discards the edit and restores the previous name.
+function startRenamingSource(source, nameEl) {
+  const previousName = source.name;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'source-list-name-input';
+  input.value = previousName;
+  // Keeps clicks/drags inside the input from bubbling to the row's click (openSource) or drag handlers.
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('mousedown', (e) => e.stopPropagation());
+
+  let settled = false;
+  const commit = () => {
+    if (settled) return;
+    settled = true;
+    const typed = input.value.trim();
+    source.name = typed || previousName; // guard against an emptied field
+    renderSourceList();
+  };
+  const cancel = () => {
+    if (settled) return;
+    settled = true;
+    renderSourceList(); // no state change — just redraw the row back to its display state
+  };
+
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancel();
+    }
+  });
+
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
 // Native HTML5 drag-and-drop reordering for the stack above, delegated on sourceListEl since rows are rebuilt on each render.
 let dragSourceRowId = null;
 
 if (sourceListEl) {
-  // Opens the clicked source, ignoring clicks on the drag handle itself.
+  // Opens the clicked source, ignoring clicks on the drag handle and on the name (single-click there is
+  // reserved for cursor placement/selection ahead of a rename; double-click on it starts the rename itself).
   sourceListEl.addEventListener('click', (e) => {
-    if (e.target.closest('.source-stack-handle')) return;
+    if (e.target.closest('.source-stack-handle, .source-list-name, .source-list-name-input')) return;
     const row = e.target.closest('.source-stack-item');
     if (!row) return;
     openSource(row.dataset.sourceId);

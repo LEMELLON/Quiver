@@ -5,7 +5,6 @@ import {
   pageInput,
   prevPageBtn,
   nextPageBtn,
-  scanCurrentPageBtn,
   totalPagesEl,
   docTextContainer,
   pdfViewport,
@@ -31,7 +30,6 @@ function setupNavRange() {
   pageInput.disabled = false;
   prevPageBtn.disabled = false;
   nextPageBtn.disabled = false;
-  scanCurrentPageBtn.disabled = false;
   totalPagesEl.textContent = last;
 }
 
