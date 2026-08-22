@@ -149,8 +149,8 @@
         <div id="sourceList" class="hidden space-y-1"></div>
       </div>
 
-      <!-- continuous drag-resize handle (batch 4) — wired in main.js's setupPaneDrag('source', ...); writes --source-panel-w on #layoutRoot via applyWidth(). -->
-      <div id="sourcePanelDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="sourcePane" tabindex="-1"></div>
+      <!-- Drag-resize handle for the source panel; also keyboard-resizable (arrow keys, Home/End). -->
+      <div id="sourcePanelDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="sourcePane" tabindex="0"></div>
 
     </section>
 
@@ -203,8 +203,8 @@
       </div>
       <div id="selectionGenStatus" class="hidden shrink-0 border-t border-edge px-4 py-2 text-xs font-mono"></div>
 
-      <!-- continuous drag-resize handle (batch 4) — wired in main.js's setupPaneDrag('pane2', ...); writes --pane2-w on #layoutRoot via applyWidth(). -->
-      <div id="pane2Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane2" tabindex="-1"></div>
+      <!-- Drag-resize handle for Pane 2; also keyboard-resizable (arrow keys, Home/End). -->
+      <div id="pane2Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane2" tabindex="0"></div>
     </section>
 
     <!-- ================= PANE 3 — Visual document preview ================= -->

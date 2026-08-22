@@ -41,6 +41,9 @@ import {
   sourcePaneEl,
   layoutRootEl,
   sourcePanelToggleBtn,
+  sourcePanelDividerEl,
+  pane2DividerEl,
+  pane2,
 } from './dom-refs.js';
 
 // Clicking a shared highlight mark activates the first question id in its data-qid list.
@@ -181,13 +184,7 @@ if (sourceStackAreaEl) {
 // ---------- Source panel + Pane 2 continuous drag-resize (batch 4) ----------
 // applyWidth() is the ONLY place that writes --source-panel-w / --pane2-w on #layoutRoot — both the drag
 // handlers below and the toggle button's click handler funnel through it, per the batch-4 handoff's
-// requirement that there be a single code path for writing a pane's width. Not exported/read from
-// dom-refs.js: sourcePanelDivider/pane2Divider/pane2El aren't in that module (it wasn't available to edit
-// as part of this batch), so they're looked up directly here. Worth migrating into dom-refs.js later for
-// consistency with the rest of the file's DOM references — flagged in the batch-4 handback, not done here.
-const sourcePanelDividerEl = document.getElementById('sourcePanelDivider');
-const pane2DividerEl = document.getElementById('pane2Divider');
-const pane2El = document.getElementById('pane2');
+// requirement that there be a single code path for writing a pane's width.
 
 // minWidth/maxWidth for the source panel are grounded in batch 3's actual CSS (96px collapsed thumb-only
 // row) and the handoff's own values. pane2's min/max and the source panel's expandedWidth are NOT specified
@@ -212,6 +209,17 @@ const PANE_DRAG_CONFIG = {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+// Step sizes for keyboard resizing.
+const KEY_STEP = 16;
+const KEY_STEP_LARGE = 48;
+
+// Syncs a divider's aria-value* attributes with the pane's current width.
+function updateDividerAria(dividerEl, cfg, widthPx) {
+  dividerEl.setAttribute('aria-valuemin', String(cfg.minWidth));
+  dividerEl.setAttribute('aria-valuemax', String(cfg.maxWidth));
+  dividerEl.setAttribute('aria-valuenow', String(Math.round(widthPx)));
 }
 
 // Reads a pane's current rendered width once. Only ever called at drag start or from the toggle button —
@@ -241,12 +249,15 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
   let pendingWidth = null;
   let rafId = null;
 
+  updateDividerAria(dividerEl, cfg, getPaneCurrentWidthPx(paneEl));
+
   function onPointerMove(e) {
     // Pure arithmetic only — no getBoundingClientRect/clientWidth/offsetWidth reads here.
     pendingWidth = clamp(startWidth + (e.clientX - startX), cfg.minWidth, cfg.maxWidth);
     if (rafId == null) {
       rafId = requestAnimationFrame(() => {
         applyWidth(paneKey, pendingWidth);
+        updateDividerAria(dividerEl, cfg, pendingWidth);
         rafId = null;
       });
     }
@@ -257,7 +268,7 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
     try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
     paneEl.style.willChange = '';
     dividerEl.classList.remove('dragging');
-    resumeTier1Scaling(); // resumes the PPTX Tier 1 ResizeObserver paused at pointerdown
+    resumeTier1Scaling();
   }
 
   dividerEl.addEventListener('pointerdown', (e) => {
@@ -267,14 +278,34 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
     startWidth = getPaneCurrentWidthPx(paneEl); // read once, here only
     paneEl.style.willChange = 'width';
     dividerEl.classList.add('dragging');
-    pauseTier1Scaling(); // suspends the PPTX Tier 1 ResizeObserver for the duration of the drag
+    pauseTier1Scaling();
     dividerEl.addEventListener('pointermove', onPointerMove);
     dividerEl.addEventListener('pointerup', onPointerUp, { once: true });
+  });
+
+  // Left/Right step the pane's width, Shift+Left/Right take a bigger step, Home/End jump to min/max.
+  dividerEl.addEventListener('keydown', (e) => {
+    const current = getPaneCurrentWidthPx(paneEl);
+    let targetWidth;
+    if (e.key === 'ArrowLeft') {
+      targetWidth = current - (e.shiftKey ? KEY_STEP_LARGE : KEY_STEP);
+    } else if (e.key === 'ArrowRight') {
+      targetWidth = current + (e.shiftKey ? KEY_STEP_LARGE : KEY_STEP);
+    } else if (e.key === 'Home') {
+      targetWidth = cfg.minWidth;
+    } else if (e.key === 'End') {
+      targetWidth = cfg.maxWidth;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    const clamped = applyWidth(paneKey, targetWidth);
+    updateDividerAria(dividerEl, cfg, clamped);
   });
 }
 
 setupPaneDrag('source', sourcePanelDividerEl, sourcePaneEl);
-setupPaneDrag('pane2', pane2DividerEl, pane2El);
+setupPaneDrag('pane2', pane2DividerEl, pane2);
 
 // Toggle button: snaps --source-panel-w between the collapsed/expanded presets through the same applyWidth()
 // the drag handler above uses (batch-4 decision #3 — kept, not removed, so keyboard/screen-reader users can
@@ -285,7 +316,8 @@ if (sourcePanelToggleBtn && sourcePaneEl) {
     const cfg = PANE_DRAG_CONFIG.source;
     const isCurrentlyCollapsed = getPaneCurrentWidthPx(sourcePaneEl) <= cfg.minWidth + 1; // +1px tolerance
     const expanded = isCurrentlyCollapsed;
-    applyWidth('source', expanded ? cfg.expandedWidth : cfg.collapsedWidth);
+    const clamped = applyWidth('source', expanded ? cfg.expandedWidth : cfg.collapsedWidth);
+    if (sourcePanelDividerEl) updateDividerAria(sourcePanelDividerEl, cfg, clamped);
     sourcePaneEl.classList.toggle('source-panel-expanded', expanded);
     sourcePanelToggleBtn.setAttribute('aria-expanded', String(expanded));
     sourcePanelToggleBtn.title = expanded ? 'Collapse source panel' : 'Expand source panel';

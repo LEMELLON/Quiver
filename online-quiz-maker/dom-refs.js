@@ -77,6 +77,10 @@ const sourcePaneEl = document.getElementById('sourcePane');
 const layoutRootEl = document.getElementById('layoutRoot');
 const sourcePanelToggleBtn = document.getElementById('sourcePanelToggleBtn');
 
+// Drag-resize handles for the source panel and Pane 2 (see main.js's setupPaneDrag()).
+const sourcePanelDividerEl = document.getElementById('sourcePanelDivider');
+const pane2DividerEl = document.getElementById('pane2Divider');
+
 // Term nav bar panel and the filtered-term indicator strip; see editor-render.js's renderTermBar().
 const termBarEl = document.getElementById('termBar');
 const termFilterIndicatorEl = document.getElementById('termFilterIndicator');
@@ -145,6 +149,8 @@ export {
   sourcePaneEl,
   layoutRootEl,
   sourcePanelToggleBtn,
+  sourcePanelDividerEl,
+  pane2DividerEl,
   termBarEl,
   termFilterIndicatorEl,
   termScopeToggleEl,
