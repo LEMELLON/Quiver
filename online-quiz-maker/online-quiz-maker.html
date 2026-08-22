@@ -123,16 +123,22 @@
     </details>
   </div>
 
-  <!-- Main: 5-column grid (slide panel, Pane 1-3, terms); stacks to 1 column below lg. -->
-  <main id="layoutRoot" class="grid grid-cols-1 lg:grid-cols-[minmax(220px,0.8fr)_1.4fr_1.4fr_1.4fr_minmax(200px,0.7fr)] gap-4 max-w-[1900px] mx-auto w-full px-4 lg:px-6 py-6">
+  <!-- Main: 5-column grid (slide panel, Pane 1-3, terms); stacks to 1 column below lg. Column widths at
+       >=1024px are owned entirely by styles.css's #layoutRoot @media rule (--source-panel-w / --pane2-w
+       custom properties, batch 4) -- the lg:grid-cols-[...] utility that used to sit on this element was
+       always overridden by that rule's higher ID-selector specificity even before batch 4, so it's removed
+       here rather than left as dead/misleading weight. grid-cols-1 stays for the mobile single-column stack. -->
+  <main id="layoutRoot" class="grid grid-cols-1 gap-4 max-w-[1900px] mx-auto w-full px-4 lg:px-6 py-6">
 
     <!-- ================= SLIDE PANEL — Source stack (imported docs) ================= -->
     <section id="sourcePane" class="min-w-0 lg:overflow-y-auto lg:max-h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem] pr-1">
 
       <div class="flex items-center justify-between mb-2">
         <h2 class="font-mono text-xs tracking-widest text-mute uppercase">Sources</h2>
-        <!-- width-only expand/collapse toggle for this column (batch 3, step 1) — see main.js and styles.css's
-             '.source-panel-expanded' rules. Continuous drag-resize is a separate handoff (batch 4); not built here. -->
+        <!-- expand/collapse toggle for this column (batch 3, step 1), rewired in batch 4 to snap
+             --source-panel-w between two preset widths via main.js's applyWidth(), the same function
+             the drag handle below writes through — see styles.css's '.source-panel-expanded' rule
+             (still used for the .source-stack-meta show/hide, unrelated to width). -->
         <button id="sourcePanelToggleBtn" type="button" class="icon-btn" title="Expand source panel" aria-expanded="false">⤥</button>
       </div>
 
@@ -142,6 +148,9 @@
         <!-- draggable slide-sorter stack (thumbnail, filename, question count per card), rendered by main.js's renderSourceList(); hidden until a source is imported. -->
         <div id="sourceList" class="hidden space-y-1"></div>
       </div>
+
+      <!-- continuous drag-resize handle (batch 4) — wired in main.js's setupPaneDrag('source', ...); writes --source-panel-w on #layoutRoot via applyWidth(). -->
+      <div id="sourcePanelDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="sourcePane" tabindex="-1"></div>
 
     </section>
 
@@ -193,6 +202,9 @@
         <div id="docTextContainer" class="text-sm leading-relaxed text-ink/90"></div>
       </div>
       <div id="selectionGenStatus" class="hidden shrink-0 border-t border-edge px-4 py-2 text-xs font-mono"></div>
+
+      <!-- continuous drag-resize handle (batch 4) — wired in main.js's setupPaneDrag('pane2', ...); writes --pane2-w on #layoutRoot via applyWidth(). -->
+      <div id="pane2Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane2" tabindex="-1"></div>
     </section>
 
     <!-- ================= PANE 3 — Visual document preview ================= -->

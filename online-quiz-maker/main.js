@@ -23,7 +23,7 @@ import { generateQuestionsWithAI } from './ai-api-calls.js';
 import { setupNavRange, renderDocPage } from './doc-pane-navigation.js';
 import './quiz-export.js';
 import './batch-scan.js';
-import { renderPptxTier1Thumbnail, getPptxThumbnailDataUrl } from './pptx-render.js';
+import { renderPptxTier1Thumbnail, getPptxThumbnailDataUrl, pauseTier1Scaling, resumeTier1Scaling } from './pptx-render.js';
 import { renderPdfPageToDataUrl } from './pdf-render.js';
 
 import { state, createSource } from './core-state.js';
@@ -178,15 +178,115 @@ if (sourceStackAreaEl) {
   });
 }
 
-// Expands/collapses the source panel column. Width-only: the class is toggled on both #sourcePane (styles.css
-// keys the collapsed thumb-only row layout off it) and #layoutRoot (keys the grid-template-columns width off
-// it, scoped to the same lg breakpoint the column widths were already defined at) so nothing about row height
-// or the panel's vertical layout changes. Batch #4's drag-resize work can replace this later without touching
-// the collapsed/expanded CSS itself.
+// ---------- Source panel + Pane 2 continuous drag-resize (batch 4) ----------
+// applyWidth() is the ONLY place that writes --source-panel-w / --pane2-w on #layoutRoot — both the drag
+// handlers below and the toggle button's click handler funnel through it, per the batch-4 handoff's
+// requirement that there be a single code path for writing a pane's width. Not exported/read from
+// dom-refs.js: sourcePanelDivider/pane2Divider/pane2El aren't in that module (it wasn't available to edit
+// as part of this batch), so they're looked up directly here. Worth migrating into dom-refs.js later for
+// consistency with the rest of the file's DOM references — flagged in the batch-4 handback, not done here.
+const sourcePanelDividerEl = document.getElementById('sourcePanelDivider');
+const pane2DividerEl = document.getElementById('pane2Divider');
+const pane2El = document.getElementById('pane2');
+
+// minWidth/maxWidth for the source panel are grounded in batch 3's actual CSS (96px collapsed thumb-only
+// row) and the handoff's own values. pane2's min/max and the source panel's expandedWidth are NOT specified
+// anywhere in the handoff — these are reasonable placeholder defaults, not extracted from a spec, and should
+// be confirmed against the real design before shipping (flagged in the batch-4 handback).
+const PANE_DRAG_CONFIG = {
+  source: {
+    varName: '--source-panel-w',
+    minWidth: 96,          // thumb-only collapsed width — matches batch 3's CSS and the .source-stack-meta breakpoint
+    maxWidth: 480,          // ASSUMPTION — not specified in the handoff
+    collapsedWidth: 96,
+    expandedWidth: 320,     // ASSUMPTION — approximate fixed-px stand-in for the old minmax(220px, 0.8fr); the
+                             // handoff itself flagged minmax() as having "patchy behavior" as a custom-property
+                             // value, so a fixed px was used instead per its own suggestion. Not visually verified.
+  },
+  pane2: {
+    varName: '--pane2-w',
+    minWidth: 260,          // ASSUMPTION — not specified in the handoff
+    maxWidth: 900,          // ASSUMPTION — not specified in the handoff
+  },
+};
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+// Reads a pane's current rendered width once. Only ever called at drag start or from the toggle button —
+// NEVER from inside a pointermove handler, which is the #1 cause of drag jank (see batch-4 handoff).
+function getPaneCurrentWidthPx(paneEl) {
+  return paneEl.getBoundingClientRect().width;
+}
+
+// The single function that writes a pane's width. Pure style write, no DOM reads, safe to call once per
+// animation frame from a drag handler or once from a click handler.
+function applyWidth(paneKey, widthPx) {
+  const cfg = PANE_DRAG_CONFIG[paneKey];
+  if (!layoutRootEl || !cfg) return null;
+  const clamped = clamp(widthPx, cfg.minWidth, cfg.maxWidth);
+  layoutRootEl.style.setProperty(cfg.varName, `${clamped}px`);
+  return clamped;
+}
+
+// Wires one divider to one pane: pointer events + pointer capture (not mousemove on document), width cached
+// once at pointerdown, DOM writes batched to requestAnimationFrame — see the batch-4 handoff's "Why naive
+// drag-resize gets laggy" section for why each of these choices matters.
+function setupPaneDrag(paneKey, dividerEl, paneEl) {
+  if (!dividerEl || !paneEl) return;
+  const cfg = PANE_DRAG_CONFIG[paneKey];
+  let startX = 0;
+  let startWidth = 0;
+  let pendingWidth = null;
+  let rafId = null;
+
+  function onPointerMove(e) {
+    // Pure arithmetic only — no getBoundingClientRect/clientWidth/offsetWidth reads here.
+    pendingWidth = clamp(startWidth + (e.clientX - startX), cfg.minWidth, cfg.maxWidth);
+    if (rafId == null) {
+      rafId = requestAnimationFrame(() => {
+        applyWidth(paneKey, pendingWidth);
+        rafId = null;
+      });
+    }
+  }
+
+  function onPointerUp(e) {
+    dividerEl.removeEventListener('pointermove', onPointerMove);
+    try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+    paneEl.style.willChange = '';
+    dividerEl.classList.remove('dragging');
+    resumeTier1Scaling(); // resumes the PPTX Tier 1 ResizeObserver paused at pointerdown
+  }
+
+  dividerEl.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return; // primary button/touch only
+    dividerEl.setPointerCapture(e.pointerId);
+    startX = e.clientX;
+    startWidth = getPaneCurrentWidthPx(paneEl); // read once, here only
+    paneEl.style.willChange = 'width';
+    dividerEl.classList.add('dragging');
+    pauseTier1Scaling(); // suspends the PPTX Tier 1 ResizeObserver for the duration of the drag
+    dividerEl.addEventListener('pointermove', onPointerMove);
+    dividerEl.addEventListener('pointerup', onPointerUp, { once: true });
+  });
+}
+
+setupPaneDrag('source', sourcePanelDividerEl, sourcePaneEl);
+setupPaneDrag('pane2', pane2DividerEl, pane2El);
+
+// Toggle button: snaps --source-panel-w between the collapsed/expanded presets through the same applyWidth()
+// the drag handler above uses (batch-4 decision #3 — kept, not removed, so keyboard/screen-reader users can
+// still expand/collapse without pointer drag). .source-panel-expanded stays on #sourcePane only, for
+// .source-stack-meta's show/hide in styles.css — that rule is unrelated to width and isn't being replaced.
 if (sourcePanelToggleBtn && sourcePaneEl) {
   sourcePanelToggleBtn.addEventListener('click', () => {
-    const expanded = sourcePaneEl.classList.toggle('source-panel-expanded');
-    if (layoutRootEl) layoutRootEl.classList.toggle('source-panel-expanded', expanded);
+    const cfg = PANE_DRAG_CONFIG.source;
+    const isCurrentlyCollapsed = getPaneCurrentWidthPx(sourcePaneEl) <= cfg.minWidth + 1; // +1px tolerance
+    const expanded = isCurrentlyCollapsed;
+    applyWidth('source', expanded ? cfg.expandedWidth : cfg.collapsedWidth);
+    sourcePaneEl.classList.toggle('source-panel-expanded', expanded);
     sourcePanelToggleBtn.setAttribute('aria-expanded', String(expanded));
     sourcePanelToggleBtn.title = expanded ? 'Collapse source panel' : 'Expand source panel';
   });

@@ -161,21 +161,65 @@
     color: #8296ab;
   }
 
-  /* ---------- source panel width toggle (batch 3, step 1) ----------
+  /* ---------- source panel + Pane 2 continuous drag-resize (batch 4) ----------
      Width only — column height keeps tracking the section's normal 100%/flex height in both states via the
-     unchanged lg:sticky/lg:max-h-[...] utilities on #sourcePane itself; only the grid column's size changes.
-     Scoped to the same 1024px breakpoint the base lg:grid-cols-[...] utility already uses, so the
-     single-column mobile layout (grid-cols-1) is untouched. The collapsed width here is sized for a
-     thumb-only row (see the .source-stack-meta rule above); expanded restores the original wider column.
-     main.js's sourcePanelToggleBtn listener toggles '.source-panel-expanded' on both #sourcePane (keys the
-     row layout above) and #layoutRoot (keys the column width below) so one class drives both effects. */
+     unchanged lg:sticky/lg:max-h-[...] utilities on #sourcePane/#pane2 themselves; only the grid column's size
+     changes. Scoped to the same 1024px breakpoint the base lg:grid-cols-[...] utility used to use (that
+     Tailwind class has been removed from #layoutRoot in the HTML — this @media block, keyed on the ID
+     selector, now owns column widths outright), so the single-column mobile layout (grid-cols-1) is untouched.
+     --source-panel-w and --pane2-w are written directly by main.js's drag handlers (setupPaneDrag) AND by
+     sourcePanelToggleBtn's click handler, both funneled through the single applyWidth() function — there is
+     no other code path that sets these. Defaults below reproduce batch 3's original collapsed/equal-fr layout
+     before any drag or toggle happens. Pane 1 and Pane 3 stay bare 1.4fr (decision #2, option (a) from the
+     batch-4 handoff): they keep splitting whatever space is left over after --pane2-w is subtracted, so
+     dragging Pane 2 changes Pane 1/Pane 3 only as a side effect of shared leftover fr space, by design. */
+  #layoutRoot {
+    --source-panel-w: 96px;
+    --pane2-w: 1.4fr;
+  }
   @media (min-width: 1024px) {
     #layoutRoot {
-      grid-template-columns: 96px 1.4fr 1.4fr 1.4fr minmax(200px, 0.7fr);
+      grid-template-columns: var(--source-panel-w) 1.4fr var(--pane2-w) 1.4fr minmax(200px, 0.7fr);
     }
-    #layoutRoot.source-panel-expanded {
-      grid-template-columns: minmax(220px, 0.8fr) 1.4fr 1.4fr 1.4fr minmax(200px, 0.7fr);
+  }
+
+  /* Drag handles for the source panel and Pane 2 (batch 4). Positioned inside their pane's own box
+     (right: 0, not a negative offset) because both #sourcePane and #pane2 clip overflow (overflow-y-auto /
+     overflow-hidden respectively) — a handle hung outside the box via a negative offset would be clipped.
+     No position:relative needed on the panes: both already carry Tailwind's lg:sticky at this breakpoint,
+     which establishes a containing block for this absolutely-positioned child same as relative would.
+     Hidden below the 1024px breakpoint since the grid stacks to a single column there and there's nothing
+     to drag. Keyboard resizing is not implemented — pointer drag only; the source panel's toggle button
+     remains the keyboard-accessible path for that one pane. See batch-4 handoff for follow-up. */
+  .pane-divider {
+    display: none;
+  }
+  @media (min-width: 1024px) {
+    .pane-divider {
+      display: flex;
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      right: 0;
+      width: 8px;
+      align-items: center;
+      justify-content: center;
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 10;
+      background: transparent;
     }
+  }
+  .pane-divider::after {
+    content: '';
+    width: 2px;
+    height: 100%;
+    background: transparent;
+    transition: background 0.15s ease;
+  }
+  .pane-divider:hover::after,
+  .pane-divider.dragging::after {
+    background: #f5b942;
   }
 
   /* highlights the source-stack area during an OS file drag (see main.js's sourceStackAreaEl dragenter/dragover listeners); outline avoids affecting layout since the wrapper itself has no border of its own. */

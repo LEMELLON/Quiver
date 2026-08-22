@@ -40,13 +40,30 @@ let renderToken = 0;
 // The most recently rendered slide's handle, disposed before the next slide's handle replaces it.
 let currentSlideHandle = null;
 
-// The ResizeObserver for whichever slide is currently mounted in #pptxTier1Container.
+// The ResizeObserver for whichever slide is currently mounted in #pptxTier1Container, plus the container it's watching.
 let currentTier1ResizeObserver = null;
+let currentTier1Container = null;
 
 function teardownTier1Scaling() {
   if (currentTier1ResizeObserver) {
     currentTier1ResizeObserver.disconnect();
     currentTier1ResizeObserver = null;
+  }
+  currentTier1Container = null;
+}
+
+// Stops the observer from firing without discarding it or the rendered slide.
+function pauseTier1Scaling() {
+  if (currentTier1ResizeObserver) {
+    currentTier1ResizeObserver.disconnect();
+  }
+}
+
+// Resumes an observer previously paused via pauseTier1Scaling(), re-observing the same container and
+// recalculating its scale against the container's current size.
+function resumeTier1Scaling() {
+  if (currentTier1ResizeObserver && currentTier1Container) {
+    currentTier1ResizeObserver.observe(currentTier1Container);
   }
 }
 
@@ -71,7 +88,8 @@ function setupTier1ResponsiveScaling(container, wrapper, slideEl) {
     wrapper.style.height = `${Math.round(nativeHeight * scale)}px`;
   };
 
-  currentTier1ResizeObserver = new ResizeObserver(applyScale);
+  currentTier1Container = container;
+  currentTier1ResizeObserver = new ResizeObserver(applyScale); // tracks the container so pause/resume can re-observe it
   currentTier1ResizeObserver.observe(container);
 
   // Belt-and-suspenders fallback in case the observer's auto re-fire on unhide doesn't happen; cheap no-op otherwise.
@@ -330,4 +348,4 @@ async function getPptxThumbnailDataUrl(zip, pageNumber) {
   }
 }
 
-export { renderPptxTier1, renderPptxTier2, teardownTier1Scaling, renderPptxTier1Thumbnail, getPptxThumbnailDataUrl };
+export { renderPptxTier1, renderPptxTier2, teardownTier1Scaling, pauseTier1Scaling, resumeTier1Scaling, renderPptxTier1Thumbnail, getPptxThumbnailDataUrl };
