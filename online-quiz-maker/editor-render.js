@@ -254,7 +254,7 @@ function buildTermRowHtml(group) {
       <button type="button" data-action="filterByTerm" data-term-key="${escapeAttr(group.key)}"
         class="term-row-btn" title="Show only questions using this term">
         <span class="term-row-label">${isDuplicate ? `<span class="term-row-dupe-flag">${dupFlag}</span>` : ''}${escapeHtml(group.label)}</span>
-        <span class="term-row-count">${group.questionIds.length} ${group.questionIds.length === 1 ? 'question' : 'questions'}</span>
+        <span class="term-row-count">${group.questionIds.length}</span>
       </button>
       ${isDuplicate ? `
       <div class="term-row-dupe-actions" role="group" aria-label="Duplicate question actions">
