@@ -47,6 +47,12 @@ import {
   pane2DividerEl,
   motherPaneEl,
   motherPaneDividerEl,
+  pane1FloatToggleBtn,
+  pane1FloatShell,
+  pane1FloatHeader,
+  pane1FloatBody,
+  pane1CollapseToggleBtn,
+  pane1DockBtn,
 } from './dom-refs.js';
 
 // Clicking a shared highlight mark activates the first question id in its data-qid list.
@@ -436,6 +442,111 @@ if (sourcePanelToggleBtn && sourcePaneEl) {
     sourcePanelToggleBtn.title = expanded ? 'Collapse source panel' : 'Expand source panel';
   });
 }
+
+// ---------- Floating Pane 1 (batch 5B) ----------
+// Manual-trigger only — no auto-float-on-drag or auto-float-on-shrink logic here yet (that's batch 5C).
+// #pane1's actual DOM node is reparented (not cloned/rebuilt) between #layoutRoot and #pane1FloatBody, so
+// every existing listener/ref on it (question nav, add/remove, editor fields, etc.) keeps working untouched —
+// nothing else needs to know #pane1 moved. Note: #pane1 still carries its own lg:sticky/lg:max-h-[...]
+// Tailwind utilities from the grid layout; these are inert once it's inside the shell's own flex/overflow
+// container, but flag if any visual quirk shows up there — not addressed in this batch.
+let pane1Floating = false;
+
+// Reads/writes the shell's position once per call — used at drag-end-adjacent points (inside the drag's rAF
+// callback, once per frame, and on window resize), not on every raw pointermove tick. This is the project's
+// existing "one read per frame, not per event" discipline rather than setupPaneDrag's stricter "zero reads in
+// pointermove" rule — if this causes jank in practice, move the clamp to pointerup-only instead of every rAF tick.
+function clampShellToViewport() {
+  if (!pane1FloatShell) return;
+  const rect = pane1FloatShell.getBoundingClientRect();
+  const maxLeft = Math.max(0, window.innerWidth - rect.width);
+  const maxTop = Math.max(0, window.innerHeight - rect.height);
+  const currentLeft = parseFloat(pane1FloatShell.style.left) || 0;
+  const currentTop = parseFloat(pane1FloatShell.style.top) || 0;
+  pane1FloatShell.style.left = `${clamp(currentLeft, 0, maxLeft)}px`;
+  pane1FloatShell.style.top = `${clamp(currentTop, 0, maxTop)}px`;
+}
+
+// Undocks #pane1 into the floating shell. The outer grid's --pane1-w track collapses out entirely (via the
+// .pane1-floating class in styles.css) so #motherPane reclaims the freed space, rather than leaving a dead gap.
+function floatPane1() {
+  if (pane1Floating || !pane1FloatShell || !pane1FloatBody || !pane1) return;
+  pane1Floating = true;
+  pane1FloatBody.appendChild(pane1);
+  pane1FloatShell.classList.remove('hidden');
+  layoutRootEl.classList.add('pane1-floating');
+  pane1FloatToggleBtn.setAttribute('aria-pressed', 'true');
+  clampShellToViewport();
+}
+
+// Redocks #pane1 back into #layoutRoot. Grid order is fixed (source, pane1, motherPane, term), so this is
+// just an insertBefore against #motherPane — no separate anchor/bookmark node needs to be tracked.
+function dockPane1() {
+  if (!pane1Floating || !pane1 || !motherPaneEl) return;
+  pane1Floating = false;
+  layoutRootEl.insertBefore(pane1, motherPaneEl);
+  pane1FloatShell.classList.add('hidden');
+  layoutRootEl.classList.remove('pane1-floating');
+  pane1FloatToggleBtn.setAttribute('aria-pressed', 'false');
+}
+
+if (pane1FloatToggleBtn) {
+  pane1FloatToggleBtn.addEventListener('click', () => {
+    pane1Floating ? dockPane1() : floatPane1();
+  });
+}
+if (pane1DockBtn) pane1DockBtn.addEventListener('click', dockPane1);
+
+// Collapse toggle: hides the shell body only, independent of dock state — doesn't call floatPane1()/dockPane1().
+if (pane1CollapseToggleBtn && pane1FloatShell) {
+  pane1CollapseToggleBtn.addEventListener('click', () => {
+    const collapsed = pane1FloatShell.classList.toggle('collapsed');
+    pane1CollapseToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    clampShellToViewport(); // header-only height may now fit somewhere it didn't before
+  });
+}
+
+// Drag by header — same pointer-capture/rAF discipline as the pane dividers. Works identically in collapsed
+// and expanded states since it only ever moves the shell's top/left, never touches its height.
+(function setupFloatShellDrag() {
+  if (!pane1FloatHeader || !pane1FloatShell) return;
+  let startX = 0, startY = 0, startLeft = 0, startTop = 0, pending = null, rafId = null;
+
+  function onPointerMove(e) {
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    pending = { left: startLeft + dx, top: startTop + dy };
+    if (rafId == null) {
+      rafId = requestAnimationFrame(() => {
+        pane1FloatShell.style.left = `${pending.left}px`;
+        pane1FloatShell.style.top = `${pending.top}px`;
+        clampShellToViewport();
+        rafId = null;
+      });
+    }
+  }
+  function onPointerUp(e) {
+    pane1FloatHeader.removeEventListener('pointermove', onPointerMove);
+    try { pane1FloatHeader.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+    pane1FloatHeader.classList.remove('dragging');
+  }
+  pane1FloatHeader.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.pane1-float-controls')) return; // don't start a drag from the buttons
+    if (e.button !== undefined && e.button !== 0) return;
+    pane1FloatHeader.setPointerCapture(e.pointerId);
+    const rect = pane1FloatShell.getBoundingClientRect();
+    startX = e.clientX; startY = e.clientY;
+    startLeft = rect.left; startTop = rect.top;
+    pane1FloatHeader.classList.add('dragging');
+    pane1FloatHeader.addEventListener('pointermove', onPointerMove);
+    pane1FloatHeader.addEventListener('pointerup', onPointerUp, { once: true });
+  });
+})();
+
+// Re-clamp on window resize so a floating shell never gets stranded off-screen.
+window.addEventListener('resize', () => {
+  if (pane1Floating) clampShellToViewport();
+});
 
 // Makes the given source active, updates Pane 3/2 to its first page, and opens its first question in the editor.
 // { skipAutoSelect: true } skips that last auto-select step — used when the caller (e.g. the term-panel

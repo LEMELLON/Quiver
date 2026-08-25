@@ -87,6 +87,15 @@ const pane1DividerEl = document.getElementById('pane1Divider');
 const pane2DividerEl = document.getElementById('pane2Divider');
 const motherPaneDividerEl = document.getElementById('motherPaneDivider');
 
+// Floating shell for Pane 1 — undock/dock toggle, the shell + header + body, and the shell's own
+// collapse/dock buttons (batch 5B — see main.js's floatPane1()/dockPane1()/setupFloatShellDrag()).
+const pane1FloatToggleBtn = document.getElementById('pane1FloatToggleBtn');
+const pane1FloatShell = document.getElementById('pane1FloatShell');
+const pane1FloatHeader = document.getElementById('pane1FloatHeader');
+const pane1FloatBody = document.getElementById('pane1FloatBody');
+const pane1CollapseToggleBtn = document.getElementById('pane1CollapseToggleBtn');
+const pane1DockBtn = document.getElementById('pane1DockBtn');
+
 // Term nav bar panel and the filtered-term indicator strip; see editor-render.js's renderTermBar().
 const termBarEl = document.getElementById('termBar');
 const termFilterIndicatorEl = document.getElementById('termFilterIndicator');
@@ -160,6 +169,12 @@ export {
   pane2DividerEl,
   motherPaneDividerEl,
   motherPaneEl,
+  pane1FloatToggleBtn,
+  pane1FloatShell,
+  pane1FloatHeader,
+  pane1FloatBody,
+  pane1CollapseToggleBtn,
+  pane1DockBtn,
   termBarEl,
   termFilterIndicatorEl,
   termScopeToggleEl,

@@ -170,6 +170,9 @@
             class="font-mono text-xs tracking-wide uppercase border border-edge hover:border-amber hover:text-amber text-ink px-3 py-1.5 rounded transition-colors">
             + Add Question
           </button>
+          <!-- Undocks Pane 1 into a draggable floating window (batch 5B); see main.js's floatPane1()/dockPane1(). -->
+          <button id="pane1FloatToggleBtn" type="button" title="Float this panel"
+            class="icon-btn" aria-pressed="false">⧉</button>
         </div>
       </div>
       <!-- wraps the chip grid + pager so one keydown listener (editor-render.js) can catch Left/Right; pager stays hidden until 20+ questions. -->
@@ -292,6 +295,20 @@
     </section>
 
   </main>
+
+  <!-- Floating shell for Pane 1 (batch 5B). Sits outside #layoutRoot entirely — position: fixed in styles.css,
+       so its DOM position doesn't affect layout — and stays hidden/empty until main.js's floatPane1() moves
+       the live #pane1 node into #pane1FloatBody. dockPane1() moves it back into #layoutRoot afterward. -->
+  <div id="pane1FloatShell" class="pane1-float-shell hidden bg-panel border border-edge rounded-lg shadow-2xl shadow-black/50" role="dialog" aria-label="Questions (floating)">
+    <div id="pane1FloatHeader" class="pane1-float-header">
+      <span class="pane1-float-title font-mono text-xs tracking-widest text-mute uppercase">Questions</span>
+      <div class="pane1-float-controls">
+        <button id="pane1CollapseToggleBtn" type="button" class="icon-btn" title="Collapse" aria-expanded="true">—</button>
+        <button id="pane1DockBtn" type="button" class="icon-btn" title="Dock to layout">⤢</button>
+      </div>
+    </div>
+    <div id="pane1FloatBody" class="pane1-float-body"></div>
+  </div>
 
   <!-- Floating "generate from selection" toolbar -->
   <div id="selectionToolbar" class="hidden fixed z-40 flex items-stretch gap-1.5 bg-panel border border-edge rounded shadow-2xl shadow-black/50 p-1.5">
