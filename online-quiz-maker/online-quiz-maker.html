@@ -186,7 +186,13 @@
         <p class="text-sm text-mute mt-1">Add one, or upload a document above to auto-generate a set.</p>
       </div>
 
+      <!-- Drag-resize handle for Pane 1; resizes Pane 1 against #motherPane (batch 5A). Also keyboard-resizable (arrow keys, Home/End). -->
+      <div id="pane1Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane1" tabindex="0"></div>
+
     </section>
+
+    <!-- ================= MOTHER PANE — Pane 2 + Pane 3 fused into one resizable grid column (batch 5A) ================= -->
+    <div id="motherPane">
 
     <!-- ================= PANE 2 — Text version of the data ================= -->
     <section id="pane2" class="bg-panel border border-edge rounded-lg overflow-hidden flex flex-col min-w-0 lg:h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
@@ -254,6 +260,12 @@
       </div>
 
     </section>
+
+      <!-- Drag-resize handle for #motherPane; resizes the mother pane against #termPane (batch 5A). Also keyboard-resizable (arrow keys, Home/End). -->
+      <div id="motherPaneDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="motherPane" tabindex="0"></div>
+
+    </div>
+    <!-- /#motherPane -->
 
     <!-- ================= TERM PANE — Browse by target term ================= -->
     <section id="termPane" class="min-w-0 lg:overflow-y-auto lg:max-h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">

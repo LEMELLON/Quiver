@@ -42,8 +42,11 @@ import {
   layoutRootEl,
   sourcePanelToggleBtn,
   sourcePanelDividerEl,
+  pane1,
+  pane1DividerEl,
   pane2DividerEl,
-  pane2,
+  motherPaneEl,
+  motherPaneDividerEl,
 } from './dom-refs.js';
 
 // Clicking a shared highlight mark activates the first question id in its data-qid list.
@@ -181,15 +184,16 @@ if (sourceStackAreaEl) {
   });
 }
 
-// ---------- Source panel + Pane 2 continuous drag-resize (batch 4) ----------
-// applyWidth() is the ONLY place that writes --source-panel-w / --pane2-w on #layoutRoot — both the drag
-// handlers below and the toggle button's click handler funnel through it, per the batch-4 handoff's
-// requirement that there be a single code path for writing a pane's width.
+// ---------- Source panel / Pane 1 / #motherPane continuous drag-resize (batch 4, restructured in 5A) ----------
+// applyWidth() is the ONLY place that writes --source-panel-w / --pane1-w / --mother-pane-w on #layoutRoot —
+// both the drag handlers below and the toggle button's click handler funnel through it, per the batch-4
+// handoff's requirement that there be a single code path for writing a pane's width. The internal pane2/pane3
+// fr-split has its own single-writer function, applyInternalSplit(), a few lines below setupPaneDrag().
 
 // minWidth/maxWidth for the source panel are grounded in batch 3's actual CSS (96px collapsed thumb-only
-// row) and the handoff's own values. pane2's min/max and the source panel's expandedWidth are NOT specified
-// anywhere in the handoff — these are reasonable placeholder defaults, not extracted from a spec, and should
-// be confirmed against the real design before shipping (flagged in the batch-4 handback).
+// row) and the handoff's own values. pane1/motherPane's min/max and the source panel's expandedWidth are NOT
+// specified anywhere in the handoff — these are reasonable placeholder defaults, not extracted from a spec,
+// and should be confirmed against the real design before shipping (flagged in the batch-4 and 5A handbacks).
 const PANE_DRAG_CONFIG = {
   source: {
     varName: '--source-panel-w',
@@ -200,10 +204,18 @@ const PANE_DRAG_CONFIG = {
                              // handoff itself flagged minmax() as having "patchy behavior" as a custom-property
                              // value, so a fixed px was used instead per its own suggestion. Not visually verified.
   },
-  pane2: {
-    varName: '--pane2-w',
-    minWidth: 260,          // ASSUMPTION — not specified in the handoff
-    maxWidth: 900,          // ASSUMPTION — not specified in the handoff
+  // pane2 is no longer a px-tracked pane on the outer grid as of batch 5A — it's the fr-split inside
+  // #motherPane now (see applyInternalSplit()/setupInternalSplitDrag() below). pane1 and motherPane take
+  // over the outer-grid px tracks that Pane 1/Pane 3's old bare-1.4fr columns used to occupy.
+  pane1: {
+    varName: '--pane1-w',
+    minWidth: 280,   // ASSUMPTION — confirm against design. Also the threshold batch 5C's auto-float trigger will read.
+    maxWidth: 640,   // ASSUMPTION
+  },
+  motherPane: {
+    varName: '--mother-pane-w',
+    minWidth: 480,   // ASSUMPTION
+    maxWidth: 1400,  // ASSUMPTION
   },
 };
 
@@ -305,7 +317,108 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
 }
 
 setupPaneDrag('source', sourcePanelDividerEl, sourcePaneEl);
-setupPaneDrag('pane2', pane2DividerEl, pane2);
+setupPaneDrag('pane1', pane1DividerEl, pane1);
+setupPaneDrag('motherPane', motherPaneDividerEl, motherPaneEl);
+
+// ---------- Internal pane2/pane3 fr-split drag (batch 5A) ----------
+// #pane2Divider now resizes the pane2:pane3 ratio *inside* #motherPane only — it can't reuse setupPaneDrag()
+// as-is because that function writes a single px custom property; this one writes two fr custom properties
+// computed relative to #motherPane's own content width. --pane2-fr/--pane3-fr live on #layoutRoot (same as
+// every other pane width var) and drive #motherPane's own grid-template-columns in styles.css — dragging
+// divider A/B (Pane 1 or #motherPane's own outer-grid width) changes #motherPane's total width for free via
+// fr units, with no JS recompute needed on that path; this function only fires when the internal divider
+// itself moves. Same performance discipline as setupPaneDrag(): one bounding-rect read at pointerdown only,
+// arithmetic-only in pointermove, single requestAnimationFrame-batched write, pointer capture.
+const INTERNAL_SPLIT_TOTAL_FR = 2;
+const INTERNAL_SPLIT_MIN_FR = 0.4;  // ASSUMPTION — confirm neither pane visually collapses at this ratio
+const INTERNAL_SPLIT_MAX_FR = INTERNAL_SPLIT_TOTAL_FR - INTERNAL_SPLIT_MIN_FR;
+const INTERNAL_SPLIT_KEY_STEP = 0.1;
+const INTERNAL_SPLIT_KEY_STEP_LARGE = 0.3;
+
+// The single function that writes the internal split. Pure style write, no DOM reads, safe to call once per
+// animation frame from the drag handler or once from the keydown handler.
+function applyInternalSplit(pane2Fr) {
+  const clamped = clamp(pane2Fr, INTERNAL_SPLIT_MIN_FR, INTERNAL_SPLIT_MAX_FR);
+  layoutRootEl.style.setProperty('--pane2-fr', String(clamped));
+  layoutRootEl.style.setProperty('--pane3-fr', String(INTERNAL_SPLIT_TOTAL_FR - clamped));
+  return clamped;
+}
+
+// Reads the current pane2 fr value once. Only called at drag start, from the keydown handler, or to seed
+// aria attributes — NEVER from inside a pointermove handler.
+function getCurrentPane2Fr() {
+  const raw = getComputedStyle(layoutRootEl).getPropertyValue('--pane2-fr').trim();
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : INTERNAL_SPLIT_TOTAL_FR / 2;
+}
+
+// Syncs the internal divider's aria-value* attributes with the current pane2 fr share.
+function updateInternalSplitAria(dividerEl, pane2Fr) {
+  dividerEl.setAttribute('aria-valuemin', String(INTERNAL_SPLIT_MIN_FR));
+  dividerEl.setAttribute('aria-valuemax', String(INTERNAL_SPLIT_MAX_FR));
+  dividerEl.setAttribute('aria-valuenow', pane2Fr.toFixed(2));
+}
+
+function setupInternalSplitDrag(dividerEl, motherPaneEl) {
+  if (!dividerEl || !motherPaneEl) return;
+  let startX = 0, startFr = 0, motherWidthPx = 0, pendingFr = null, rafId = null;
+
+  updateInternalSplitAria(dividerEl, getCurrentPane2Fr());
+
+  function onPointerMove(e) {
+    // Pure arithmetic only — no getBoundingClientRect reads here.
+    const deltaFr = ((e.clientX - startX) / motherWidthPx) * INTERNAL_SPLIT_TOTAL_FR;
+    pendingFr = clamp(startFr + deltaFr, INTERNAL_SPLIT_MIN_FR, INTERNAL_SPLIT_MAX_FR);
+    if (rafId == null) {
+      rafId = requestAnimationFrame(() => {
+        applyInternalSplit(pendingFr);
+        updateInternalSplitAria(dividerEl, pendingFr);
+        rafId = null;
+      });
+    }
+  }
+  function onPointerUp(e) {
+    dividerEl.removeEventListener('pointermove', onPointerMove);
+    try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+    motherPaneEl.style.willChange = '';
+    dividerEl.classList.remove('dragging');
+    resumeTier1Scaling();
+  }
+  dividerEl.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return; // primary button/touch only
+    dividerEl.setPointerCapture(e.pointerId);
+    startX = e.clientX;
+    startFr = getCurrentPane2Fr();
+    motherWidthPx = motherPaneEl.getBoundingClientRect().width; // read once, here only
+    motherPaneEl.style.willChange = 'grid-template-columns';
+    dividerEl.classList.add('dragging');
+    pauseTier1Scaling();
+    dividerEl.addEventListener('pointermove', onPointerMove);
+    dividerEl.addEventListener('pointerup', onPointerUp, { once: true });
+  });
+
+  // Left/Right step the pane2 fr share, Shift+Left/Right take a bigger step, Home/End jump to min/max.
+  dividerEl.addEventListener('keydown', (e) => {
+    const current = getCurrentPane2Fr();
+    let targetFr;
+    if (e.key === 'ArrowLeft') {
+      targetFr = current - (e.shiftKey ? INTERNAL_SPLIT_KEY_STEP_LARGE : INTERNAL_SPLIT_KEY_STEP);
+    } else if (e.key === 'ArrowRight') {
+      targetFr = current + (e.shiftKey ? INTERNAL_SPLIT_KEY_STEP_LARGE : INTERNAL_SPLIT_KEY_STEP);
+    } else if (e.key === 'Home') {
+      targetFr = INTERNAL_SPLIT_MIN_FR;
+    } else if (e.key === 'End') {
+      targetFr = INTERNAL_SPLIT_MAX_FR;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    const clamped = applyInternalSplit(targetFr);
+    updateInternalSplitAria(dividerEl, clamped);
+  });
+}
+
+setupInternalSplitDrag(pane2DividerEl, motherPaneEl);
 
 // Toggle button: snaps --source-panel-w between the collapsed/expanded presets through the same applyWidth()
 // the drag handler above uses (batch-4 decision #3 — kept, not removed, so keyboard/screen-reader users can

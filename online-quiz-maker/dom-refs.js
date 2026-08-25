@@ -4,6 +4,9 @@ const pane1 = document.getElementById('pane1');
 const pane2 = document.getElementById('pane2');
 const pane3 = document.getElementById('pane3');
 
+// Wraps #pane2/#pane3 as a single resizable grid column, its own internal fr-split (batch 5A — see main.js's setupInternalSplitDrag()).
+const motherPaneEl = document.getElementById('motherPane');
+
 // questionNavGroup wraps questionNavEl + questionNavPager; questionNavEl still holds just the chip buttons.
 const questionNavGroup = document.getElementById('questionNavGroup');
 const questionNavEl = document.getElementById('questionNav');
@@ -77,9 +80,12 @@ const sourcePaneEl = document.getElementById('sourcePane');
 const layoutRootEl = document.getElementById('layoutRoot');
 const sourcePanelToggleBtn = document.getElementById('sourcePanelToggleBtn');
 
-// Drag-resize handles for the source panel and Pane 2 (see main.js's setupPaneDrag()).
+// Drag-resize handles for the source panel, Pane 1, the internal pane2/pane3 fr-split, and #motherPane
+// (see main.js's setupPaneDrag() and setupInternalSplitDrag() — batches 4 and 5A).
 const sourcePanelDividerEl = document.getElementById('sourcePanelDivider');
+const pane1DividerEl = document.getElementById('pane1Divider');
 const pane2DividerEl = document.getElementById('pane2Divider');
+const motherPaneDividerEl = document.getElementById('motherPaneDivider');
 
 // Term nav bar panel and the filtered-term indicator strip; see editor-render.js's renderTermBar().
 const termBarEl = document.getElementById('termBar');
@@ -150,7 +156,10 @@ export {
   layoutRootEl,
   sourcePanelToggleBtn,
   sourcePanelDividerEl,
+  pane1DividerEl,
   pane2DividerEl,
+  motherPaneDividerEl,
+  motherPaneEl,
   termBarEl,
   termFilterIndicatorEl,
   termScopeToggleEl,
