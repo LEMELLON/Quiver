@@ -1,4 +1,4 @@
-  html, body { height: 100%; }
+html, body { height: 100%; }
   body { background: #0b0f14; }
 
   /* thin dark scrollbars to match the tool's tone */
@@ -163,8 +163,9 @@
 
   /* ---------- mother-pane grid restructure (batch 5A) ----------
      Supersedes decision #2 option (a) from the batch-4 handoff (Pane 1/Pane 3 staying bare 1.4fr). Pane 2 and
-     Pane 3 are now fused into a single grid column — #motherPane, the "mother pane" — with #pane1 and
-     #termPane resizable against it as siblings on #layoutRoot's outer grid. Width only — column height keeps
+     Pane 3 are now fused into a single grid column — #motherPane, the "mother pane" — with #pane1
+     resizable against it as a sibling on #layoutRoot's outer grid (#termPane was originally a second such
+     sibling too, but has since moved inside #pane2 — see the Move #termPane Into Pane 2 handoff). Width only — column height keeps
      tracking each section's normal 100%/flex height via the unchanged lg:sticky/lg:max-h-[...] utilities;
      only the grid column's size changes. Scoped to the same 1024px breakpoint the base lg:grid-cols-[...]
      utility used to use (that Tailwind class was removed from #layoutRoot in the HTML back in batch 4 — this
@@ -179,12 +180,18 @@
     --source-panel-w: 96px;
     --pane1-w: 420px;        /* ASSUMPTION — approximate px stand-in for the old bare 1.4fr rendering; confirm against design */
     --mother-pane-w: 900px;  /* ASSUMPTION — approximate px stand-in for the old pane2(1.4fr)+pane3(1.4fr) combined rendering */
-    --pane2-fr: 1;
-    --pane3-fr: 1;
+    --pane2-fr: 1fr;
+    --pane3-fr: 1fr;
   }
   @media (min-width: 1024px) {
     #layoutRoot {
-      grid-template-columns: var(--source-panel-w) var(--pane1-w) var(--mother-pane-w) minmax(200px, 0.7fr);
+      /* #motherPane is now the last outer-grid track (batch: Move #termPane Into Pane 2 handoff) — #termPane
+         moved inside #pane2 and is no longer a 4th sibling column here, so there's no separate track left to
+         absorb whatever width isn't claimed by the other two. --mother-pane-w stays the user-set/dragged
+         *minimum* width (via #motherPaneDivider), with minmax()/1fr letting it grow to fill the remaining
+         space instead — ASSUMPTION: if dead space (rather than a growing mother pane) is preferred, drop the
+         minmax()/1fr and use var(--mother-pane-w) alone. */
+      grid-template-columns: var(--source-panel-w) var(--pane1-w) minmax(var(--mother-pane-w), 1fr);
     }
   }
 
@@ -194,7 +201,18 @@
      only touches --pane2-fr/--pane3-fr when the *internal* divider (#pane2Divider) itself is dragged. gap
      matches #layoutRoot's outer gap-4. position: relative is needed here (unlike #sourcePane/#pane1/#pane2,
      which already get a containing block for their divider from Tailwind's lg:sticky) because #motherPane is
-     a plain wrapper div, not a Tailwind-classed section. */
+     a plain wrapper div, not a Tailwind-classed section.
+
+     Batch 5F fix: --pane2-fr/--pane3-fr are stored as complete track sizes, i.e. the string includes the
+     `fr` unit itself (see #layoutRoot's --pane2-fr: 1fr above, and applyInternalSplit() in main.js, which
+     now writes `clamped + 'fr'` instead of a bare number). That's the correct approach: `fr` is a <flex>
+     value, and <flex> is not a type calc() can combine arithmetically (only <number>, <length>,
+     <percentage>, <angle>, <time>, etc.), so an earlier fix that tried calc(var(--pane2-fr, 1) * 1fr) was
+     itself an invalid track size and collapsed the whole declaration to `none` — zero explicit columns,
+     which is why Pane 2/Pane 3 were stacking into implicit rows instead of sitting side by side. Storing
+     the unit in the property means #motherPane can go back to a plain var() reference below with no
+     calc() involved at all; getCurrentPane2Fr()'s parseFloat() read in main.js is unaffected since
+     parseFloat() stops at the first non-numeric character. */
   #motherPane {
     position: relative;
     min-width: 0;
@@ -357,27 +375,14 @@
   /* ---------- term nav bar ----------
      panel above the chip grid (see editor-render.js's buildTermGroups()/buildTermRowHtml()/renderTermBar() and #termBarDetails); reuses .nav-chip/.nav-pager-btn's palette. */
 
-  /* #termBarDetails floats as a popup above surrounding panel content rather than sharing normal document
-     flow with it (see the Term Panel UI Fixes handoff). It's absolutely positioned against #termPane, so
-     #termPane needs to be a positioned ancestor to anchor against; at the lg breakpoint #termPane's own
-     lg:sticky already provides that (sticky counts as a positioned value), so this only adds position:
-     relative below lg, where #termPane is plain static (single-column mobile stack). z-index sits below
-     the selection toolbar (z-40) and the Quiz Code modal (z-50) but above ordinary, unpositioned panel
-     content — see styles.css's existing z-30/z-40/z-50 scale (header / selectionToolbar / quizCodeModal). */
-  @media (max-width: 1023.98px) {
-    #termPane {
-      position: relative;
-    }
-  }
-  #termBarDetails {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 20;
-    max-height: calc(100vh - 5.5rem - 2rem);
-    overflow-y: auto;
-  }
+  /* #termBarDetails used to float as an absolutely-positioned popup above surrounding panel content when
+     #termPane was its own outer-grid sibling (see the Term Panel UI Fixes handoff) — that rationale doesn't
+     apply now that #termPane is nested inside #pane2 as a plain column next to the text view (see the Move
+     #termPane Into Pane 2 handoff): there's no sibling content in #termPane for it to float over anymore, it
+     fills the whole column, and #pane2's own overflow-hidden would clip an absolutely-positioned popup taller
+     than #termPane's box anyway. #termBarDetails is normal in-flow content now; #termPane itself supplies the
+     column's scrolling via its own overflow-y-auto (set directly on the element in the HTML) rather than a
+     max-height here. */
 
   .term-row {
     position: relative; /* anchors .term-row-dupe-actions' overlay positioning below */
@@ -794,9 +799,11 @@
   .pane1-float-shell.collapsed .pane1-float-body { display: none; }
 
   /* Outer grid: while Pane 1 is floating, its track collapses out entirely rather than just going to 0px, so
-     the mother pane reclaims the space instead of leaving a dead gap. */
+     the mother pane reclaims the space instead of leaving a dead gap. Same minmax()/1fr leftover-space fix
+     as the base #layoutRoot rule above — #termPane no longer sits after this as its own track (it's nested
+     inside #pane2 now), so #motherPane's track is what absorbs the freed width. */
   @media (min-width: 1024px) {
     #layoutRoot.pane1-floating {
-      grid-template-columns: var(--source-panel-w) var(--mother-pane-w) minmax(200px, 0.7fr);
+      grid-template-columns: var(--source-panel-w) minmax(var(--mother-pane-w), 1fr);
     }
   }

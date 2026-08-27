@@ -368,8 +368,8 @@ const INTERNAL_SPLIT_KEY_STEP_LARGE = 0.3;
 // animation frame from the drag handler or once from the keydown handler.
 function applyInternalSplit(pane2Fr) {
   const clamped = clamp(pane2Fr, INTERNAL_SPLIT_MIN_FR, INTERNAL_SPLIT_MAX_FR);
-  layoutRootEl.style.setProperty('--pane2-fr', String(clamped));
-  layoutRootEl.style.setProperty('--pane3-fr', String(INTERNAL_SPLIT_TOTAL_FR - clamped));
+  layoutRootEl.style.setProperty('--pane2-fr', clamped + 'fr');
+  layoutRootEl.style.setProperty('--pane3-fr', (INTERNAL_SPLIT_TOTAL_FR - clamped) + 'fr');
   return clamped;
 }
 
@@ -511,8 +511,9 @@ function floatPane1(reason = 'manual') {
   clampShellToViewport();
 }
 
-// Redocks #pane1 back into #layoutRoot. Grid order is fixed (source, pane1, motherPane, term), so this is
-// just an insertBefore against #motherPane — no separate anchor/bookmark node needs to be tracked.
+// Redocks #pane1 back into #layoutRoot. Grid order is fixed (source, pane1, motherPane — #termPane is no
+// longer an outer-grid sibling here, it's nested inside #pane2 now), so this is just an insertBefore against
+// #motherPane — no separate anchor/bookmark node needs to be tracked.
 function dockPane1() {
   if (!pane1Floating || !pane1 || !motherPaneEl) return;
   pane1Floating = false;
@@ -858,10 +859,7 @@ if (sourceListEl) {
   });
 }
 
-// Lets editor-render.js's term-panel handlers (filterByTerm, viewFlaggedQuestion) trigger a full
-// source switch — same dependency direction as resetTermSearchOnSourceSwitch, just the opposite way.
 registerSourceSwitcher(openSource);
 
-// ---------- Init ----------
 renderTextVersion();
 addQuestion();
