@@ -53,6 +53,8 @@ import {
   pane1FloatBody,
   pane1CollapseToggleBtn,
   pane1DockBtn,
+  termPanelPopup,
+  termPanelToggleBtn,
 } from './dom-refs.js';
 
 // Clicking a shared highlight mark activates the first question id in its data-qid list.
@@ -509,11 +511,12 @@ function floatPane1(reason = 'manual') {
   layoutRootEl.classList.add('pane1-floating');
   pane1FloatToggleBtn.setAttribute('aria-pressed', 'true');
   clampShellToViewport();
+  if (termPanelOpen) closeTermPanel(); // closes rather than trying to live-reposition against a moving anchor mid-transition
 }
 
-// Redocks #pane1 back into #layoutRoot. Grid order is fixed (source, pane1, motherPane — #termPane is no
-// longer an outer-grid sibling here, it's nested inside #pane2 now), so this is just an insertBefore against
-// #motherPane — no separate anchor/bookmark node needs to be tracked.
+// Redocks #pane1 back into #layoutRoot. Grid order is fixed (source, pane1, motherPane — #termPanelPopup is a
+// fixed-position sibling outside grid flow, not a track, so it never needs to be accounted for here), so this
+// is just an insertBefore against #motherPane — no separate anchor/bookmark node needs to be tracked.
 function dockPane1() {
   if (!pane1Floating || !pane1 || !motherPaneEl) return;
   pane1Floating = false;
@@ -522,6 +525,7 @@ function dockPane1() {
   pane1FloatShell.classList.add('hidden');
   layoutRootEl.classList.remove('pane1-floating');
   pane1FloatToggleBtn.setAttribute('aria-pressed', 'false');
+  if (termPanelOpen) closeTermPanel(); // closes rather than trying to live-reposition against a moving anchor mid-transition
 }
 
 if (pane1FloatToggleBtn) {
@@ -530,6 +534,76 @@ if (pane1FloatToggleBtn) {
   });
 }
 if (pane1DockBtn) pane1DockBtn.addEventListener('click', dockPane1);
+
+// ---------- Term panel popup (batch: Term Panel as a Pane-1 Popup handoff) ----------
+// Manually toggled only (never auto-shown). Positioning and z-index both depend on
+// pane1Floating at the moment it's opened — docked and floating each get a distinct
+// anchor and z-index (see the two branches below). Closes automatically on any
+// dock/float transition rather than trying to live-reposition against a moving anchor
+// mid-transition (see the ADDED lines inside floatPane1()/dockPane1() above), and on
+// window resize / outside click / Escape (see further below).
+let termPanelOpen = false;
+
+function positionTermPanelDocked() {
+  if (!pane1 || !termPanelPopup) return;
+  const rect = pane1.getBoundingClientRect();
+  termPanelPopup.style.zIndex = '20'; // same slot #termBarDetails' old standalone popup used pre-Move-Into-Pane2
+  termPanelPopup.style.top = `${Math.max(8, rect.top)}px`;
+  termPanelPopup.style.left = `${rect.right + 12}px`;
+}
+
+function positionTermPanelFloating() {
+  if (!pane1FloatShell || !termPanelPopup) return;
+  const rect = pane1FloatShell.getBoundingClientRect();
+  termPanelPopup.style.zIndex = '46'; // one above .pane1-float-shell's 45, still below #quizCodeModal's 50
+  termPanelPopup.style.top = `${rect.top}px`;
+  termPanelPopup.style.left = `${rect.right + 12}px`;
+}
+
+// Clamps the already-positioned popup to stay fully on-screen, same spirit as clampShellToViewport() —
+// called after either positioning branch above.
+function clampTermPanelToViewport() {
+  if (!termPanelPopup) return;
+  const rect = termPanelPopup.getBoundingClientRect();
+  const maxLeft = Math.max(0, window.innerWidth - rect.width);
+  const maxTop = Math.max(0, window.innerHeight - rect.height);
+  const currentLeft = parseFloat(termPanelPopup.style.left) || 0;
+  const currentTop = parseFloat(termPanelPopup.style.top) || 0;
+  termPanelPopup.style.left = `${clamp(currentLeft, 0, maxLeft)}px`;
+  termPanelPopup.style.top = `${clamp(currentTop, 0, maxTop)}px`;
+}
+
+function openTermPanel() {
+  if (!termPanelPopup) return;
+  termPanelOpen = true;
+  termPanelPopup.classList.remove('hidden');
+  pane1Floating ? positionTermPanelFloating() : positionTermPanelDocked();
+  clampTermPanelToViewport();
+  if (termPanelToggleBtn) termPanelToggleBtn.setAttribute('aria-pressed', 'true');
+}
+
+function closeTermPanel() {
+  if (!termPanelPopup) return;
+  termPanelOpen = false;
+  termPanelPopup.classList.add('hidden');
+  if (termPanelToggleBtn) termPanelToggleBtn.setAttribute('aria-pressed', 'false');
+}
+
+if (termPanelToggleBtn) {
+  termPanelToggleBtn.addEventListener('click', () => {
+    termPanelOpen ? closeTermPanel() : openTermPanel();
+  });
+}
+
+// Standard popup dismissal: outside click or Escape.
+document.addEventListener('mousedown', (e) => {
+  if (!termPanelOpen) return;
+  if (termPanelPopup.contains(e.target) || e.target === termPanelToggleBtn) return;
+  closeTermPanel();
+});
+document.addEventListener('keydown', (e) => {
+  if (termPanelOpen && e.key === 'Escape') closeTermPanel();
+});
 
 // Collapse toggle: hides the shell body only, independent of dock state — doesn't call floatPane1()/dockPane1().
 if (pane1CollapseToggleBtn && pane1FloatShell) {
@@ -580,6 +654,9 @@ if (pane1CollapseToggleBtn && pane1FloatShell) {
 // Re-clamp on window resize so a floating shell never gets stranded off-screen.
 window.addEventListener('resize', () => {
   if (pane1Floating) clampShellToViewport();
+  // A resize can invalidate the term popup's anchor-relative position the same way it can for the float
+  // shell; re-deriving position on resize is more complexity than this feature needs, so just close it.
+  if (termPanelOpen) closeTermPanel();
 });
 
 // ---------- Trigger 2 — auto-float/auto-redock on window resize (batch 5C) ----------

@@ -170,6 +170,9 @@
             class="font-mono text-xs tracking-wide uppercase border border-edge hover:border-amber hover:text-amber text-ink px-3 py-1.5 rounded transition-colors">
             + Add Question
           </button>
+          <!-- Toggles the term panel popup (replaces the old #pane2-nested term sidebar); see main.js's openTermPanel()/closeTermPanel(). -->
+          <button id="termPanelToggleBtn" type="button" title="Show/hide the term panel"
+            class="icon-btn" aria-pressed="false" aria-haspopup="true" aria-controls="termPanelPopup">🏷</button>
           <!-- Undocks Pane 1 into a draggable floating window (batch 5B); see main.js's floatPane1()/dockPane1(). -->
           <button id="pane1FloatToggleBtn" type="button" title="Float this panel"
             class="icon-btn" aria-pressed="false">⧉</button>
@@ -194,49 +197,49 @@
 
     </section>
 
+    <!-- ================= TERM PANEL POPUP — toggled from #pane1's header button, replaces the old #pane2-nested
+         sidebar (see the Term Panel as a Pane-1 Popup handoff). Sits as a sibling of #pane1 (not nested inside
+         it) so it survives #pane1 being reparented into #pane1FloatShell by floatPane1()/dockPane1(), and so it
+         can be positioned independently. Position (top/left) and z-index are both set inline by main.js's
+         openTermPanel(), since they depend on pane1Floating at open-time; hidden by default, fully manual. ================= -->
+    <div id="termPanelPopup" class="hidden fixed bg-panel border border-edge rounded-lg shadow-2xl shadow-black/50" role="dialog" aria-label="Terms">
+      <details id="termBarDetails" class="p-4 lg:p-5" open>
+        <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Terms</summary>
+        <p class="text-xs text-mute mb-3 mt-2">Every target term used across your questions. Click one to filter the question list in Pane 1 to just its question(s).</p>
+
+        <!-- scope toggle (all / this file / this page); data-term-scope read by editor-render.js's click handler, active button set by renderTermBar(). -->
+        <div id="termScopeToggle" class="term-scope-toggle mb-2" role="group" aria-label="Term list scope">
+          <button type="button" data-term-scope="all" class="term-scope-btn">All terms</button>
+          <button type="button" data-term-scope="source" class="term-scope-btn" title="Every term used anywhere in the currently active source, across all its pages">This file</button>
+          <button type="button" data-term-scope="page" class="term-scope-btn" title="Only terms belonging to a question on the page currently shown in Pane 3">This page</button>
+        </div>
+
+        <!-- live case-insensitive search against each term group's label; combines with the scope toggle above. See editor-render.js's filterTermGroupsForPanel(). -->
+        <input id="termSearchInput" type="search" placeholder="Search terms…" autocomplete="off"
+          class="term-search-input mb-2" />
+
+        <div id="termFilterIndicator" class="hidden mb-2"></div>
+        <div id="termBar" class="space-y-1.5"></div>
+      </details>
+    </div>
+
     <!-- ================= MOTHER PANE — Pane 2 + Pane 3 fused into one resizable grid column (batch 5A) ================= -->
     <div id="motherPane">
 
     <!-- ================= PANE 2 — Text version of the data ================= -->
-    <section id="pane2" class="bg-panel border border-edge rounded-lg overflow-hidden flex min-w-0 lg:h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
-      <div id="pane2TextColumn" class="flex flex-col flex-1 min-w-0">
-        <div class="shrink-0 border-b border-edge px-4 py-3 flex items-center justify-between gap-2">
-          <span class="font-mono text-xs tracking-widest text-mute uppercase">Text version of the data</span>
-          <button id="recheckHighlightsBtn" type="button" title="Re-scan every question's snippet against the current Pane 2 text and re-highlight anything that's missing or only partially highlighted"
-            class="font-mono text-[0.62rem] tracking-wide uppercase border border-edge hover:border-violet hover:text-violet text-mute px-2 py-1 rounded transition-colors">
-            🔄 Sync Highlights
-          </button>
-          <span id="selectionHint" class="hidden sm:inline font-mono text-[0.62rem] text-mute text-right">Highlight text → generate a question</span>
-        </div>
-        <div id="docTextViewport" class="flex-1 overflow-y-auto p-4 lg:p-5">
-          <div id="docTextContainer" class="text-sm leading-relaxed text-ink/90"></div>
-        </div>
-        <div id="selectionGenStatus" class="hidden shrink-0 border-t border-edge px-4 py-2 text-xs font-mono"></div>
+    <section id="pane2" class="bg-panel border border-edge rounded-lg overflow-hidden flex flex-col min-w-0 lg:h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
+      <div class="shrink-0 border-b border-edge px-4 py-3 flex items-center justify-between gap-2">
+        <span class="font-mono text-xs tracking-widest text-mute uppercase">Text version of the data</span>
+        <button id="recheckHighlightsBtn" type="button" title="Re-scan every question's snippet against the current Pane 2 text and re-highlight anything that's missing or only partially highlighted"
+          class="font-mono text-[0.62rem] tracking-wide uppercase border border-edge hover:border-violet hover:text-violet text-mute px-2 py-1 rounded transition-colors">
+          🔄 Sync Highlights
+        </button>
+        <span id="selectionHint" class="hidden sm:inline font-mono text-[0.62rem] text-mute text-right">Highlight text → generate a question</span>
       </div>
-
-      <!-- ================= TERM PANE — moved inside Pane 2, right side (see the Move #termPane Into Pane 2 handoff) ================= -->
-      <section id="termPane" class="shrink-0 w-72 border-l border-edge overflow-y-auto">
-
-        <details id="termBarDetails" class="bg-card border border-edge rounded-lg p-4 lg:p-5 shadow-2xl shadow-black/50" open>
-          <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Terms</summary>
-          <p class="text-xs text-mute mb-3 mt-2">Every target term used across your questions. Click one to filter the question list in Pane 1 to just its question(s).</p>
-
-          <!-- scope toggle (all / this file / this page); data-term-scope read by editor-render.js's click handler, active button set by renderTermBar(). -->
-          <div id="termScopeToggle" class="term-scope-toggle mb-2" role="group" aria-label="Term list scope">
-            <button type="button" data-term-scope="all" class="term-scope-btn">All terms</button>
-            <button type="button" data-term-scope="source" class="term-scope-btn" title="Every term used anywhere in the currently active source, across all its pages">This file</button>
-            <button type="button" data-term-scope="page" class="term-scope-btn" title="Only terms belonging to a question on the page currently shown in Pane 3">This page</button>
-          </div>
-
-          <!-- live case-insensitive search against each term group's label; combines with the scope toggle above. See editor-render.js's filterTermGroupsForPanel(). -->
-          <input id="termSearchInput" type="search" placeholder="Search terms…" autocomplete="off"
-            class="term-search-input mb-2" />
-
-          <div id="termFilterIndicator" class="hidden mb-2"></div>
-          <div id="termBar" class="space-y-1.5"></div>
-        </details>
-
-      </section>
+      <div id="docTextViewport" class="flex-1 overflow-y-auto p-4 lg:p-5">
+        <div id="docTextContainer" class="text-sm leading-relaxed text-ink/90"></div>
+      </div>
+      <div id="selectionGenStatus" class="hidden shrink-0 border-t border-edge px-4 py-2 text-xs font-mono"></div>
 
       <!-- Drag-resize handle for Pane 2; also keyboard-resizable (arrow keys, Home/End). -->
       <div id="pane2Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane2" tabindex="0"></div>
@@ -291,9 +294,9 @@
     </section>
 
       <!-- Drag-resize handle for #motherPane; resizes the mother pane's minimum width against the flexible
-           leftover-space track on #layoutRoot's outer grid (batch 5A). #termPane is no longer a sibling here
-           to resize against — it moved inside #pane2 (see the Move #termPane Into Pane 2 handoff). Also
-           keyboard-resizable (arrow keys, Home/End). -->
+           leftover-space track on #layoutRoot's outer grid (batch 5A). #termPanelPopup is a fixed-position
+           popup outside grid flow, not a sibling column, so it's never a factor here (see the Term Panel as
+           a Pane-1 Popup handoff). Also keyboard-resizable (arrow keys, Home/End). -->
       <div id="motherPaneDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="motherPane" tabindex="0"></div>
 
     </div>

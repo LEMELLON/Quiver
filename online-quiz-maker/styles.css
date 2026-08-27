@@ -375,14 +375,12 @@ html, body { height: 100%; }
   /* ---------- term nav bar ----------
      panel above the chip grid (see editor-render.js's buildTermGroups()/buildTermRowHtml()/renderTermBar() and #termBarDetails); reuses .nav-chip/.nav-pager-btn's palette. */
 
-  /* #termBarDetails used to float as an absolutely-positioned popup above surrounding panel content when
-     #termPane was its own outer-grid sibling (see the Term Panel UI Fixes handoff) — that rationale doesn't
-     apply now that #termPane is nested inside #pane2 as a plain column next to the text view (see the Move
-     #termPane Into Pane 2 handoff): there's no sibling content in #termPane for it to float over anymore, it
-     fills the whole column, and #pane2's own overflow-hidden would clip an absolutely-positioned popup taller
-     than #termPane's box anyway. #termBarDetails is normal in-flow content now; #termPane itself supplies the
-     column's scrolling via its own overflow-y-auto (set directly on the element in the HTML) rather than a
-     max-height here. */
+  /* #termBarDetails has moved twice: first from an absolutely-positioned popup (its own outer-grid sibling,
+     see the Term Panel UI Fixes handoff), to plain in-flow content nested inside #pane2 (see the Move #termPane
+     Into Pane 2 handoff), to its current home as the sole content of #termPanelPopup — a manually-toggled
+     popup launched from a button in #pane1's header (see the Term Panel as a Pane-1 Popup handoff). It's
+     normal in-flow content within that popup; #termPanelPopup itself supplies the fixed positioning, sizing,
+     and scrolling (see that rule further down this file) rather than anything here. */
 
   .term-row {
     position: relative; /* anchors .term-row-dupe-actions' overlay positioning below */
@@ -506,8 +504,8 @@ html, body { height: 100%; }
   }
   .term-filter-clear:hover { color: #e7edf5; }
 
-  /* ---------- term-pane scope toggle + search ----------
-     #termScopeToggle / #termSearchInput sit above #termBar inside #termPane (see renderTermBar()/filterTermGroupsForPanel()); reuses the .term-row-* palette. Stacked vertically, each control taking the column's full width, since there isn't horizontal room for both on one line. */
+  /* ---------- term-panel scope toggle + search ----------
+     #termScopeToggle / #termSearchInput sit above #termBar inside #termPanelPopup (see renderTermBar()/filterTermGroupsForPanel()); reuses the .term-row-* palette. Stacked vertically, each control taking the popup's full width, since there isn't horizontal room for both on one line. */
   .term-scope-toggle {
     display: flex;
     gap: 0.4rem;
@@ -807,3 +805,20 @@ html, body { height: 100%; }
       grid-template-columns: var(--source-panel-w) minmax(var(--mother-pane-w), 1fr);
     }
   }
+
+  /* ---------- Term panel popup (batch: Term Panel as a Pane-1 Popup handoff) ----------
+     Replaces the old #pane2-nested term sidebar. Hidden by default; shown by main.js's
+     openTermPanel() removing the .hidden class. Top/left and z-index are both set inline
+     via JS, not here, since both depend on pane1Floating at open-time (docked anchors off
+     #pane1's box at z-index 20; floating anchors off .pane1-float-shell's box at z-index
+     46, one above the shell's own 45 and still below #quizCodeModal's 50). This rule only
+     owns the static shell sizing/scroll — position: fixed here means the popup sits
+     outside #layoutRoot's grid flow entirely and doesn't affect its column tracks in
+     either Pane-1 state. */
+  #termPanelPopup {
+    position: fixed;
+    width: 280px;
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+  }
+  #termPanelPopup.hidden { display: none; }
