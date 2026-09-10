@@ -103,6 +103,8 @@ const termFilterIndicatorEl = document.getElementById('termFilterIndicator');
 // Scope toggle (all vs. active-page-only) and live term-search input for the term panel.
 const termScopeToggleEl = document.getElementById('termScopeToggle');
 const termSearchInputEl = document.getElementById('termSearchInput');
+const termPanelPopup = document.getElementById('termPanelPopup');
+const termPanelToggleBtn = document.getElementById('termPanelToggleBtn');
 
 export {
   pane1,
@@ -179,4 +181,6 @@ export {
   termFilterIndicatorEl,
   termScopeToggleEl,
   termSearchInputEl,
+  termPanelPopup,
+  termPanelToggleBtn,
 };
