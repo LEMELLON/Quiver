@@ -221,9 +221,14 @@ const PANE_DRAG_CONFIG = {
   // so the drag function itself stays pane-agnostic.
   pane1: {
     varName: '--pane1-w',
-    minWidth: 370,   // ASSUMPTION — confirm against design. Also the threshold batch 5C's auto-float trigger reads.
-    maxWidth: 640,   // ASSUMPTION
+    minWidth: 380,   // ASSUMPTION — confirm against design. Also the threshold batch 5C's auto-float trigger reads.
+    maxWidth: 640,   // ASSUMPTION — static ceiling only; getMaxWidth() below can tighten it further at drag time.
     onOvershoot: () => floatPane1('auto'),
+    // Static maxWidth alone isn't safe: #motherPane's grid track is minmax(var(--mother-pane-w), 1fr)
+    // (styles.css), so growing pane1 past `viewport content width - source-panel-w - mother-pane-w's current
+    // floor` forces the grid wider than the viewport instead of actually shrinking #motherPane. getMaxWidth()
+    // computes that live ceiling; setupPaneDrag takes the smaller of this and the static maxWidth.
+    getMaxWidth: () => getPane1EffectiveMaxWidth(),
   },
   motherPane: {
     varName: '--mother-pane-w',
@@ -258,6 +263,27 @@ function getPaneCurrentWidthPx(paneEl) {
   return paneEl.getBoundingClientRect().width;
 }
 
+// Pane 1's effective max width isn't just PANE_DRAG_CONFIG.pane1.maxWidth — it also can't be allowed to grow
+// past however much room is actually left before #motherPane would be pushed below its own current floor.
+// #motherPane's grid track is minmax(var(--mother-pane-w), 1fr) (styles.css), so that floor is whatever
+// --mother-pane-w is *currently* set to (last value #motherPaneDivider was dragged to), not
+// PANE_DRAG_CONFIG.motherPane.minWidth — those are two independent numbers. Reads live (clientWidth, computed
+// padding/gap, current --mother-pane-w, current source panel width) rather than caching, since viewport size
+// and --mother-pane-w can each change independently of a pane1 drag. Called once at pointerdown/keydown, same
+// "read at drag start only" discipline as startWidth above — never from inside onPointerMove.
+function getPane1EffectiveMaxWidth() {
+  const cfg = PANE_DRAG_CONFIG.pane1;
+  if (!layoutRootEl || !sourcePaneEl) return cfg.maxWidth;
+  const rootStyles = getComputedStyle(layoutRootEl);
+  const contentWidth = layoutRootEl.clientWidth
+    - parseFloat(rootStyles.paddingLeft) - parseFloat(rootStyles.paddingRight);
+  const gapPx = parseFloat(rootStyles.columnGap) || 0; // 2 gaps: source↔pane1, pane1↔motherPane
+  const sourcePanelWidth = getPaneCurrentWidthPx(sourcePaneEl);
+  const motherPaneFloor = parseFloat(rootStyles.getPropertyValue('--mother-pane-w')) || PANE_DRAG_CONFIG.motherPane.minWidth;
+  const available = contentWidth - gapPx * 2 - sourcePanelWidth - motherPaneFloor;
+  return Math.min(cfg.maxWidth, Math.max(cfg.minWidth, available));
+}
+
 // The single function that writes a pane's width. Pure style write, no DOM reads, safe to call once per
 // animation frame from a drag handler or once from a click handler.
 function applyWidth(paneKey, widthPx) {
@@ -278,6 +304,7 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
   let startWidth = 0;
   let pendingWidth = null;
   let rafId = null;
+  let dragMaxWidth = cfg.maxWidth; // recomputed at pointerdown below when cfg.getMaxWidth exists (pane1 only)
 
   updateDividerAria(dividerEl, cfg, getPaneCurrentWidthPx(paneEl));
 
@@ -296,7 +323,7 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
       cfg.onOvershoot();
       return;
     }
-    pendingWidth = clamp(rawRequested, cfg.minWidth, cfg.maxWidth);
+    pendingWidth = clamp(rawRequested, cfg.minWidth, dragMaxWidth);
     if (rafId == null) {
       rafId = requestAnimationFrame(() => {
         applyWidth(paneKey, pendingWidth);
@@ -319,6 +346,7 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
     dividerEl.setPointerCapture(e.pointerId);
     startX = e.clientX;
     startWidth = getPaneCurrentWidthPx(paneEl); // read once, here only
+    dragMaxWidth = cfg.getMaxWidth ? Math.min(cfg.maxWidth, cfg.getMaxWidth()) : cfg.maxWidth;
     paneEl.style.willChange = 'width';
     dividerEl.classList.add('dragging');
     pauseTier1Scaling();
@@ -329,6 +357,8 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
   // Left/Right step the pane's width, Shift+Left/Right take a bigger step, Home/End jump to min/max.
   dividerEl.addEventListener('keydown', (e) => {
     const current = getPaneCurrentWidthPx(paneEl);
+    // Cheap to recompute per keypress (not a drag loop) — same dynamic ceiling as the pointer-drag path above.
+    const effectiveMaxWidth = cfg.getMaxWidth ? Math.min(cfg.maxWidth, cfg.getMaxWidth()) : cfg.maxWidth;
     let targetWidth;
     if (e.key === 'ArrowLeft') {
       targetWidth = current - (e.shiftKey ? KEY_STEP_LARGE : KEY_STEP);
@@ -337,12 +367,12 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
     } else if (e.key === 'Home') {
       targetWidth = cfg.minWidth;
     } else if (e.key === 'End') {
-      targetWidth = cfg.maxWidth;
+      targetWidth = effectiveMaxWidth;
     } else {
       return;
     }
     e.preventDefault();
-    const clamped = applyWidth(paneKey, targetWidth);
+    const clamped = applyWidth(paneKey, Math.min(targetWidth, effectiveMaxWidth));
     updateDividerAria(dividerEl, cfg, clamped);
   });
 }
