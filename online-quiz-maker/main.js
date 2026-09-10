@@ -221,7 +221,7 @@ const PANE_DRAG_CONFIG = {
   // so the drag function itself stays pane-agnostic.
   pane1: {
     varName: '--pane1-w',
-    minWidth: 280,   // ASSUMPTION — confirm against design. Also the threshold batch 5C's auto-float trigger reads.
+    minWidth: 370,   // ASSUMPTION — confirm against design. Also the threshold batch 5C's auto-float trigger reads.
     maxWidth: 640,   // ASSUMPTION
     onOvershoot: () => floatPane1('auto'),
   },
@@ -658,6 +658,21 @@ window.addEventListener('resize', () => {
   // shell; re-deriving position on resize is more complexity than this feature needs, so just close it.
   if (termPanelOpen) closeTermPanel();
 });
+
+// rAF-batched the same way setupPaneDrag() batches pointermove reads/writes ("recorded... once per
+// frame... not on every raw pointermove tick") — re-anchors the term popup on scroll instead of
+// recomputing layout on every raw scroll tick. capture: true so this also catches scrolls inside
+// inner containers (#docTextViewport etc.), not just the document itself.
+let termPanelScrollRaf = null;
+window.addEventListener('scroll', () => {
+  if (!termPanelOpen) return;
+  if (termPanelScrollRaf) return;
+  termPanelScrollRaf = requestAnimationFrame(() => {
+    termPanelScrollRaf = null;
+    pane1Floating ? positionTermPanelFloating() : positionTermPanelDocked();
+    clampTermPanelToViewport();
+  });
+}, { passive: true, capture: true });
 
 // ---------- Trigger 2 — auto-float/auto-redock on window resize (batch 5C) ----------
 // Debounced separately from the immediate re-clamp listener above (that one only repositions an already-
