@@ -193,6 +193,18 @@ html, body { height: 100%; }
          minmax()/1fr and use var(--mother-pane-w) alone. */
       grid-template-columns: var(--source-panel-w) var(--pane1-w) minmax(var(--mother-pane-w), 1fr);
     }
+
+    /* Explicit line placement so #pane1/#motherPane always render in the track sized by their own var,
+       regardless of how many in-flow siblings precede them in the DOM. Without this, toggling
+       .source-panel-overlay onto #sourcePane (position: absolute) removes it from the auto-placement
+       cursor, which silently shifts #pane1 into track 1 (--source-panel-w, 96px) and #motherPane into
+       track 2 (--pane1-w, 420px), leaving track 3 empty. Scoped inside this @media block (not bare/
+       unscoped) so the grid-cols-1 mobile stack below 1024px never sees these line numbers — Grid would
+       otherwise create implicit tracks to satisfy an explicit out-of-range line on an in-flow item and
+       break the single-column layout. */
+    #sourcePane { grid-column: 1; }
+    #pane1      { grid-column: 2; }
+    #motherPane { grid-column: 3; }
   }
 
   /* Source panel expand-as-overlay (replaces the old grid-track expand). --source-panel-w never changes
@@ -209,7 +221,17 @@ html, body { height: 100%; }
       since the class swap doesn't strip Tailwind utilities off the element) — height: 100% would get silently
       capped by that max-height and undershoot the intended full-height overlay; this keeps them equal instead. */
     width: var(--source-panel-overlay-w, 320px);
+    box-sizing: border-box; /* Tailwind Preflight sets this globally already, but pin it explicitly here since
+      padding/border are now part of this box's own total-width math via the `width` above — don't rely on
+      inheritance holding for a rule this size-sensitive. */
     z-index: 25; /* above .pane-divider (10), below the header (30) — sits over pane1's content, never over nav chrome */
+    background: #121821; /* bg-panel token (see tailwind.config colors.panel) — matches #pane1FloatShell/#pane2/#pane3's
+      own bg-panel treatment; #sourcePane itself never had a background before the overlay state existed, so this
+      is scoped to .source-panel-overlay only, not the bare selector. */
+    border: 1px solid #243040; /* border-edge token (tailwind.config colors.edge), same reasoning as above */
+    border-radius: 0.5rem; /* rounded-lg */
+    padding: 1rem; /* the collapsed in-grid state relied on #layoutRoot's gap-4 for breathing room; the overlay
+      state has no sibling gap to lean on, so it needs its own padding instead. */
     box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5); /* reads as floating above #pane1, matching this file's existing shadow-2xl scale */
   }
 
@@ -821,6 +843,15 @@ html, body { height: 100%; }
   @media (min-width: 1024px) {
     #layoutRoot.pane1-floating {
       grid-template-columns: var(--source-panel-w) minmax(var(--mother-pane-w), 1fr);
+    }
+    /* #pane1 isn't a child of #layoutRoot at all while floating (floatPane1() moves it into
+       pane1FloatBody), so the base rule's grid-column: 3 on #motherPane is now wrong — this grid only
+       has 2 explicit tracks while floating. Higher specificity (#layoutRoot.pane1-floating #motherPane
+       vs. plain #motherPane) guarantees this wins regardless of source order. Without it, #motherPane
+       would force an implicit 3rd track into existence and leave the real 2nd track (the reclaimed
+       space) empty — the same class of bug this whole fix exists to prevent. */
+    #layoutRoot.pane1-floating #motherPane {
+      grid-column: 2;
     }
   }
 
