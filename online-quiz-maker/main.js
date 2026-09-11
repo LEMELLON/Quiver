@@ -203,14 +203,14 @@ if (sourceStackAreaEl) {
 // specified anywhere in the handoff — these are reasonable placeholder defaults, not extracted from a spec,
 // and should be confirmed against the real design before shipping (flagged in the batch-4 and 5A handbacks).
 const PANE_DRAG_CONFIG = {
+  // minWidth/maxWidth removed (source-panel-overlay handoff): they existed only to feed setupPaneDrag()'s
+  // clamp/aria logic for #sourcePanelDivider, which is gone. --source-panel-w is now a load-time constant
+  // (styles.css) with a single writer nowhere near this config; expandedWidth now only seeds the overlay's
+  // --source-panel-overlay-w var via the toggle handler below.
   source: {
     varName: '--source-panel-w',
-    minWidth: 96,          // thumb-only collapsed width — matches batch 3's CSS and the .source-stack-meta breakpoint
-    maxWidth: 480,          // ASSUMPTION — not specified in the handoff
     collapsedWidth: 96,
-    expandedWidth: 320,     // ASSUMPTION — approximate fixed-px stand-in for the old minmax(220px, 0.8fr); the
-                             // handoff itself flagged minmax() as having "patchy behavior" as a custom-property
-                             // value, so a fixed px was used instead per its own suggestion. Not visually verified.
+    expandedWidth: 320, // now only seeds --source-panel-overlay-w
   },
   // pane2 is no longer a px-tracked pane on the outer grid as of batch 5A — it's the fr-split inside
   // #motherPane now (see applyInternalSplit()/setupInternalSplitDrag() below). pane1 and motherPane take
@@ -377,7 +377,6 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
   });
 }
 
-setupPaneDrag('source', sourcePanelDividerEl, sourcePaneEl);
 setupPaneDrag('pane1', pane1DividerEl, pane1);
 setupPaneDrag('motherPane', motherPaneDividerEl, motherPaneEl);
 
@@ -481,18 +480,20 @@ function setupInternalSplitDrag(dividerEl, motherPaneEl) {
 
 setupInternalSplitDrag(pane2DividerEl, motherPaneEl);
 
-// Toggle button: snaps --source-panel-w between the collapsed/expanded presets through the same applyWidth()
-// the drag handler above uses (batch-4 decision #3 — kept, not removed, so keyboard/screen-reader users can
-// still expand/collapse without pointer drag). .source-panel-expanded stays on #sourcePane only, for
-// .source-stack-meta's show/hide in styles.css — that rule is unrelated to width and isn't being replaced.
+// Toggle button: expands the source panel as an absolutely-positioned overlay (styles.css's
+// #sourcePane.source-panel-overlay) instead of growing the grid track — --source-panel-w is never written
+// here anymore; it's set once at page load and stays a constant for the session. .source-panel-expanded
+// stays on #sourcePane only, for .source-stack-meta's show/hide in styles.css — unrelated to width, unchanged.
 if (sourcePanelToggleBtn && sourcePaneEl) {
   sourcePanelToggleBtn.addEventListener('click', () => {
     const cfg = PANE_DRAG_CONFIG.source;
-    const isCurrentlyCollapsed = getPaneCurrentWidthPx(sourcePaneEl) <= cfg.minWidth + 1; // +1px tolerance
-    const expanded = isCurrentlyCollapsed;
-    const clamped = applyWidth('source', expanded ? cfg.expandedWidth : cfg.collapsedWidth);
-    if (sourcePanelDividerEl) updateDividerAria(sourcePanelDividerEl, cfg, clamped);
-    sourcePaneEl.classList.toggle('source-panel-expanded', expanded);
+    const isOpen = sourcePaneEl.classList.contains('source-panel-overlay');
+    const expanded = !isOpen;
+    if (expanded) {
+      layoutRootEl.style.setProperty('--source-panel-overlay-w', `${cfg.expandedWidth}px`);
+    }
+    sourcePaneEl.classList.toggle('source-panel-overlay', expanded);
+    sourcePaneEl.classList.toggle('source-panel-expanded', expanded); // unchanged — still drives .source-stack-meta's show/hide
     sourcePanelToggleBtn.setAttribute('aria-expanded', String(expanded));
     sourcePanelToggleBtn.title = expanded ? 'Collapse source panel' : 'Expand source panel';
   });

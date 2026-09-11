@@ -195,6 +195,22 @@ html, body { height: 100%; }
     }
   }
 
+  /* Source panel expand-as-overlay (replaces the old grid-track expand). --source-panel-w never changes
+     from its 96px constant above; the "expanded" visual state lives entirely in this class + the separate
+     --source-panel-overlay-w var, both toggled by sourcePanelToggleBtn's click handler in main.js. Because
+     this is position: absolute rather than fixed, it scrolls with the page for free — #layoutRoot's grid
+     container is its containing block (CSS Grid Layout Module §10.1), no JS-measured rects or scroll
+     listener needed. */
+  #sourcePane.source-panel-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: var(--source-panel-overlay-w, 320px);
+    z-index: 25; /* above .pane-divider (10), below the header (30) — sits over pane1's content, never over nav chrome */
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5); /* reads as floating above #pane1, matching this file's existing shadow-2xl scale */
+  }
+
   /* #motherPane's own internal grid: pane2:pane3 split, driven by unitless fr custom properties (not px) so
      CSS Grid keeps them proportional to each other for free whenever #motherPane's own box is resized via
      divider A (#pane1Divider) or divider B (#motherPaneDivider) — no JS recompute needed for that path. JS
