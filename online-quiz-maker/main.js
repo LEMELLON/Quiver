@@ -41,7 +41,6 @@ import {
   sourcePaneEl,
   layoutRootEl,
   sourcePanelToggleBtn,
-  sourcePanelDividerEl,
   pane1,
   pane1DividerEl,
   pane2DividerEl,
@@ -215,15 +214,10 @@ const PANE_DRAG_CONFIG = {
   // pane2 is no longer a px-tracked pane on the outer grid as of batch 5A — it's the fr-split inside
   // #motherPane now (see applyInternalSplit()/setupInternalSplitDrag() below). pane1 and motherPane take
   // over the outer-grid px tracks that Pane 1/Pane 3's old bare-1.4fr columns used to occupy.
-  // onOvershoot (batch 5C): setupPaneDrag() calls this instead of clamping at minWidth when the drag keeps
-  // going past minWidth by more than AUTO_FLOAT_OVERSHOOT_PX — auto-floats Pane 1 rather than pinning it at
-  // its minimum. Kept as a config-level callback (not a paneKey === 'pane1' branch inside setupPaneDrag)
-  // so the drag function itself stays pane-agnostic.
   pane1: {
     varName: '--pane1-w',
-    minWidth: 380,   // ASSUMPTION — confirm against design. Also the threshold batch 5C's auto-float trigger reads.
+    minWidth: 380,   // ASSUMPTION — confirm against design.
     maxWidth: 640,   // ASSUMPTION — static ceiling only; getMaxWidth() below can tighten it further at drag time.
-    onOvershoot: () => floatPane1('auto'),
     // Static maxWidth alone isn't safe: #motherPane's grid track is minmax(var(--mother-pane-w), 1fr)
     // (styles.css), so growing pane1 past `viewport content width - source-panel-w - mother-pane-w's current
     // floor` forces the grid wider than the viewport instead of actually shrinking #motherPane. getMaxWidth()
@@ -240,11 +234,6 @@ const PANE_DRAG_CONFIG = {
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
-
-// How far past Pane 1's minWidth a drag has to overshoot before setupPaneDrag hands off to
-// PANE_DRAG_CONFIG.pane1.onOvershoot() instead of just clamping there (batch 5C). Reaching exactly minWidth
-// and stopping is itself a normal, desired resize — only overshooting past it by this much means "float it".
-const AUTO_FLOAT_OVERSHOOT_PX = 24; // ASSUMPTION — confirm this feels right, not too eager/too sticky; needs a live browser to tune.
 
 // Step sizes for keyboard resizing.
 const KEY_STEP = 16;
@@ -310,19 +299,7 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
 
   function onPointerMove(e) {
     // Pure arithmetic only — no getBoundingClientRect/clientWidth/offsetWidth reads here.
-    const rawRequested = startWidth + (e.clientX - startX); // unclamped, used only for the overshoot check below
-    if (cfg.onOvershoot && rawRequested < cfg.minWidth - AUTO_FLOAT_OVERSHOOT_PX) {
-      // Dragged past minWidth by more than the overshoot buffer — end this drag session cleanly, then
-      // hand off to the pane-specific overshoot behavior (batch 5C), instead of clamping at minWidth like a
-      // normal resize. Reaching exactly minWidth and stopping there is itself a normal, desired resize.
-      dividerEl.removeEventListener('pointermove', onPointerMove);
-      try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
-      paneEl.style.willChange = '';
-      dividerEl.classList.remove('dragging');
-      resumeTier1Scaling();
-      cfg.onOvershoot();
-      return;
-    }
+    const rawRequested = startWidth + (e.clientX - startX);
     pendingWidth = clamp(rawRequested, cfg.minWidth, dragMaxWidth);
     if (rafId == null) {
       rafId = requestAnimationFrame(() => {
@@ -500,18 +477,13 @@ if (sourcePanelToggleBtn && sourcePaneEl) {
 }
 
 // ---------- Floating Pane 1 (batch 5B) ----------
-// Manual-trigger only — no auto-float-on-drag or auto-float-on-shrink logic here yet (that's batch 5C).
+// Manual-trigger only — #pane1FloatToggleBtn is the only way to enter/exit windowed mode.
 // #pane1's actual DOM node is reparented (not cloned/rebuilt) between #layoutRoot and #pane1FloatBody, so
 // every existing listener/ref on it (question nav, add/remove, editor fields, etc.) keeps working untouched —
 // nothing else needs to know #pane1 moved. Note: #pane1 still carries its own lg:sticky/lg:max-h-[...]
 // Tailwind utilities from the grid layout; these are inert once it's inside the shell's own flex/overflow
 // container, but flag if any visual quirk shows up there — not addressed in this batch.
 let pane1Floating = false;
-// null | 'manual' | 'auto' — which trigger floated Pane 1 (batch 5C). A manually-floated panel (via the
-// button/toggle, 5B) must never be auto-redocked out from under the user; only an auto-floated one is
-// eligible for Trigger 2's auto-redock below. Reset to null on every dockPane1() so a later auto-float in the
-// same session is never mistakenly attributed to a previous one.
-let pane1FloatReason = null;
 
 // Reads/writes the shell's position once per call — used at drag-end-adjacent points (inside the drag's rAF
 // callback, once per frame, and on window resize), not on every raw pointermove tick. This is the project's
@@ -530,13 +502,9 @@ function clampShellToViewport() {
 
 // Undocks #pane1 into the floating shell. The outer grid's --pane1-w track collapses out entirely (via the
 // .pane1-floating class in styles.css) so #motherPane reclaims the freed space, rather than leaving a dead gap.
-// reason: 'manual' (default — the 5B button/toggle) or 'auto' (batch 5C's overshoot-drag/window-shrink
-// triggers) — recorded in pane1FloatReason so dockPane1()'s caller and the resize-driven auto-redock check
-// below can tell which kind of float this is.
-function floatPane1(reason = 'manual') {
+function floatPane1() {
   if (pane1Floating || !pane1FloatShell || !pane1FloatBody || !pane1) return;
   pane1Floating = true;
-  pane1FloatReason = reason;
   pane1FloatBody.appendChild(pane1);
   pane1FloatShell.classList.remove('hidden');
   layoutRootEl.classList.add('pane1-floating');
@@ -551,7 +519,6 @@ function floatPane1(reason = 'manual') {
 function dockPane1() {
   if (!pane1Floating || !pane1 || !motherPaneEl) return;
   pane1Floating = false;
-  pane1FloatReason = null;
   layoutRootEl.insertBefore(pane1, motherPaneEl);
   pane1FloatShell.classList.add('hidden');
   layoutRootEl.classList.remove('pane1-floating');
@@ -704,44 +671,6 @@ window.addEventListener('scroll', () => {
     clampTermPanelToViewport();
   });
 }, { passive: true, capture: true });
-
-// ---------- Trigger 2 — auto-float/auto-redock on window resize (batch 5C) ----------
-// Debounced separately from the immediate re-clamp listener above (that one only repositions an already-
-// floating shell every tick; this one decides whether to float/redock at all, which is heavier and doesn't
-// need to run on every raw resize event). Only applies at the >=1024px grid breakpoint — below that, the
-// layout already stacks to a single column (.pane-divider { display: none } below 1024px), which solves the
-// space problem by scrolling instead of floating.
-const RESIZE_DEBOUNCE_MS = 150; // ASSUMPTION — tunable by feel, needs a live browser to get right.
-const REDOCK_HYSTERESIS_PX = 120; // ASSUMPTION — gap above the 1024px float threshold before auto-redocking, to prevent flicker right at the line.
-let resizeDebounceTimer = null;
-
-function checkAutoFloatOnResize() {
-  if (window.innerWidth < 1024) return; // mobile stack already handles this
-
-  if (!pane1Floating) {
-    // Pane 1 is docked — check if it's being squeezed below its own minWidth by the grid (source/motherPane/
-    // term all fighting for space at this viewport width).
-    if (!pane1) return;
-    const rect = pane1.getBoundingClientRect();
-    if (rect.width > 0 && rect.width < PANE_DRAG_CONFIG.pane1.minWidth) {
-      floatPane1('auto');
-    }
-    return;
-  }
-
-  if (pane1FloatReason === 'auto') {
-    // Only auto-floated panels are eligible to auto-redock — a manually-floated one (5B's button) only
-    // redocks via its own manual controls, no matter how wide the window gets.
-    if (window.innerWidth >= 1024 + REDOCK_HYSTERESIS_PX) {
-      dockPane1();
-    }
-  }
-}
-
-window.addEventListener('resize', () => {
-  if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
-  resizeDebounceTimer = setTimeout(checkAutoFloatOnResize, RESIZE_DEBOUNCE_MS);
-});
 
 // Makes the given source active, updates Pane 3/2 to its first page, and opens its first question in the editor.
 // { skipAutoSelect: true } skips that last auto-select step — used when the caller (e.g. the term-panel

@@ -80,9 +80,8 @@ const sourcePaneEl = document.getElementById('sourcePane');
 const layoutRootEl = document.getElementById('layoutRoot');
 const sourcePanelToggleBtn = document.getElementById('sourcePanelToggleBtn');
 
-// Drag-resize handles for the source panel, Pane 1, the internal pane2/pane3 fr-split, and #motherPane
+// Drag-resize handles for Pane 1, the internal pane2/pane3 fr-split, and #motherPane
 // (see main.js's setupPaneDrag() and setupInternalSplitDrag() — batches 4 and 5A).
-const sourcePanelDividerEl = document.getElementById('sourcePanelDivider');
 const pane1DividerEl = document.getElementById('pane1Divider');
 const pane2DividerEl = document.getElementById('pane2Divider');
 const motherPaneDividerEl = document.getElementById('motherPaneDivider');
@@ -166,7 +165,6 @@ export {
   sourcePaneEl,
   layoutRootEl,
   sourcePanelToggleBtn,
-  sourcePanelDividerEl,
   pane1DividerEl,
   pane2DividerEl,
   motherPaneDividerEl,
