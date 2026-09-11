@@ -205,7 +205,9 @@ html, body { height: 100%; }
     position: absolute;
     top: 0;
     left: 0;
-    height: 100%;
+    height: calc(100vh - 5.5rem); /* matches #sourcePane's own lg:max-h-[calc(100vh-5.5rem)] utility (still active,
+      since the class swap doesn't strip Tailwind utilities off the element) — height: 100% would get silently
+      capped by that max-height and undershoot the intended full-height overlay; this keeps them equal instead. */
     width: var(--source-panel-overlay-w, 320px);
     z-index: 25; /* above .pane-divider (10), below the header (30) — sits over pane1's content, never over nav chrome */
     box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5); /* reads as floating above #pane1, matching this file's existing shadow-2xl scale */
