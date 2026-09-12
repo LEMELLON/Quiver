@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>layout-repro — #motherPaneDivider isolation</title>
+<style>
+  /* ============================================================
+     Baseline / non-production chrome (repro harness only — not
+     part of the ported layout system).
+     ============================================================ */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0b0f14;
+    color: #e6edf3;
+  }
+  #reproBar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+    background: #11161d;
+    border-bottom: 1px solid #263140;
+    font-size: 0.8rem;
+    font-family: ui-monospace, monospace;
+  }
+  #reproBar label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
+  #reproLog {
+    margin: 0;
+    padding: 0.5rem 1rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.72rem;
+    color: #f5b942;
+    white-space: pre-wrap;
+    max-height: 5.5rem;
+    overflow-y: auto;
+    background: #0b0f14;
+    border-bottom: 1px solid #263140;
+  }
+  .pane-label {
+    font-family: ui-monospace, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #8296ab;
+    margin-bottom: 0.5rem;
+  }
+  .pane-fill {
+    padding: 1.5rem 1rem;
+    height: 100%;
+    min-height: 200px;
+  }
+
+  /* ============================================================
+     PORTED FROM styles.css — outer #layoutRoot grid
+     ============================================================ */
+  #layoutRoot {
+    --source-panel-w: 96px;
+    --pane1-w: 420px;
+    --mother-pane-w: 900px;
+    --pane2-fr: 1;
+    --pane3-fr: 1;
+    padding: 1rem;
+  }
+  @media (min-width: 1024px) {
+    #layoutRoot {
+      display: grid;
+      grid-template-columns: var(--source-panel-w) var(--pane1-w) var(--mother-pane-w) minmax(200px, 0.7fr);
+      gap: 1rem;
+    }
+  }
+
+  /* #motherPane's own internal grid: pane2:pane3 split.
+     Default below is the PRE-5F state, verbatim from the handoff spec:
+     calc(var(--pane2-fr, 1) * 1fr). This is deliberately the old, buggy
+     approach — do not "fix" it here. Flip the checkbox in the repro bar
+     (adds data-5f-fix to <body>) to switch to the fixed var()-only form
+     that's actually live in production, so both states are reproducible. */
+  #motherPane {
+    position: relative;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: calc(var(--pane2-fr, 1) * 1fr) calc(var(--pane3-fr, 1) * 1fr);
+    gap: 1rem;
+  }
+  body[data-5f-fix] #layoutRoot {
+    --pane2-fr: 1fr;
+    --pane3-fr: 1fr;
+  }
+  body[data-5f-fix] #motherPane {
+    grid-template-columns: var(--pane2-fr, 1fr) var(--pane3-fr, 1fr);
+  }
+
+  /* Panes need a containing block for their absolutely-positioned divider
+     children. In production this comes free from Tailwind's lg:sticky on
+     #sourcePane/#pane1/#pane2; #motherPane gets it from the explicit
+     position: relative above since it's a plain wrapper div. Replicated
+     here with plain position: relative since there's no Tailwind. */
+  #sourcePane, #pane1, #pane2, #pane3, #termPane {
+    position: relative;
+    min-width: 0;
+  }
+  #sourcePane { background: #141b24; border: 1px solid #263140; border-radius: 8px; }
+  #pane1      { background: #141b24; border: 1px solid #263140; border-radius: 8px; }
+  #pane2      { background: #1a2230; border: 1px solid #263140; border-radius: 8px; overflow: hidden; }
+  #pane3      { background: #1a2230; border: 1px solid #263140; border-radius: 8px; overflow: hidden; }
+  #termPane   { background: #141b24; border: 1px solid #263140; border-radius: 8px; }
+
+  /* ============================================================
+     PORTED FROM styles.css — divider styling, shared by all 4
+     dividers (sourcePanelDivider, pane1Divider, pane2Divider,
+     motherPaneDivider)
+     ============================================================ */
+  .pane-divider {
+    display: none;
+  }
+  @media (min-width: 1024px) {
+    .pane-divider {
+      display: flex;
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      right: 0;
+      width: 8px;
+      align-items: center;
+      justify-content: center;
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 10;
+      background: transparent;
+    }
+  }
+  .pane-divider::after {
+    content: '';
+    width: 2px;
+    height: 100%;
+    background: transparent;
+    transition: background 0.15s ease;
+  }
+  .pane-divider:hover::after,
+  .pane-divider.dragging::after {
+    background: #f5b942;
+  }
+</style>
+</head>
+<body>
+
+  <div id="reproBar">
+    <strong>layout-repro</strong>
+    <label>
+      <input type="checkbox" id="fiveFToggle">
+      apply batch-5F fix (var()-only grid-template-columns)
+    </label>
+    <span>Drag any handle. Watch the log below + DevTools console for #motherPaneDivider errors.</span>
+  </div>
+  <pre id="reproLog">// console output mirrored here too —</pre>
+
+  <main id="layoutRoot">
+
+    <!-- ================= SOURCE PANE ================= -->
+    <section id="sourcePane">
+      <div class="pane-fill">
+        <div class="pane-label">#sourcePane</div>
+        <div>Placeholder content.</div>
+      </div>
+      <div id="sourcePanelDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="sourcePane" tabindex="0"></div>
+    </section>
+
+    <!-- ================= PANE 1 ================= -->
+    <section id="pane1">
+      <div class="pane-fill">
+        <div class="pane-label">#pane1</div>
+        <div>Placeholder content.</div>
+      </div>
+      <div id="pane1Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane1" tabindex="0"></div>
+    </section>
+
+    <!-- ================= MOTHER PANE — Pane 2 + Pane 3 fused ================= -->
+    <div id="motherPane">
+
+      <!-- ================= PANE 2 ================= -->
+      <section id="pane2">
+        <div class="pane-fill">
+          <div class="pane-label">#pane2</div>
+          <div>Placeholder content.</div>
+        </div>
+        <div id="pane2Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane2" tabindex="0"></div>
+      </section>
+
+      <!-- ================= PANE 3 ================= -->
+      <section id="pane3">
+        <div class="pane-fill">
+          <div class="pane-label">#pane3</div>
+          <div>Placeholder content.</div>
+        </div>
+      </section>
+
+      <!-- Resizes #motherPane against #termPane. THIS is the divider under investigation. -->
+      <div id="motherPaneDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="motherPane" tabindex="0"></div>
+
+    </div>
+    <!-- /#motherPane -->
+
+    <!-- ================= TERM PANE ================= -->
+    <section id="termPane">
+      <div class="pane-fill">
+        <div class="pane-label">#termPane</div>
+        <div>Placeholder content. No divider of its own — absorbs leftover width.</div>
+      </div>
+    </section>
+
+  </main>
+
+<script>
+(function () {
+  'use strict';
+
+  // ------------------------------------------------------------
+  // Repro-harness only: mirror console.error/warn into the on-page
+  // log so the "console shows errors" part of the bug report is
+  // visible without opening DevTools. Not part of the ported app.
+  // ------------------------------------------------------------
+  const logEl = document.getElementById('reproLog');
+  function mirror(kind, args) {
+    logEl.textContent += `\n[${kind}] ` + Array.from(args).map(String).join(' ');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  const origError = console.error.bind(console);
+  const origWarn = console.warn.bind(console);
+  console.error = function (...args) { mirror('error', args); origError(...args); };
+  console.warn = function (...args) { mirror('warn', args); origWarn(...args); };
+
+  document.getElementById('fiveFToggle').addEventListener('change', (e) => {
+    document.body.toggleAttribute('data-5f-fix', e.target.checked);
+  });
+
+  // ------------------------------------------------------------
+  // dom-refs.js stand-in — plain getElementById, same names main.js imports.
+  // ------------------------------------------------------------
+  const layoutRootEl = document.getElementById('layoutRoot');
+  const sourcePaneEl = document.getElementById('sourcePane');
+  const sourcePanelDividerEl = document.getElementById('sourcePanelDivider');
+  const pane1 = document.getElementById('pane1');
+  const pane1DividerEl = document.getElementById('pane1Divider');
+  const pane2DividerEl = document.getElementById('pane2Divider');
+  const motherPaneEl = document.getElementById('motherPane');
+  const motherPaneDividerEl = document.getElementById('motherPaneDivider');
+
+  // pptx-render.js stand-ins — PPTX-render specific, stubbed as no-ops per
+  // the handoff rather than deleted, so setupPaneDrag/setupInternalSplitDrag
+  // keep the exact same call sites/structure as production.
+  function pauseTier1Scaling() {}
+  function resumeTier1Scaling() {}
+
+  // ---------- Source panel / Pane 1 / #motherPane continuous drag-resize (batch 4, restructured in 5A) ----------
+  // applyWidth() is the ONLY place that writes --source-panel-w / --pane1-w / --mother-pane-w on #layoutRoot —
+  // both the drag handlers below and the toggle button's click handler funnel through it, per the batch-4
+  // handoff's requirement that there be a single code path for writing a pane's width. The internal pane2/pane3
+  // fr-split has its own single-writer function, applyInternalSplit(), a few lines below setupPaneDrag().
+
+  // minWidth/maxWidth for the source panel are grounded in batch 3's actual CSS (96px collapsed thumb-only
+  // row) and the handoff's own values. pane1/motherPane's min/max and the source panel's expandedWidth are NOT
+  // specified anywhere in the handoff — these are reasonable placeholder defaults, not extracted from a spec,
+  // and should be confirmed against the real design before shipping (flagged in the batch-4 and 5A handbacks).
+  const PANE_DRAG_CONFIG = {
+    source: {
+      varName: '--source-panel-w',
+      minWidth: 96,          // thumb-only collapsed width — matches batch 3's CSS and the .source-stack-meta breakpoint
+      maxWidth: 480,          // ASSUMPTION — not specified in the handoff
+      collapsedWidth: 96,
+      expandedWidth: 320,     // ASSUMPTION — approximate fixed-px stand-in for the old minmax(220px, 0.8fr); the
+                               // handoff itself flagged minmax() as having "patchy behavior" as a custom-property
+                               // value, so a fixed px was used instead per its own suggestion. Not visually verified.
+    },
+    // pane2 is no longer a px-tracked pane on the outer grid as of batch 5A — it's the fr-split inside
+    // #motherPane now (see applyInternalSplit()/setupInternalSplitDrag() below). pane1 and motherPane take
+    // over the outer-grid px tracks that Pane 1/Pane 3's old bare-1.4fr columns used to occupy.
+    // onOvershoot (batch 5C): dropped here for this replica — Pane 1 floating (floatPane1) is app-specific
+    // UI out of scope for the #motherPaneDivider bug this replica exists to isolate.
+    pane1: {
+      varName: '--pane1-w',
+      minWidth: 280,   // ASSUMPTION — confirm against design. Also the threshold batch 5C's auto-float trigger reads.
+      maxWidth: 640,   // ASSUMPTION
+    },
+    motherPane: {
+      varName: '--mother-pane-w',
+      minWidth: 480,   // ASSUMPTION
+      maxWidth: 1400,  // ASSUMPTION
+    },
+  };
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  // How far past Pane 1's minWidth a drag has to overshoot before setupPaneDrag hands off to
+  // PANE_DRAG_CONFIG.pane1.onOvershoot() instead of just clamping there (batch 5C). Reaching exactly minWidth
+  // and stopping is itself a normal, desired resize — only overshooting past it by this much means "float it".
+  const AUTO_FLOAT_OVERSHOOT_PX = 24; // ASSUMPTION — confirm this feels right, not too eager/too sticky; needs a live browser to tune.
+
+  // Step sizes for keyboard resizing.
+  const KEY_STEP = 16;
+  const KEY_STEP_LARGE = 48;
+
+  // Syncs a divider's aria-value* attributes with the pane's current width.
+  function updateDividerAria(dividerEl, cfg, widthPx) {
+    dividerEl.setAttribute('aria-valuemin', String(cfg.minWidth));
+    dividerEl.setAttribute('aria-valuemax', String(cfg.maxWidth));
+    dividerEl.setAttribute('aria-valuenow', String(Math.round(widthPx)));
+  }
+
+  // Reads a pane's current rendered width once. Only ever called at drag start or from the toggle button —
+  // NEVER from inside a pointermove handler, which is the #1 cause of drag jank (see batch-4 handoff).
+  function getPaneCurrentWidthPx(paneEl) {
+    return paneEl.getBoundingClientRect().width;
+  }
+
+  // The single function that writes a pane's width. Pure style write, no DOM reads, safe to call once per
+  // animation frame from a drag handler or once from a click handler.
+  function applyWidth(paneKey, widthPx) {
+    const cfg = PANE_DRAG_CONFIG[paneKey];
+    if (!layoutRootEl || !cfg) return null;
+    const clamped = clamp(widthPx, cfg.minWidth, cfg.maxWidth);
+    layoutRootEl.style.setProperty(cfg.varName, `${clamped}px`);
+    return clamped;
+  }
+
+  // Wires one divider to one pane: pointer events + pointer capture (not mousemove on document), width cached
+  // once at pointerdown, DOM writes batched to requestAnimationFrame — see the batch-4 handoff's "Why naive
+  // drag-resize gets laggy" section for why each of these choices matters.
+  function setupPaneDrag(paneKey, dividerEl, paneEl) {
+    if (!dividerEl || !paneEl) return;
+    const cfg = PANE_DRAG_CONFIG[paneKey];
+    let startX = 0;
+    let startWidth = 0;
+    let pendingWidth = null;
+    let rafId = null;
+
+    updateDividerAria(dividerEl, cfg, getPaneCurrentWidthPx(paneEl));
+
+    function onPointerMove(e) {
+      // Pure arithmetic only — no getBoundingClientRect/clientWidth/offsetWidth reads here.
+      const rawRequested = startWidth + (e.clientX - startX); // unclamped, used only for the overshoot check below
+      if (cfg.onOvershoot && rawRequested < cfg.minWidth - AUTO_FLOAT_OVERSHOOT_PX) {
+        // Dragged past minWidth by more than the overshoot buffer — end this drag session cleanly, then
+        // hand off to the pane-specific overshoot behavior (batch 5C), instead of clamping at minWidth like a
+        // normal resize. Reaching exactly minWidth and stopping there is itself a normal, desired resize.
+        dividerEl.removeEventListener('pointermove', onPointerMove);
+        try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+        paneEl.style.willChange = '';
+        dividerEl.classList.remove('dragging');
+        resumeTier1Scaling();
+        cfg.onOvershoot();
+        return;
+      }
+      pendingWidth = clamp(rawRequested, cfg.minWidth, cfg.maxWidth);
+      if (rafId == null) {
+        rafId = requestAnimationFrame(() => {
+          applyWidth(paneKey, pendingWidth);
+          updateDividerAria(dividerEl, cfg, pendingWidth);
+          rafId = null;
+        });
+      }
+    }
+
+    function onPointerUp(e) {
+      dividerEl.removeEventListener('pointermove', onPointerMove);
+      try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+      paneEl.style.willChange = '';
+      dividerEl.classList.remove('dragging');
+      resumeTier1Scaling();
+    }
+
+    dividerEl.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return; // primary button/touch only
+      dividerEl.setPointerCapture(e.pointerId);
+      startX = e.clientX;
+      startWidth = getPaneCurrentWidthPx(paneEl); // read once, here only
+      paneEl.style.willChange = 'width';
+      dividerEl.classList.add('dragging');
+      pauseTier1Scaling();
+      dividerEl.addEventListener('pointermove', onPointerMove);
+      dividerEl.addEventListener('pointerup', onPointerUp, { once: true });
+    });
+
+    // Left/Right step the pane's width, Shift+Left/Right take a bigger step, Home/End jump to min/max.
+    dividerEl.addEventListener('keydown', (e) => {
+      const current = getPaneCurrentWidthPx(paneEl);
+      let targetWidth;
+      if (e.key === 'ArrowLeft') {
+        targetWidth = current - (e.shiftKey ? KEY_STEP_LARGE : KEY_STEP);
+      } else if (e.key === 'ArrowRight') {
+        targetWidth = current + (e.shiftKey ? KEY_STEP_LARGE : KEY_STEP);
+      } else if (e.key === 'Home') {
+        targetWidth = cfg.minWidth;
+      } else if (e.key === 'End') {
+        targetWidth = cfg.maxWidth;
+      } else {
+        return;
+      }
+      e.preventDefault();
+      const clamped = applyWidth(paneKey, targetWidth);
+      updateDividerAria(dividerEl, cfg, clamped);
+    });
+  }
+
+  setupPaneDrag('source', sourcePanelDividerEl, sourcePaneEl);
+  setupPaneDrag('pane1', pane1DividerEl, pane1);
+  setupPaneDrag('motherPane', motherPaneDividerEl, motherPaneEl);
+
+  // ---------- Internal pane2/pane3 fr-split drag (batch 5A) ----------
+  // #pane2Divider now resizes the pane2:pane3 ratio *inside* #motherPane only — it can't reuse setupPaneDrag()
+  // as-is because that function writes a single px custom property; this one writes two fr custom properties
+  // computed relative to #motherPane's own content width. --pane2-fr/--pane3-fr live on #layoutRoot (same as
+  // every other pane width var) and drive #motherPane's own grid-template-columns in styles.css — dragging
+  // divider A/B (Pane 1 or #motherPane's own outer-grid width) changes #motherPane's total width for free via
+  // fr units, with no JS recompute needed on that path; this function only fires when the internal divider
+  // itself moves. Same performance discipline as setupPaneDrag(): one bounding-rect read at pointerdown only,
+  // arithmetic-only in pointermove, single requestAnimationFrame-batched write, pointer capture.
+  const INTERNAL_SPLIT_TOTAL_FR = 2;
+  const INTERNAL_SPLIT_MIN_FR = 0.4;  // ASSUMPTION — confirm neither pane visually collapses at this ratio
+  const INTERNAL_SPLIT_MAX_FR = INTERNAL_SPLIT_TOTAL_FR - INTERNAL_SPLIT_MIN_FR;
+  const INTERNAL_SPLIT_KEY_STEP = 0.1;
+  const INTERNAL_SPLIT_KEY_STEP_LARGE = 0.3;
+
+  // The single function that writes the internal split. Pure style write, no DOM reads, safe to call once per
+  // animation frame from the drag handler or once from the keydown handler.
+  function applyInternalSplit(pane2Fr) {
+    const clamped = clamp(pane2Fr, INTERNAL_SPLIT_MIN_FR, INTERNAL_SPLIT_MAX_FR);
+    // Unit suffix must match whichever #motherPane CSS rule is currently active (toggled by
+    // data-5f-fix): pre-5F expects a bare number for its calc(var(...) * 1fr), post-5F expects
+    // the property to already carry the unit. Writing 'fr' unconditionally here (as production's
+    // already-fixed main.js does) breaks the pre-5F repro state — calc(1fr * 1fr) is invalid,
+    // since calc() can't multiply two <flex> values, and collapses grid-template-columns to none.
+    const suffix = document.body.hasAttribute('data-5f-fix') ? 'fr' : '';
+    layoutRootEl.style.setProperty('--pane2-fr', clamped + suffix);
+    layoutRootEl.style.setProperty('--pane3-fr', (INTERNAL_SPLIT_TOTAL_FR - clamped) + suffix);
+    return clamped;
+  }
+
+  // Reads the current pane2 fr value once. Only called at drag start, from the keydown handler, or to seed
+  // aria attributes — NEVER from inside a pointermove handler.
+  function getCurrentPane2Fr() {
+    const raw = getComputedStyle(layoutRootEl).getPropertyValue('--pane2-fr').trim();
+    const parsed = parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : INTERNAL_SPLIT_TOTAL_FR / 2;
+  }
+
+  // Syncs the internal divider's aria-value* attributes with the current pane2 fr share.
+  function updateInternalSplitAria(dividerEl, pane2Fr) {
+    dividerEl.setAttribute('aria-valuemin', String(INTERNAL_SPLIT_MIN_FR));
+    dividerEl.setAttribute('aria-valuemax', String(INTERNAL_SPLIT_MAX_FR));
+    dividerEl.setAttribute('aria-valuenow', pane2Fr.toFixed(2));
+  }
+
+  function setupInternalSplitDrag(dividerEl, motherPaneEl) {
+    if (!dividerEl || !motherPaneEl) return;
+    let startX = 0, startFr = 0, motherWidthPx = 0, pendingFr = null, rafId = null;
+
+    updateInternalSplitAria(dividerEl, getCurrentPane2Fr());
+
+    function onPointerMove(e) {
+      // Pure arithmetic only — no getBoundingClientRect reads here.
+      const deltaFr = ((e.clientX - startX) / motherWidthPx) * INTERNAL_SPLIT_TOTAL_FR;
+      pendingFr = clamp(startFr + deltaFr, INTERNAL_SPLIT_MIN_FR, INTERNAL_SPLIT_MAX_FR);
+      if (rafId == null) {
+        rafId = requestAnimationFrame(() => {
+          applyInternalSplit(pendingFr);
+          updateInternalSplitAria(dividerEl, pendingFr);
+          rafId = null;
+        });
+      }
+    }
+    function onPointerUp(e) {
+      dividerEl.removeEventListener('pointermove', onPointerMove);
+      try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+      motherPaneEl.style.willChange = '';
+      dividerEl.classList.remove('dragging');
+      resumeTier1Scaling();
+    }
+    dividerEl.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return; // primary button/touch only
+      dividerEl.setPointerCapture(e.pointerId);
+      startX = e.clientX;
+      startFr = getCurrentPane2Fr();
+      motherWidthPx = motherPaneEl.getBoundingClientRect().width; // read once, here only
+      motherPaneEl.style.willChange = 'grid-template-columns';
+      dividerEl.classList.add('dragging');
+      pauseTier1Scaling();
+      dividerEl.addEventListener('pointermove', onPointerMove);
+      dividerEl.addEventListener('pointerup', onPointerUp, { once: true });
+    });
+
+    // Left/Right step the pane2 fr share, Shift+Left/Right take a bigger step, Home/End jump to min/max.
+    dividerEl.addEventListener('keydown', (e) => {
+      const current = getCurrentPane2Fr();
+      let targetFr;
+      if (e.key === 'ArrowLeft') {
+        targetFr = current - (e.shiftKey ? INTERNAL_SPLIT_KEY_STEP_LARGE : INTERNAL_SPLIT_KEY_STEP);
+      } else if (e.key === 'ArrowRight') {
+        targetFr = current + (e.shiftKey ? INTERNAL_SPLIT_KEY_STEP_LARGE : INTERNAL_SPLIT_KEY_STEP);
+      } else if (e.key === 'Home') {
+        targetFr = INTERNAL_SPLIT_MIN_FR;
+      } else if (e.key === 'End') {
+        targetFr = INTERNAL_SPLIT_MAX_FR;
+      } else {
+        return;
+      }
+      e.preventDefault();
+      const clamped = applyInternalSplit(targetFr);
+      updateInternalSplitAria(dividerEl, clamped);
+    });
+  }
+
+  setupInternalSplitDrag(pane2DividerEl, motherPaneEl);
+
+  // Note: production also wires a sourcePanelToggleBtn click handler here (batch-4 decision #3) that snaps
+  // --source-panel-w between collapsed/expanded presets via applyWidth(). It's omitted entirely in this
+  // replica — no such button exists here, per the handoff's "no navbar/source-stack UI" scope — rather than
+  // included as dead code referencing a null element.
+
+})();
+</script>
+</body>
+</html>

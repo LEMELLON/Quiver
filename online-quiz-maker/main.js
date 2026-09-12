@@ -41,6 +41,19 @@ import {
   sourcePaneEl,
   layoutRootEl,
   sourcePanelToggleBtn,
+  pane1,
+  pane1DividerEl,
+  pane2DividerEl,
+  motherPaneEl,
+  motherPaneDividerEl,
+  pane1FloatToggleBtn,
+  pane1FloatShell,
+  pane1FloatHeader,
+  pane1FloatBody,
+  pane1CollapseToggleBtn,
+  pane1DockBtn,
+  termPanelPopup,
+  termPanelToggleBtn,
 } from './dom-refs.js';
 
 // Clicking a shared highlight mark activates the first question id in its data-qid list.
@@ -178,35 +191,43 @@ if (sourceStackAreaEl) {
   });
 }
 
-// ---------- Source panel + Pane 2 continuous drag-resize (batch 4) ----------
-// applyWidth() is the ONLY place that writes --source-panel-w / --pane2-w on #layoutRoot — both the drag
-// handlers below and the toggle button's click handler funnel through it, per the batch-4 handoff's
-// requirement that there be a single code path for writing a pane's width. Not exported/read from
-// dom-refs.js: sourcePanelDivider/pane2Divider/pane2El aren't in that module (it wasn't available to edit
-// as part of this batch), so they're looked up directly here. Worth migrating into dom-refs.js later for
-// consistency with the rest of the file's DOM references — flagged in the batch-4 handback, not done here.
-const sourcePanelDividerEl = document.getElementById('sourcePanelDivider');
-const pane2DividerEl = document.getElementById('pane2Divider');
-const pane2El = document.getElementById('pane2');
+// ---------- Source panel / Pane 1 / #motherPane continuous drag-resize (batch 4, restructured in 5A) ----------
+// applyWidth() is the ONLY place that writes --source-panel-w / --pane1-w / --mother-pane-w on #layoutRoot —
+// both the drag handlers below and the toggle button's click handler funnel through it, per the batch-4
+// handoff's requirement that there be a single code path for writing a pane's width. The internal pane2/pane3
+// fr-split has its own single-writer function, applyInternalSplit(), a few lines below setupPaneDrag().
 
 // minWidth/maxWidth for the source panel are grounded in batch 3's actual CSS (96px collapsed thumb-only
-// row) and the handoff's own values. pane2's min/max and the source panel's expandedWidth are NOT specified
-// anywhere in the handoff — these are reasonable placeholder defaults, not extracted from a spec, and should
-// be confirmed against the real design before shipping (flagged in the batch-4 handback).
+// row) and the handoff's own values. pane1/motherPane's min/max and the source panel's expandedWidth are NOT
+// specified anywhere in the handoff — these are reasonable placeholder defaults, not extracted from a spec,
+// and should be confirmed against the real design before shipping (flagged in the batch-4 and 5A handbacks).
 const PANE_DRAG_CONFIG = {
+  // minWidth/maxWidth removed (source-panel-overlay handoff): they existed only to feed setupPaneDrag()'s
+  // clamp/aria logic for #sourcePanelDivider, which is gone. --source-panel-w is now a load-time constant
+  // (styles.css) with a single writer nowhere near this config; expandedWidth now only seeds the overlay's
+  // --source-panel-overlay-w var via the toggle handler below.
   source: {
     varName: '--source-panel-w',
-    minWidth: 96,          // thumb-only collapsed width — matches batch 3's CSS and the .source-stack-meta breakpoint
-    maxWidth: 480,          // ASSUMPTION — not specified in the handoff
     collapsedWidth: 96,
-    expandedWidth: 320,     // ASSUMPTION — approximate fixed-px stand-in for the old minmax(220px, 0.8fr); the
-                             // handoff itself flagged minmax() as having "patchy behavior" as a custom-property
-                             // value, so a fixed px was used instead per its own suggestion. Not visually verified.
+    expandedWidth: 320, // now only seeds --source-panel-overlay-w
   },
-  pane2: {
-    varName: '--pane2-w',
-    minWidth: 260,          // ASSUMPTION — not specified in the handoff
-    maxWidth: 900,          // ASSUMPTION — not specified in the handoff
+  // pane2 is no longer a px-tracked pane on the outer grid as of batch 5A — it's the fr-split inside
+  // #motherPane now (see applyInternalSplit()/setupInternalSplitDrag() below). pane1 and motherPane take
+  // over the outer-grid px tracks that Pane 1/Pane 3's old bare-1.4fr columns used to occupy.
+  pane1: {
+    varName: '--pane1-w',
+    minWidth: 380,   // ASSUMPTION — confirm against design.
+    maxWidth: 640,   // ASSUMPTION — static ceiling only; getMaxWidth() below can tighten it further at drag time.
+    // Static maxWidth alone isn't safe: #motherPane's grid track is minmax(var(--mother-pane-w), 1fr)
+    // (styles.css), so growing pane1 past `viewport content width - source-panel-w - mother-pane-w's current
+    // floor` forces the grid wider than the viewport instead of actually shrinking #motherPane. getMaxWidth()
+    // computes that live ceiling; setupPaneDrag takes the smaller of this and the static maxWidth.
+    getMaxWidth: () => getPane1EffectiveMaxWidth(),
+  },
+  motherPane: {
+    varName: '--mother-pane-w',
+    minWidth: 480,   // ASSUMPTION
+    maxWidth: 1400,  // ASSUMPTION
   },
 };
 
@@ -214,10 +235,42 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+// Step sizes for keyboard resizing.
+const KEY_STEP = 16;
+const KEY_STEP_LARGE = 48;
+
+// Syncs a divider's aria-value* attributes with the pane's current width.
+function updateDividerAria(dividerEl, cfg, widthPx) {
+  dividerEl.setAttribute('aria-valuemin', String(cfg.minWidth));
+  dividerEl.setAttribute('aria-valuemax', String(cfg.maxWidth));
+  dividerEl.setAttribute('aria-valuenow', String(Math.round(widthPx)));
+}
+
 // Reads a pane's current rendered width once. Only ever called at drag start or from the toggle button —
 // NEVER from inside a pointermove handler, which is the #1 cause of drag jank (see batch-4 handoff).
 function getPaneCurrentWidthPx(paneEl) {
   return paneEl.getBoundingClientRect().width;
+}
+
+// Pane 1's effective max width isn't just PANE_DRAG_CONFIG.pane1.maxWidth — it also can't be allowed to grow
+// past however much room is actually left before #motherPane would be pushed below its own current floor.
+// #motherPane's grid track is minmax(var(--mother-pane-w), 1fr) (styles.css), so that floor is whatever
+// --mother-pane-w is *currently* set to (last value #motherPaneDivider was dragged to), not
+// PANE_DRAG_CONFIG.motherPane.minWidth — those are two independent numbers. Reads live (clientWidth, computed
+// padding/gap, current --mother-pane-w, current source panel width) rather than caching, since viewport size
+// and --mother-pane-w can each change independently of a pane1 drag. Called once at pointerdown/keydown, same
+// "read at drag start only" discipline as startWidth above — never from inside onPointerMove.
+function getPane1EffectiveMaxWidth() {
+  const cfg = PANE_DRAG_CONFIG.pane1;
+  if (!layoutRootEl || !sourcePaneEl) return cfg.maxWidth;
+  const rootStyles = getComputedStyle(layoutRootEl);
+  const contentWidth = layoutRootEl.clientWidth
+    - parseFloat(rootStyles.paddingLeft) - parseFloat(rootStyles.paddingRight);
+  const gapPx = parseFloat(rootStyles.columnGap) || 0; // 2 gaps: source↔pane1, pane1↔motherPane
+  const sourcePanelWidth = getPaneCurrentWidthPx(sourcePaneEl);
+  const motherPaneFloor = parseFloat(rootStyles.getPropertyValue('--mother-pane-w')) || PANE_DRAG_CONFIG.motherPane.minWidth;
+  const available = contentWidth - gapPx * 2 - sourcePanelWidth - motherPaneFloor;
+  return Math.min(cfg.maxWidth, Math.max(cfg.minWidth, available));
 }
 
 // The single function that writes a pane's width. Pure style write, no DOM reads, safe to call once per
@@ -240,13 +293,18 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
   let startWidth = 0;
   let pendingWidth = null;
   let rafId = null;
+  let dragMaxWidth = cfg.maxWidth; // recomputed at pointerdown below when cfg.getMaxWidth exists (pane1 only)
+
+  updateDividerAria(dividerEl, cfg, getPaneCurrentWidthPx(paneEl));
 
   function onPointerMove(e) {
     // Pure arithmetic only — no getBoundingClientRect/clientWidth/offsetWidth reads here.
-    pendingWidth = clamp(startWidth + (e.clientX - startX), cfg.minWidth, cfg.maxWidth);
+    const rawRequested = startWidth + (e.clientX - startX);
+    pendingWidth = clamp(rawRequested, cfg.minWidth, dragMaxWidth);
     if (rafId == null) {
       rafId = requestAnimationFrame(() => {
         applyWidth(paneKey, pendingWidth);
+        updateDividerAria(dividerEl, cfg, pendingWidth);
         rafId = null;
       });
     }
@@ -257,7 +315,7 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
     try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
     paneEl.style.willChange = '';
     dividerEl.classList.remove('dragging');
-    resumeTier1Scaling(); // resumes the PPTX Tier 1 ResizeObserver paused at pointerdown
+    resumeTier1Scaling();
   }
 
   dividerEl.addEventListener('pointerdown', (e) => {
@@ -265,32 +323,354 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
     dividerEl.setPointerCapture(e.pointerId);
     startX = e.clientX;
     startWidth = getPaneCurrentWidthPx(paneEl); // read once, here only
+    dragMaxWidth = cfg.getMaxWidth ? Math.min(cfg.maxWidth, cfg.getMaxWidth()) : cfg.maxWidth;
     paneEl.style.willChange = 'width';
     dividerEl.classList.add('dragging');
-    pauseTier1Scaling(); // suspends the PPTX Tier 1 ResizeObserver for the duration of the drag
+    pauseTier1Scaling();
     dividerEl.addEventListener('pointermove', onPointerMove);
     dividerEl.addEventListener('pointerup', onPointerUp, { once: true });
   });
+
+  // Left/Right step the pane's width, Shift+Left/Right take a bigger step, Home/End jump to min/max.
+  dividerEl.addEventListener('keydown', (e) => {
+    const current = getPaneCurrentWidthPx(paneEl);
+    // Cheap to recompute per keypress (not a drag loop) — same dynamic ceiling as the pointer-drag path above.
+    const effectiveMaxWidth = cfg.getMaxWidth ? Math.min(cfg.maxWidth, cfg.getMaxWidth()) : cfg.maxWidth;
+    let targetWidth;
+    if (e.key === 'ArrowLeft') {
+      targetWidth = current - (e.shiftKey ? KEY_STEP_LARGE : KEY_STEP);
+    } else if (e.key === 'ArrowRight') {
+      targetWidth = current + (e.shiftKey ? KEY_STEP_LARGE : KEY_STEP);
+    } else if (e.key === 'Home') {
+      targetWidth = cfg.minWidth;
+    } else if (e.key === 'End') {
+      targetWidth = effectiveMaxWidth;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    const clamped = applyWidth(paneKey, Math.min(targetWidth, effectiveMaxWidth));
+    updateDividerAria(dividerEl, cfg, clamped);
+  });
 }
 
-setupPaneDrag('source', sourcePanelDividerEl, sourcePaneEl);
-setupPaneDrag('pane2', pane2DividerEl, pane2El);
+setupPaneDrag('pane1', pane1DividerEl, pane1);
+setupPaneDrag('motherPane', motherPaneDividerEl, motherPaneEl);
 
-// Toggle button: snaps --source-panel-w between the collapsed/expanded presets through the same applyWidth()
-// the drag handler above uses (batch-4 decision #3 — kept, not removed, so keyboard/screen-reader users can
-// still expand/collapse without pointer drag). .source-panel-expanded stays on #sourcePane only, for
-// .source-stack-meta's show/hide in styles.css — that rule is unrelated to width and isn't being replaced.
+// ---------- Internal pane2/pane3 fr-split drag (batch 5A) ----------
+// #pane2Divider now resizes the pane2:pane3 ratio *inside* #motherPane only — it can't reuse setupPaneDrag()
+// as-is because that function writes a single px custom property; this one writes two fr custom properties
+// computed relative to #motherPane's own content width. --pane2-fr/--pane3-fr live on #layoutRoot (same as
+// every other pane width var) and drive #motherPane's own grid-template-columns in styles.css — dragging
+// divider A/B (Pane 1 or #motherPane's own outer-grid width) changes #motherPane's total width for free via
+// fr units, with no JS recompute needed on that path; this function only fires when the internal divider
+// itself moves. Same performance discipline as setupPaneDrag(): one bounding-rect read at pointerdown only,
+// arithmetic-only in pointermove, single requestAnimationFrame-batched write, pointer capture.
+const INTERNAL_SPLIT_TOTAL_FR = 2;
+const INTERNAL_SPLIT_MIN_FR = 0.4;  // ASSUMPTION — confirm neither pane visually collapses at this ratio
+const INTERNAL_SPLIT_MAX_FR = INTERNAL_SPLIT_TOTAL_FR - INTERNAL_SPLIT_MIN_FR;
+const INTERNAL_SPLIT_KEY_STEP = 0.1;
+const INTERNAL_SPLIT_KEY_STEP_LARGE = 0.3;
+
+// The single function that writes the internal split. Pure style write, no DOM reads, safe to call once per
+// animation frame from the drag handler or once from the keydown handler.
+function applyInternalSplit(pane2Fr) {
+  const clamped = clamp(pane2Fr, INTERNAL_SPLIT_MIN_FR, INTERNAL_SPLIT_MAX_FR);
+  layoutRootEl.style.setProperty('--pane2-fr', clamped + 'fr');
+  layoutRootEl.style.setProperty('--pane3-fr', (INTERNAL_SPLIT_TOTAL_FR - clamped) + 'fr');
+  return clamped;
+}
+
+// Reads the current pane2 fr value once. Only called at drag start, from the keydown handler, or to seed
+// aria attributes — NEVER from inside a pointermove handler.
+function getCurrentPane2Fr() {
+  const raw = getComputedStyle(layoutRootEl).getPropertyValue('--pane2-fr').trim();
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : INTERNAL_SPLIT_TOTAL_FR / 2;
+}
+
+// Syncs the internal divider's aria-value* attributes with the current pane2 fr share.
+function updateInternalSplitAria(dividerEl, pane2Fr) {
+  dividerEl.setAttribute('aria-valuemin', String(INTERNAL_SPLIT_MIN_FR));
+  dividerEl.setAttribute('aria-valuemax', String(INTERNAL_SPLIT_MAX_FR));
+  dividerEl.setAttribute('aria-valuenow', pane2Fr.toFixed(2));
+}
+
+function setupInternalSplitDrag(dividerEl, motherPaneEl) {
+  if (!dividerEl || !motherPaneEl) return;
+  let startX = 0, startFr = 0, motherWidthPx = 0, pendingFr = null, rafId = null;
+
+  updateInternalSplitAria(dividerEl, getCurrentPane2Fr());
+
+  function onPointerMove(e) {
+    // Pure arithmetic only — no getBoundingClientRect reads here.
+    const deltaFr = ((e.clientX - startX) / motherWidthPx) * INTERNAL_SPLIT_TOTAL_FR;
+    pendingFr = clamp(startFr + deltaFr, INTERNAL_SPLIT_MIN_FR, INTERNAL_SPLIT_MAX_FR);
+    if (rafId == null) {
+      rafId = requestAnimationFrame(() => {
+        applyInternalSplit(pendingFr);
+        updateInternalSplitAria(dividerEl, pendingFr);
+        rafId = null;
+      });
+    }
+  }
+  function onPointerUp(e) {
+    dividerEl.removeEventListener('pointermove', onPointerMove);
+    try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+    motherPaneEl.style.willChange = '';
+    dividerEl.classList.remove('dragging');
+    resumeTier1Scaling();
+  }
+  dividerEl.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return; // primary button/touch only
+    dividerEl.setPointerCapture(e.pointerId);
+    startX = e.clientX;
+    startFr = getCurrentPane2Fr();
+    motherWidthPx = motherPaneEl.getBoundingClientRect().width; // read once, here only
+    motherPaneEl.style.willChange = 'grid-template-columns';
+    dividerEl.classList.add('dragging');
+    pauseTier1Scaling();
+    dividerEl.addEventListener('pointermove', onPointerMove);
+    dividerEl.addEventListener('pointerup', onPointerUp, { once: true });
+  });
+
+  // Left/Right step the pane2 fr share, Shift+Left/Right take a bigger step, Home/End jump to min/max.
+  dividerEl.addEventListener('keydown', (e) => {
+    const current = getCurrentPane2Fr();
+    let targetFr;
+    if (e.key === 'ArrowLeft') {
+      targetFr = current - (e.shiftKey ? INTERNAL_SPLIT_KEY_STEP_LARGE : INTERNAL_SPLIT_KEY_STEP);
+    } else if (e.key === 'ArrowRight') {
+      targetFr = current + (e.shiftKey ? INTERNAL_SPLIT_KEY_STEP_LARGE : INTERNAL_SPLIT_KEY_STEP);
+    } else if (e.key === 'Home') {
+      targetFr = INTERNAL_SPLIT_MIN_FR;
+    } else if (e.key === 'End') {
+      targetFr = INTERNAL_SPLIT_MAX_FR;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    const clamped = applyInternalSplit(targetFr);
+    updateInternalSplitAria(dividerEl, clamped);
+  });
+}
+
+setupInternalSplitDrag(pane2DividerEl, motherPaneEl);
+
+// Toggle button: expands the source panel as an absolutely-positioned overlay (styles.css's
+// #sourcePane.source-panel-overlay) instead of growing the grid track — --source-panel-w is never written
+// here anymore; it's set once at page load and stays a constant for the session. .source-panel-expanded
+// stays on #sourcePane only, for .source-stack-meta's show/hide in styles.css — unrelated to width, unchanged.
 if (sourcePanelToggleBtn && sourcePaneEl) {
   sourcePanelToggleBtn.addEventListener('click', () => {
     const cfg = PANE_DRAG_CONFIG.source;
-    const isCurrentlyCollapsed = getPaneCurrentWidthPx(sourcePaneEl) <= cfg.minWidth + 1; // +1px tolerance
-    const expanded = isCurrentlyCollapsed;
-    applyWidth('source', expanded ? cfg.expandedWidth : cfg.collapsedWidth);
-    sourcePaneEl.classList.toggle('source-panel-expanded', expanded);
+    const isOpen = sourcePaneEl.classList.contains('source-panel-overlay');
+    const expanded = !isOpen;
+    if (expanded) {
+      layoutRootEl.style.setProperty('--source-panel-overlay-w', `${cfg.expandedWidth}px`);
+    }
+    sourcePaneEl.classList.toggle('source-panel-overlay', expanded);
+    sourcePaneEl.classList.toggle('source-panel-expanded', expanded); // unchanged — still drives .source-stack-meta's show/hide
     sourcePanelToggleBtn.setAttribute('aria-expanded', String(expanded));
     sourcePanelToggleBtn.title = expanded ? 'Collapse source panel' : 'Expand source panel';
   });
 }
+
+// ---------- Floating Pane 1 (batch 5B) ----------
+// Manual-trigger only — #pane1FloatToggleBtn is the only way to enter/exit windowed mode.
+// #pane1's actual DOM node is reparented (not cloned/rebuilt) between #layoutRoot and #pane1FloatBody, so
+// every existing listener/ref on it (question nav, add/remove, editor fields, etc.) keeps working untouched —
+// nothing else needs to know #pane1 moved. Note: #pane1 still carries its own lg:sticky/lg:max-h-[...]
+// Tailwind utilities from the grid layout; these are inert once it's inside the shell's own flex/overflow
+// container, but flag if any visual quirk shows up there — not addressed in this batch.
+let pane1Floating = false;
+
+// Reads/writes the shell's position once per call — used at drag-end-adjacent points (inside the drag's rAF
+// callback, once per frame, and on window resize), not on every raw pointermove tick. This is the project's
+// existing "one read per frame, not per event" discipline rather than setupPaneDrag's stricter "zero reads in
+// pointermove" rule — if this causes jank in practice, move the clamp to pointerup-only instead of every rAF tick.
+function clampShellToViewport() {
+  if (!pane1FloatShell) return;
+  const rect = pane1FloatShell.getBoundingClientRect();
+  const maxLeft = Math.max(0, window.innerWidth - rect.width);
+  const maxTop = Math.max(0, window.innerHeight - rect.height);
+  const currentLeft = parseFloat(pane1FloatShell.style.left) || 0;
+  const currentTop = parseFloat(pane1FloatShell.style.top) || 0;
+  pane1FloatShell.style.left = `${clamp(currentLeft, 0, maxLeft)}px`;
+  pane1FloatShell.style.top = `${clamp(currentTop, 0, maxTop)}px`;
+}
+
+// Undocks #pane1 into the floating shell. The outer grid's --pane1-w track collapses out entirely (via the
+// .pane1-floating class in styles.css) so #motherPane reclaims the freed space, rather than leaving a dead gap.
+function floatPane1() {
+  if (pane1Floating || !pane1FloatShell || !pane1FloatBody || !pane1) return;
+  pane1Floating = true;
+  pane1FloatBody.appendChild(pane1);
+  pane1FloatShell.classList.remove('hidden');
+  layoutRootEl.classList.add('pane1-floating');
+  pane1FloatToggleBtn.setAttribute('aria-pressed', 'true');
+  clampShellToViewport();
+  if (termPanelOpen) closeTermPanel(); // closes rather than trying to live-reposition against a moving anchor mid-transition
+}
+
+// Redocks #pane1 back into #layoutRoot. Grid order is fixed (source, pane1, motherPane — #termPanelPopup is a
+// fixed-position sibling outside grid flow, not a track, so it never needs to be accounted for here), so this
+// is just an insertBefore against #motherPane — no separate anchor/bookmark node needs to be tracked.
+function dockPane1() {
+  if (!pane1Floating || !pane1 || !motherPaneEl) return;
+  pane1Floating = false;
+  layoutRootEl.insertBefore(pane1, motherPaneEl);
+  pane1FloatShell.classList.add('hidden');
+  layoutRootEl.classList.remove('pane1-floating');
+  pane1FloatToggleBtn.setAttribute('aria-pressed', 'false');
+  if (termPanelOpen) closeTermPanel(); // closes rather than trying to live-reposition against a moving anchor mid-transition
+}
+
+if (pane1FloatToggleBtn) {
+  pane1FloatToggleBtn.addEventListener('click', () => {
+    pane1Floating ? dockPane1() : floatPane1();
+  });
+}
+if (pane1DockBtn) pane1DockBtn.addEventListener('click', dockPane1);
+
+// ---------- Term panel popup (batch: Term Panel as a Pane-1 Popup handoff) ----------
+// Manually toggled only (never auto-shown). Positioning and z-index both depend on
+// pane1Floating at the moment it's opened — docked and floating each get a distinct
+// anchor and z-index (see the two branches below). Closes automatically on any
+// dock/float transition rather than trying to live-reposition against a moving anchor
+// mid-transition (see the ADDED lines inside floatPane1()/dockPane1() above), and on
+// window resize / outside click / Escape (see further below).
+let termPanelOpen = false;
+
+function positionTermPanelDocked() {
+  if (!pane1 || !termPanelPopup) return;
+  const rect = pane1.getBoundingClientRect();
+  termPanelPopup.style.zIndex = '20'; // same slot #termBarDetails' old standalone popup used pre-Move-Into-Pane2
+  termPanelPopup.style.top = `${Math.max(8, rect.top)}px`;
+  termPanelPopup.style.left = `${rect.right + 12}px`;
+}
+
+function positionTermPanelFloating() {
+  if (!pane1FloatShell || !termPanelPopup) return;
+  const rect = pane1FloatShell.getBoundingClientRect();
+  termPanelPopup.style.zIndex = '46'; // one above .pane1-float-shell's 45, still below #quizCodeModal's 50
+  termPanelPopup.style.top = `${rect.top}px`;
+  termPanelPopup.style.left = `${rect.right + 12}px`;
+}
+
+// Clamps the already-positioned popup to stay fully on-screen, same spirit as clampShellToViewport() —
+// called after either positioning branch above.
+function clampTermPanelToViewport() {
+  if (!termPanelPopup) return;
+  const rect = termPanelPopup.getBoundingClientRect();
+  const maxLeft = Math.max(0, window.innerWidth - rect.width);
+  const maxTop = Math.max(0, window.innerHeight - rect.height);
+  const currentLeft = parseFloat(termPanelPopup.style.left) || 0;
+  const currentTop = parseFloat(termPanelPopup.style.top) || 0;
+  termPanelPopup.style.left = `${clamp(currentLeft, 0, maxLeft)}px`;
+  termPanelPopup.style.top = `${clamp(currentTop, 0, maxTop)}px`;
+}
+
+function openTermPanel() {
+  if (!termPanelPopup) return;
+  termPanelOpen = true;
+  termPanelPopup.classList.remove('hidden');
+  pane1Floating ? positionTermPanelFloating() : positionTermPanelDocked();
+  clampTermPanelToViewport();
+  if (termPanelToggleBtn) termPanelToggleBtn.setAttribute('aria-pressed', 'true');
+}
+
+function closeTermPanel() {
+  if (!termPanelPopup) return;
+  termPanelOpen = false;
+  termPanelPopup.classList.add('hidden');
+  if (termPanelToggleBtn) termPanelToggleBtn.setAttribute('aria-pressed', 'false');
+}
+
+if (termPanelToggleBtn) {
+  termPanelToggleBtn.addEventListener('click', () => {
+    termPanelOpen ? closeTermPanel() : openTermPanel();
+  });
+}
+
+// Standard popup dismissal: outside click or Escape.
+document.addEventListener('mousedown', (e) => {
+  if (!termPanelOpen) return;
+  if (termPanelPopup.contains(e.target) || e.target === termPanelToggleBtn) return;
+  closeTermPanel();
+});
+document.addEventListener('keydown', (e) => {
+  if (termPanelOpen && e.key === 'Escape') closeTermPanel();
+});
+
+// Collapse toggle: hides the shell body only, independent of dock state — doesn't call floatPane1()/dockPane1().
+if (pane1CollapseToggleBtn && pane1FloatShell) {
+  pane1CollapseToggleBtn.addEventListener('click', () => {
+    const collapsed = pane1FloatShell.classList.toggle('collapsed');
+    pane1CollapseToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    clampShellToViewport(); // header-only height may now fit somewhere it didn't before
+  });
+}
+
+// Drag by header — same pointer-capture/rAF discipline as the pane dividers. Works identically in collapsed
+// and expanded states since it only ever moves the shell's top/left, never touches its height.
+(function setupFloatShellDrag() {
+  if (!pane1FloatHeader || !pane1FloatShell) return;
+  let startX = 0, startY = 0, startLeft = 0, startTop = 0, pending = null, rafId = null;
+
+  function onPointerMove(e) {
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    pending = { left: startLeft + dx, top: startTop + dy };
+    if (rafId == null) {
+      rafId = requestAnimationFrame(() => {
+        pane1FloatShell.style.left = `${pending.left}px`;
+        pane1FloatShell.style.top = `${pending.top}px`;
+        clampShellToViewport();
+        rafId = null;
+      });
+    }
+  }
+  function onPointerUp(e) {
+    pane1FloatHeader.removeEventListener('pointermove', onPointerMove);
+    try { pane1FloatHeader.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+    pane1FloatHeader.classList.remove('dragging');
+  }
+  pane1FloatHeader.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.pane1-float-controls')) return; // don't start a drag from the buttons
+    if (e.button !== undefined && e.button !== 0) return;
+    pane1FloatHeader.setPointerCapture(e.pointerId);
+    const rect = pane1FloatShell.getBoundingClientRect();
+    startX = e.clientX; startY = e.clientY;
+    startLeft = rect.left; startTop = rect.top;
+    pane1FloatHeader.classList.add('dragging');
+    pane1FloatHeader.addEventListener('pointermove', onPointerMove);
+    pane1FloatHeader.addEventListener('pointerup', onPointerUp, { once: true });
+  });
+})();
+
+// Re-clamp on window resize so a floating shell never gets stranded off-screen.
+window.addEventListener('resize', () => {
+  if (pane1Floating) clampShellToViewport();
+  // A resize can invalidate the term popup's anchor-relative position the same way it can for the float
+  // shell; re-deriving position on resize is more complexity than this feature needs, so just close it.
+  if (termPanelOpen) closeTermPanel();
+});
+
+// rAF-batched the same way setupPaneDrag() batches pointermove reads/writes ("recorded... once per
+// frame... not on every raw pointermove tick") — re-anchors the term popup on scroll instead of
+// recomputing layout on every raw scroll tick. capture: true so this also catches scrolls inside
+// inner containers (#docTextViewport etc.), not just the document itself.
+let termPanelScrollRaf = null;
+window.addEventListener('scroll', () => {
+  if (!termPanelOpen) return;
+  if (termPanelScrollRaf) return;
+  termPanelScrollRaf = requestAnimationFrame(() => {
+    termPanelScrollRaf = null;
+    pane1Floating ? positionTermPanelFloating() : positionTermPanelDocked();
+    clampTermPanelToViewport();
+  });
+}, { passive: true, capture: true });
 
 // Makes the given source active, updates Pane 3/2 to its first page, and opens its first question in the editor.
 // { skipAutoSelect: true } skips that last auto-select step — used when the caller (e.g. the term-panel
@@ -531,10 +911,7 @@ if (sourceListEl) {
   });
 }
 
-// Lets editor-render.js's term-panel handlers (filterByTerm, viewFlaggedQuestion) trigger a full
-// source switch — same dependency direction as resetTermSearchOnSourceSwitch, just the opposite way.
 registerSourceSwitcher(openSource);
 
-// ---------- Init ----------
 renderTextVersion();
 addQuestion();
