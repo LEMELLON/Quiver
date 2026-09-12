@@ -178,24 +178,6 @@ if (sourceStackAreaEl) {
   });
 }
 
-<<<<<<< Updated upstream
-// ---------- Source panel + Pane 2 continuous drag-resize (batch 4) ----------
-// applyWidth() is the ONLY place that writes --source-panel-w / --pane2-w on #layoutRoot — both the drag
-// handlers below and the toggle button's click handler funnel through it, per the batch-4 handoff's
-// requirement that there be a single code path for writing a pane's width. Not exported/read from
-// dom-refs.js: sourcePanelDivider/pane2Divider/pane2El aren't in that module (it wasn't available to edit
-// as part of this batch), so they're looked up directly here. Worth migrating into dom-refs.js later for
-// consistency with the rest of the file's DOM references — flagged in the batch-4 handback, not done here.
-const sourcePanelDividerEl = document.getElementById('sourcePanelDivider');
-const pane2DividerEl = document.getElementById('pane2Divider');
-const pane2El = document.getElementById('pane2');
-
-// minWidth/maxWidth for the source panel are grounded in batch 3's actual CSS (96px collapsed thumb-only
-// row) and the handoff's own values. pane2's min/max and the source panel's expandedWidth are NOT specified
-// anywhere in the handoff — these are reasonable placeholder defaults, not extracted from a spec, and should
-// be confirmed against the real design before shipping (flagged in the batch-4 handback).
-const PANE_DRAG_CONFIG = {
-=======
 // ---------- Source panel / Pane 1 / #motherPane continuous drag-resize ----------
 // applyWidth() is the ONLY place that writes --source-panel-w / --pane1-w / --mother-pane-w on #layoutRoot —
 // both the drag handlers below and the toggle button's click handler funnel through it, so there's a single
@@ -204,22 +186,11 @@ const PANE_DRAG_CONFIG = {
 const PANE_DRAG_CONFIG = {
   // --source-panel-w is a load-time constant (styles.css) with no runtime writer; expandedWidth only seeds
   // the overlay's --source-panel-overlay-w var via the toggle handler below.
->>>>>>> Stashed changes
   source: {
     varName: '--source-panel-w',
     minWidth: 96,          // thumb-only collapsed width — matches batch 3's CSS and the .source-stack-meta breakpoint
     maxWidth: 480,          // ASSUMPTION — not specified in the handoff
     collapsedWidth: 96,
-<<<<<<< Updated upstream
-    expandedWidth: 320,     // ASSUMPTION — approximate fixed-px stand-in for the old minmax(220px, 0.8fr); the
-                             // handoff itself flagged minmax() as having "patchy behavior" as a custom-property
-                             // value, so a fixed px was used instead per its own suggestion. Not visually verified.
-  },
-  pane2: {
-    varName: '--pane2-w',
-    minWidth: 260,          // ASSUMPTION — not specified in the handoff
-    maxWidth: 900,          // ASSUMPTION — not specified in the handoff
-=======
     expandedWidth: 320, // seeds --source-panel-overlay-w
   },
   // pane2/pane3 are the fr-split inside #motherPane (see applyInternalSplit()/setupInternalSplitDrag()
@@ -238,7 +209,6 @@ const PANE_DRAG_CONFIG = {
     varName: '--mother-pane-w',
     minWidth: 480,   // ASSUMPTION
     maxWidth: 1400,  // ASSUMPTION
->>>>>>> Stashed changes
   },
 };
 
@@ -252,8 +222,6 @@ function getPaneCurrentWidthPx(paneEl) {
   return paneEl.getBoundingClientRect().width;
 }
 
-<<<<<<< Updated upstream
-=======
 // Pane 1's effective max width isn't just PANE_DRAG_CONFIG.pane1.maxWidth — it also can't grow past however
 // much room is left before #motherPane would be pushed below its own current floor (--mother-pane-w, the
 // last value #motherPaneDivider was dragged to — not PANE_DRAG_CONFIG.motherPane.minWidth). Reads live
@@ -272,7 +240,6 @@ function getPane1EffectiveMaxWidth() {
   return Math.min(cfg.maxWidth, Math.max(cfg.minWidth, available));
 }
 
->>>>>>> Stashed changes
 // The single function that writes a pane's width. Pure style write, no DOM reads, safe to call once per
 // animation frame from a drag handler or once from a click handler.
 function applyWidth(paneKey, widthPx) {
@@ -329,12 +296,6 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
 setupPaneDrag('source', sourcePanelDividerEl, sourcePaneEl);
 setupPaneDrag('pane2', pane2DividerEl, pane2El);
 
-<<<<<<< Updated upstream
-// Toggle button: snaps --source-panel-w between the collapsed/expanded presets through the same applyWidth()
-// the drag handler above uses (batch-4 decision #3 — kept, not removed, so keyboard/screen-reader users can
-// still expand/collapse without pointer drag). .source-panel-expanded stays on #sourcePane only, for
-// .source-stack-meta's show/hide in styles.css — that rule is unrelated to width and isn't being replaced.
-=======
 // ---------- Internal pane2/pane3 fr-split drag ----------
 // #pane2Divider resizes the pane2:pane3 ratio *inside* #motherPane only — it can't reuse setupPaneDrag() as-is
 // because that function writes a single px custom property; this one writes two fr custom properties computed
@@ -438,7 +399,6 @@ setupInternalSplitDrag(pane2DividerEl, motherPaneEl);
 // #sourcePane.source-panel-overlay) instead of growing the grid track — --source-panel-w is set once at page
 // load and stays a constant for the session. .source-panel-expanded stays on #sourcePane for
 // .source-stack-meta's show/hide in styles.css — unrelated to width.
->>>>>>> Stashed changes
 if (sourcePanelToggleBtn && sourcePaneEl) {
   sourcePanelToggleBtn.addEventListener('click', () => {
     const cfg = PANE_DRAG_CONFIG.source;
@@ -451,8 +411,6 @@ if (sourcePanelToggleBtn && sourcePaneEl) {
   });
 }
 
-<<<<<<< Updated upstream
-=======
 // ---------- Floating Pane 1 ----------
 // Manual-trigger only — #pane1FloatToggleBtn is the only way to enter/exit windowed mode. #pane1's actual DOM
 // node is reparented (not cloned/rebuilt) between #layoutRoot and #pane1FloatBody, so every existing
@@ -643,7 +601,6 @@ window.addEventListener('scroll', () => {
   });
 }, { passive: true, capture: true });
 
->>>>>>> Stashed changes
 // Makes the given source active, updates Pane 3/2 to its first page, and opens its first question in the editor.
 // { skipAutoSelect: true } skips that last auto-select step — used when the caller (e.g. the term-panel
 // flows in editor-render.js) is about to call setActiveCard itself with a specific target question, so
