@@ -79,8 +79,7 @@
     </div>
   </header>
 
-  <!-- Nav bar: import controls (moved out of the source panel in batch 3 of the source-panel-upgrade handoff;
-       no existing nav bar was found in this file, so this is a new strip below the header). -->
+  <!-- Nav bar: import controls. -->
   <div id="navBar" class="border-b border-edge bg-panel px-4 lg:px-6 py-3">
     <details id="importDetails" class="bg-card border border-edge rounded-lg p-4 lg:p-5 max-w-xl" open>
       <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Import Document</summary>
@@ -123,11 +122,9 @@
     </details>
   </div>
 
-  <!-- Main: 5-column grid (slide panel, Pane 1-3, terms); stacks to 1 column below lg. Column widths at
-       >=1024px are owned entirely by styles.css's #layoutRoot @media rule (--source-panel-w / --pane2-w
-       custom properties, batch 4) -- the lg:grid-cols-[...] utility that used to sit on this element was
-       always overridden by that rule's higher ID-selector specificity even before batch 4, so it's removed
-       here rather than left as dead/misleading weight. grid-cols-1 stays for the mobile single-column stack. -->
+  <!-- Main: grid (source panel, Pane 1, mother pane). Stacks to 1 column below lg. Column widths at
+       >=1024px are owned entirely by styles.css's #layoutRoot @media rule (--source-panel-w / --pane1-w /
+       --mother-pane-w custom properties); grid-cols-1 stays for the mobile single-column stack. -->
   <main id="layoutRoot" class="grid grid-cols-1 gap-4 max-w-[1900px] mx-auto w-full px-4 lg:px-6 py-6">
 
     <!-- ================= SLIDE PANEL — Source stack (imported docs) ================= -->
@@ -135,10 +132,9 @@
 
       <div class="flex items-center justify-between mb-2">
         <h2 class="font-mono text-xs tracking-widest text-mute uppercase">Sources</h2>
-        <!-- expand/collapse toggle for this column (batch 3, step 1), rewired in batch 4 to snap
-             --source-panel-w between two preset widths via main.js's applyWidth(), the same function
-             the drag handle below writes through — see styles.css's '.source-panel-expanded' rule
-             (still used for the .source-stack-meta show/hide, unrelated to width). -->
+        <!-- expand/collapse toggle for this column — expands it as an absolutely-positioned overlay via
+             main.js's click handler (styles.css's '.source-panel-overlay' rule), rather than resizing the
+             grid track. -->
         <button id="sourcePanelToggleBtn" type="button" class="icon-btn" title="Expand source panel" aria-expanded="false">⤥</button>
       </div>
 
@@ -148,6 +144,9 @@
         <!-- draggable slide-sorter stack (thumbnail, filename, question count per card), rendered by main.js's renderSourceList(); hidden until a source is imported. -->
         <div id="sourceList" class="hidden space-y-1"></div>
       </div>
+
+      <!-- continuous drag-resize handle (batch 4) — wired in main.js's setupPaneDrag('source', ...); writes --source-panel-w on #layoutRoot via applyWidth(). -->
+      <div id="sourcePanelDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="sourcePane" tabindex="-1"></div>
 
     </section>
 
@@ -167,12 +166,15 @@
             class="font-mono text-xs tracking-wide uppercase border border-edge hover:border-amber hover:text-amber text-ink px-3 py-1.5 rounded transition-colors">
             + Add Question
           </button>
+<<<<<<< Updated upstream
+=======
           <!-- Toggles the term panel popup (replaces the old #pane2-nested term sidebar); see main.js's openTermPanel()/closeTermPanel(). -->
           <button id="termPanelToggleBtn" type="button" title="Show/hide the term panel"
             class="icon-btn" aria-pressed="false" aria-haspopup="true" aria-controls="termPanelPopup">🏷</button>
-          <!-- Undocks Pane 1 into a draggable floating window (batch 5B); see main.js's floatPane1()/dockPane1(). -->
+          <!-- Undocks Pane 1 into a draggable floating window; see main.js's floatPane1()/dockPane1(). -->
           <button id="pane1FloatToggleBtn" type="button" title="Float this panel"
             class="icon-btn" aria-pressed="false">⧉</button>
+>>>>>>> Stashed changes
         </div>
       </div>
       <!-- wraps the chip grid + pager so one keydown listener (editor-render.js) can catch Left/Right; pager stays hidden until 20+ questions. -->
@@ -189,16 +191,20 @@
         <p class="text-sm text-mute mt-1">Add one, or upload a document above to auto-generate a set.</p>
       </div>
 
-      <!-- Drag-resize handle for Pane 1; resizes Pane 1 against #motherPane (batch 5A). Also keyboard-resizable (arrow keys, Home/End). -->
+<<<<<<< Updated upstream
+    </section>
+
+=======
+      <!-- Drag-resize handle for Pane 1; resizes Pane 1 against #motherPane. Also keyboard-resizable (arrow keys, Home/End). -->
       <div id="pane1Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane1" tabindex="0"></div>
 
     </section>
 
-    <!-- ================= TERM PANEL POPUP — toggled from #pane1's header button, replaces the old #pane2-nested
-         sidebar (see the Term Panel as a Pane-1 Popup handoff). Sits as a sibling of #pane1 (not nested inside
-         it) so it survives #pane1 being reparented into #pane1FloatShell by floatPane1()/dockPane1(), and so it
-         can be positioned independently. Position (top/left) and z-index are both set inline by main.js's
-         openTermPanel(), since they depend on pane1Floating at open-time; hidden by default, fully manual. ================= -->
+    <!-- ================= TERM PANEL POPUP — toggled from #pane1's header button. Sits as a sibling of #pane1
+         (not nested inside it) so it survives #pane1 being reparented into #pane1FloatShell by
+         floatPane1()/dockPane1(), and so it can be positioned independently. Position (top/left) and z-index
+         are both set inline by main.js's openTermPanel(), since they depend on pane1Floating at open-time;
+         hidden by default, fully manual. ================= -->
     <div id="termPanelPopup" class="hidden fixed bg-panel border border-edge rounded-lg shadow-2xl shadow-black/50" role="dialog" aria-label="Terms">
       <details id="termBarDetails" class="p-4 lg:p-5" open>
         <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Terms</summary>
@@ -220,9 +226,10 @@
       </details>
     </div>
 
-    <!-- ================= MOTHER PANE — Pane 2 + Pane 3 fused into one resizable grid column (batch 5A) ================= -->
+    <!-- ================= MOTHER PANE — Pane 2 + Pane 3 fused into one resizable grid column ================= -->
     <div id="motherPane">
 
+>>>>>>> Stashed changes
     <!-- ================= PANE 2 — Text version of the data ================= -->
     <section id="pane2" class="bg-panel border border-edge rounded-lg overflow-hidden flex flex-col min-w-0 lg:h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
       <div class="shrink-0 border-b border-edge px-4 py-3 flex items-center justify-between gap-2">
@@ -238,8 +245,8 @@
       </div>
       <div id="selectionGenStatus" class="hidden shrink-0 border-t border-edge px-4 py-2 text-xs font-mono"></div>
 
-      <!-- Drag-resize handle for Pane 2; also keyboard-resizable (arrow keys, Home/End). -->
-      <div id="pane2Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane2" tabindex="0"></div>
+      <!-- continuous drag-resize handle (batch 4) — wired in main.js's setupPaneDrag('pane2', ...); writes --pane2-w on #layoutRoot via applyWidth(). -->
+      <div id="pane2Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane2" tabindex="-1"></div>
     </section>
 
     <!-- ================= PANE 3 — Visual document preview ================= -->
@@ -290,18 +297,43 @@
 
     </section>
 
+<<<<<<< Updated upstream
+    <!-- ================= TERM PANE — Browse by target term ================= -->
+    <section id="termPane" class="min-w-0 lg:overflow-y-auto lg:max-h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
+=======
       <!-- Drag-resize handle for #motherPane; resizes the mother pane's minimum width against the flexible
-           leftover-space track on #layoutRoot's outer grid (batch 5A). #termPanelPopup is a fixed-position
-           popup outside grid flow, not a sibling column, so it's never a factor here (see the Term Panel as
-           a Pane-1 Popup handoff). Also keyboard-resizable (arrow keys, Home/End). -->
+           leftover-space track on #layoutRoot's outer grid. #termPanelPopup is a fixed-position popup
+           outside grid flow, not a sibling column, so it's never a factor here. Also keyboard-resizable
+           (arrow keys, Home/End). -->
       <div id="motherPaneDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="motherPane" tabindex="0"></div>
+>>>>>>> Stashed changes
 
-    </div>
-    <!-- /#motherPane -->
+      <details id="termBarDetails" class="bg-card border border-edge rounded-lg p-4 lg:p-5 shadow-2xl shadow-black/50" open>
+        <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Terms</summary>
+        <p class="text-xs text-mute mb-3 mt-2">Every target term used across your questions. Click one to filter the question list in Pane 1 to just its question(s).</p>
+
+        <!-- scope toggle (all / this file / this page); data-term-scope read by editor-render.js's click handler, active button set by renderTermBar(). -->
+        <div id="termScopeToggle" class="term-scope-toggle mb-2" role="group" aria-label="Term list scope">
+          <button type="button" data-term-scope="all" class="term-scope-btn">All terms</button>
+          <button type="button" data-term-scope="source" class="term-scope-btn" title="Every term used anywhere in the currently active source, across all its pages">This file</button>
+          <button type="button" data-term-scope="page" class="term-scope-btn" title="Only terms belonging to a question on the page currently shown in Pane 3">This page</button>
+        </div>
+
+        <!-- live case-insensitive search against each term group's label; combines with the scope toggle above. See editor-render.js's filterTermGroupsForPanel(). -->
+        <input id="termSearchInput" type="search" placeholder="Search terms…" autocomplete="off"
+          class="term-search-input mb-2" />
+
+        <div id="termFilterIndicator" class="hidden mb-2"></div>
+        <div id="termBar" class="space-y-1.5"></div>
+      </details>
+
+    </section>
 
   </main>
 
-  <!-- Floating shell for Pane 1 (batch 5B). Sits outside #layoutRoot entirely — position: fixed in styles.css,
+<<<<<<< Updated upstream
+=======
+  <!-- Floating shell for Pane 1. Sits outside #layoutRoot entirely — position: fixed in styles.css,
        so its DOM position doesn't affect layout — and stays hidden/empty until main.js's floatPane1() moves
        the live #pane1 node into #pane1FloatBody. dockPane1() moves it back into #layoutRoot afterward. -->
   <div id="pane1FloatShell" class="pane1-float-shell hidden bg-panel border border-edge rounded-lg shadow-2xl shadow-black/50" role="dialog" aria-label="Questions (floating)">
@@ -315,6 +347,7 @@
     <div id="pane1FloatBody" class="pane1-float-body"></div>
   </div>
 
+>>>>>>> Stashed changes
   <!-- Floating "generate from selection" toolbar -->
   <div id="selectionToolbar" class="hidden fixed z-40 flex items-stretch gap-1.5 bg-panel border border-edge rounded shadow-2xl shadow-black/50 p-1.5">
     <select id="selectionQuestionType" title="Type of question to generate from the selection"
