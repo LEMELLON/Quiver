@@ -166,15 +166,12 @@
             class="font-mono text-xs tracking-wide uppercase border border-edge hover:border-amber hover:text-amber text-ink px-3 py-1.5 rounded transition-colors">
             + Add Question
           </button>
-<<<<<<< Updated upstream
-=======
           <!-- Toggles the term panel popup (replaces the old #pane2-nested term sidebar); see main.js's openTermPanel()/closeTermPanel(). -->
           <button id="termPanelToggleBtn" type="button" title="Show/hide the term panel"
             class="icon-btn" aria-pressed="false" aria-haspopup="true" aria-controls="termPanelPopup">🏷</button>
           <!-- Undocks Pane 1 into a draggable floating window; see main.js's floatPane1()/dockPane1(). -->
           <button id="pane1FloatToggleBtn" type="button" title="Float this panel"
             class="icon-btn" aria-pressed="false">⧉</button>
->>>>>>> Stashed changes
         </div>
       </div>
       <!-- wraps the chip grid + pager so one keydown listener (editor-render.js) can catch Left/Right; pager stays hidden until 20+ questions. -->
@@ -191,10 +188,6 @@
         <p class="text-sm text-mute mt-1">Add one, or upload a document above to auto-generate a set.</p>
       </div>
 
-<<<<<<< Updated upstream
-    </section>
-
-=======
       <!-- Drag-resize handle for Pane 1; resizes Pane 1 against #motherPane. Also keyboard-resizable (arrow keys, Home/End). -->
       <div id="pane1Divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="pane1" tabindex="0"></div>
 
@@ -229,7 +222,6 @@
     <!-- ================= MOTHER PANE — Pane 2 + Pane 3 fused into one resizable grid column ================= -->
     <div id="motherPane">
 
->>>>>>> Stashed changes
     <!-- ================= PANE 2 — Text version of the data ================= -->
     <section id="pane2" class="bg-panel border border-edge rounded-lg overflow-hidden flex flex-col min-w-0 lg:h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
       <div class="shrink-0 border-b border-edge px-4 py-3 flex items-center justify-between gap-2">
@@ -297,16 +289,11 @@
 
     </section>
 
-<<<<<<< Updated upstream
-    <!-- ================= TERM PANE — Browse by target term ================= -->
-    <section id="termPane" class="min-w-0 lg:overflow-y-auto lg:max-h-[calc(100vh-5.5rem)] lg:sticky lg:top-[5.5rem]">
-=======
       <!-- Drag-resize handle for #motherPane; resizes the mother pane's minimum width against the flexible
            leftover-space track on #layoutRoot's outer grid. #termPanelPopup is a fixed-position popup
            outside grid flow, not a sibling column, so it's never a factor here. Also keyboard-resizable
            (arrow keys, Home/End). -->
       <div id="motherPaneDivider" class="pane-divider" role="separator" aria-orientation="vertical" aria-controls="motherPane" tabindex="0"></div>
->>>>>>> Stashed changes
 
       <details id="termBarDetails" class="bg-card border border-edge rounded-lg p-4 lg:p-5 shadow-2xl shadow-black/50" open>
         <summary class="font-mono text-xs tracking-widest text-mute uppercase mb-1 cursor-pointer select-none">Terms</summary>
@@ -331,8 +318,6 @@
 
   </main>
 
-<<<<<<< Updated upstream
-=======
   <!-- Floating shell for Pane 1. Sits outside #layoutRoot entirely — position: fixed in styles.css,
        so its DOM position doesn't affect layout — and stays hidden/empty until main.js's floatPane1() moves
        the live #pane1 node into #pane1FloatBody. dockPane1() moves it back into #layoutRoot afterward. -->
@@ -347,7 +332,6 @@
     <div id="pane1FloatBody" class="pane1-float-body"></div>
   </div>
 
->>>>>>> Stashed changes
   <!-- Floating "generate from selection" toolbar -->
   <div id="selectionToolbar" class="hidden fixed z-40 flex items-stretch gap-1.5 bg-panel border border-edge rounded shadow-2xl shadow-black/50 p-1.5">
     <select id="selectionQuestionType" title="Type of question to generate from the selection"
