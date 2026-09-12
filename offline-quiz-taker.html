@@ -542,10 +542,11 @@
     if (!isCollectionFormat) return data; // already flat/legacy — nothing to normalize
 
     const flatQuestions = [];
+    let droppedCount = 0;
     for (const q of data.questions) {
-      if (!q || !Array.isArray(q.variants) || q.variants.length === 0) continue;
+      if (!q || !Array.isArray(q.variants) || q.variants.length === 0) { droppedCount++; continue; }
       const variant = pickRepresentativeVariant(q.variants);
-      if (!variant || typeof variant.questionText !== 'string' || !Array.isArray(variant.choices)) continue;
+      if (!variant || typeof variant.questionText !== 'string' || !Array.isArray(variant.choices)) { droppedCount++; continue; }
 
       let correctAnswerIndex = variant.correctAnswerIndex;
       if (variant.type === 'category') {
@@ -556,7 +557,7 @@
         const idxs = Array.isArray(variant.correctAnswerIndices) ? variant.correctAnswerIndices : [];
         correctAnswerIndex = idxs.length ? idxs[0] : 0;
       }
-      if (typeof correctAnswerIndex !== 'number' || correctAnswerIndex < 0 || correctAnswerIndex >= variant.choices.length) continue;
+      if (typeof correctAnswerIndex !== 'number' || correctAnswerIndex < 0 || correctAnswerIndex >= variant.choices.length) { droppedCount++; continue; }
 
       const flat = {
         questionText: variant.questionText,
@@ -579,7 +580,9 @@
       flatQuestions.push(flat);
     }
 
-    return Object.assign({}, data, { questions: flatQuestions });
+    const normalized = Object.assign({}, data, { questions: flatQuestions });
+    if (droppedCount > 0) normalized._droppedQuestionCount = droppedCount;
+    return normalized;
   }
 
   // ---------- Validation ----------
@@ -597,7 +600,10 @@
   function goToModeSelect(data){
     quizData = data;
     quizTitleDisplay.textContent = data.title || 'Untitled Quiz';
-    quizCountDisplay.textContent = `${data.questions.length} question${data.questions.length === 1 ? '' : 's'} loaded`;
+    const droppedNote = data._droppedQuestionCount
+      ? ` (${data._droppedQuestionCount} question${data._droppedQuestionCount === 1 ? '' : 's'} skipped — missing a usable variant)`
+      : '';
+    quizCountDisplay.textContent = `${data.questions.length} question${data.questions.length === 1 ? '' : 's'} loaded${droppedNote}`;
     selectedMode = null;
     modeCards.forEach(c => c.classList.remove('selected'));
     examLevelPanel.classList.add('hidden');
@@ -687,9 +693,17 @@
       throw new Error('This browser does not support DecompressionStream.');
     }
 
-    const ds = new DecompressionStream('gzip');
-    const decompressedStream = new Blob([payloadBytes]).stream().pipeThrough(ds);
-    const text = await new Response(decompressedStream).text();
+    let text;
+    try{
+      const ds = new DecompressionStream('gzip');
+      const decompressedStream = new Blob([payloadBytes]).stream().pipeThrough(ds);
+      text = await new Response(decompressedStream).text();
+    }catch(e){
+      if(!secretKey){
+        throw new Error('Could not read this Quiz Code as-is — it may require a secret key. Enter the secret key that was shared with it and try again.');
+      }
+      throw e; // a secret key was already used above; this is a genuine decompression failure, not a missing-key one
+    }
     let data;
     try{
       data = JSON.parse(text);

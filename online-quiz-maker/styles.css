@@ -177,6 +177,12 @@ html, body { height: 100%; }
      main.js's setupInternalSplitDrag()/applyInternalSplit(). --pane1-w and --mother-pane-w below are px
      stand-ins for the old bare-1.4fr rendering — ASSUMPTION, confirm against design. */
   #layoutRoot {
+    position: relative; /* establishes the containing block for #sourcePane.source-panel-overlay's
+      position: absolute — without this, .source-panel-overlay's top:0/left:0 anchors to the
+      document root instead of #layoutRoot, which is the actual misalignment bug. Plain
+      `relative` with no z-index does NOT create a new stacking context, so it won't change how
+      .source-panel-overlay's z-index:25 or any other descendant's z-index compares against
+      #header's z-index:30 or anything else outside #layoutRoot. */
     --source-panel-w: 96px;
     --pane1-w: 420px;        /* ASSUMPTION — approximate px stand-in for the old bare 1.4fr rendering; confirm against design */
     --mother-pane-w: 900px;  /* ASSUMPTION — approximate px stand-in for the old pane2(1.4fr)+pane3(1.4fr) combined rendering */
