@@ -473,6 +473,7 @@ if (sourcePanelToggleBtn && sourcePaneEl) {
     sourcePaneEl.classList.toggle('source-panel-expanded', expanded); // unchanged — still drives .source-stack-meta's show/hide
     sourcePanelToggleBtn.setAttribute('aria-expanded', String(expanded));
     sourcePanelToggleBtn.title = expanded ? 'Collapse source panel' : 'Expand source panel';
+    sourcePanelToggleBtn.textContent = expanded ? '⤤' : '⤥'; // ⤤ is ⤥'s directional mirror — glyph now flips with state too, not just the tooltip (Batch 1b polish)
   });
 }
 
@@ -684,6 +685,7 @@ function openSource(sourceId, { skipAutoSelect = false } = {}) {
   // Clears the term search box on source switch; the term-scope preference itself is left untouched.
   resetTermSearchOnSourceSwitch();
   renderSourceList(); // updates which card shows the "active" styling
+  docPanelTitle.textContent = source.name; // Pane 3's header must follow whichever source is now active (was previously only set on first import — see Batch 1a)
 
   setupNavRange();
   renderDocPage(1);
@@ -839,6 +841,9 @@ function startRenamingSource(source, nameEl) {
     settled = true;
     const typed = input.value.trim();
     source.name = typed || previousName; // guard against an emptied field
+    // Only the currently-active source's rename should move Pane 3's title — renaming an inactive
+    // source must not touch what Pane 3 is showing (see Batch 1a).
+    if (source.id === state.activeSourceId) docPanelTitle.textContent = source.name;
     renderSourceList();
   };
   const cancel = () => {
