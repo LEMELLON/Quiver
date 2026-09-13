@@ -168,6 +168,63 @@
     display:flex; align-items:center; gap:16px;
     margin-bottom:20px;
   }
+  .quit-btn{
+    background:var(--card-alt); color:var(--muted);
+    border:1px solid var(--border); border-radius:10px;
+    padding:8px 12px; font-size:.85rem; white-space:nowrap;
+  }
+  .quit-btn:hover{ color:var(--text); border-color:var(--incorrect); }
+  .skip-btn{
+    background:transparent; color:var(--muted);
+    border:1px solid var(--border); border-radius:10px;
+    padding:12px; font-size:.9rem; width:100%; margin-top:12px;
+  }
+  .skip-btn:hover{ color:var(--text); border-color:var(--accent); }
+
+  /* Stats modal */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.6);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px; z-index:100;
+  }
+  .modal-overlay.hidden{ display:none; }
+  .modal-box{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    max-width:560px; width:100%; max-height:80vh; overflow-y:auto; padding:24px;
+  }
+  .modal-box h3{ margin:0 0 4px; }
+  .modal-close-btn{
+    width:auto; margin-top:18px; padding:10px 16px; background:var(--card-alt);
+    color:var(--text); border:1px solid var(--border);
+  }
+  .stats-summary-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:16px 0; }
+  .stats-summary-row .stat{ padding:12px 6px; }
+  .stats-summary-row .stat span{ font-size:1.2rem; }
+  .stats-question-row{
+    border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px;
+    font-size:.85rem;
+  }
+  .stats-question-row .sq-text{ color:var(--text); margin-bottom:6px; font-weight:600; }
+  .stats-question-row .sq-meta{ color:var(--muted); display:flex; gap:12px; flex-wrap:wrap; }
+  .stats-sort-row{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .stats-sort-row button{ flex:0 0 auto; }
+
+  /* Session review (Results screen) */
+  .session-review{ text-align:left; margin-top:22px; }
+  .session-review h3{ margin:0 0 10px; font-size:1rem; }
+  .session-review-list{ max-height:280px; overflow-y:auto; }
+  .sr-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border-bottom:1px solid var(--border); padding:8px 2px; font-size:.85rem;
+  }
+  .sr-row:last-child{ border-bottom:none; }
+  .sr-q{ color:var(--text); flex:1; }
+  .sr-badge{ font-weight:700; font-size:.75rem; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .sr-badge.correct{ background:rgba(34,197,94,.15); color:var(--correct); }
+  .sr-badge.wrong{ background:rgba(239,68,68,.15); color:var(--incorrect); }
+  .sr-badge.skipped{ background:rgba(148,163,184,.15); color:var(--muted); }
+  .all-time-stats{ margin-top:22px; text-align:left; }
+  .all-time-stats h3{ margin:0 0 10px; font-size:1rem; }
   .timer-pill{
     font-variant-numeric:tabular-nums;
     font-size:1.1rem; font-weight:700;
@@ -300,6 +357,7 @@
     .kahoot-grid{ grid-template-columns:1fr; }
     .quiz-header{ flex-wrap:wrap; }
     .score-pill{ order:3; width:100%; text-align:center; }
+    .stats-summary-row{ grid-template-columns:repeat(2,1fr); }
   }
 </style>
 </head>
@@ -340,10 +398,21 @@
     <div class="card">
       <div class="lessons-toolbar">
         <button class="btn-secondary" id="selectAllLessonsBtn" type="button">Select All</button>
+        <button class="btn-secondary" id="unitedStatsBtn" type="button" style="flex:0 0 auto;">🌐 All-Time Stats</button>
         <button class="btn-primary" id="startSessionBtn" type="button" disabled>Start Session →</button>
       </div>
       <div class="lessons-grid" id="lessonsGrid"></div>
       <p id="lessonsError" class="error hidden"></p>
+    </div>
+  </div>
+
+  <!-- STATS MODAL (shared: per-lesson and all-time) -->
+  <div class="modal-overlay hidden" id="statsModal">
+    <div class="modal-box">
+      <h3 id="statsModalTitle">Stats</h3>
+      <p id="statsModalSubtitle" class="success-note"></p>
+      <div id="statsModalBody"></div>
+      <button class="btn-secondary modal-close-btn" id="statsModalCloseBtn" type="button">Close</button>
     </div>
   </div>
 
@@ -391,6 +460,7 @@
   <!-- EXAM MODE SCREEN -->
   <div class="screen" id="screen-exam">
     <div class="quiz-header">
+      <button class="quit-btn" id="examQuitBtn" type="button">☰ Menu</button>
       <div class="timer-pill" id="examTimerDisplay">00:00</div>
       <div class="progress-wrap"><div class="progress-fill" id="examProgressBar"></div></div>
       <div class="score-pill" id="examScoreDisplay">Score: 0</div>
@@ -399,6 +469,7 @@
       <p class="q-meta" id="examMeta"></p>
       <h2 id="examQuestionText"></h2>
       <div id="choicesContainer"></div>
+      <button class="skip-btn" id="examSkipBtn" type="button">⏭ Skip Question</button>
     </div>
     <button class="btn-primary hidden" id="examNextBtn">Next Question →</button>
   </div>
@@ -406,6 +477,7 @@
   <!-- KAHOOT MODE SCREEN -->
   <div class="screen" id="screen-kahoot">
     <div class="quiz-header">
+      <button class="quit-btn" id="kahootQuitBtn" type="button">☰ Menu</button>
       <div class="timer-pill" id="kahootElapsedDisplay">00:00</div>
       <div class="progress-wrap"><div class="progress-fill" id="kahootProgressBar"></div></div>
       <div class="score-pill" id="kahootScoreDisplay">Points: 0</div>
@@ -417,12 +489,14 @@
       <div class="kahoot-timer-num" id="kahootTimerNum">15s</div>
       <div class="kahoot-grid" id="kahootGrid"></div>
       <div class="kahoot-points-flash" id="kahootPointsFlash"></div>
+      <button class="skip-btn" id="kahootSkipBtn" type="button">⏭ Skip Question</button>
     </div>
   </div>
 
   <!-- FLASHCARD MODE SCREEN -->
   <div class="screen" id="screen-flashcard">
     <div class="quiz-header">
+      <button class="quit-btn" id="flashQuitBtn" type="button">☰ Menu</button>
       <div class="timer-pill" id="flashElapsedDisplay">00:00</div>
       <div class="progress-wrap"><div class="progress-fill" id="flashProgressBar"></div></div>
       <div class="score-pill" id="flashScoreDisplay">Knew It: 0</div>
@@ -440,6 +514,7 @@
         <button id="flashDidntBtn">✗ Didn't Know It</button>
         <button id="flashKnewBtn">✓ Knew It</button>
       </div>
+      <button class="skip-btn" id="flashSkipBtn" type="button">⏭ Skip Card</button>
     </div>
   </div>
 
@@ -453,6 +528,17 @@
         <div class="stat"><span id="resultValue2">0%</span><label id="resultLabel2">Accuracy</label></div>
         <div class="stat"><span id="resultValue3">00:00</span><label>Total Time</label></div>
       </div>
+
+      <div class="session-review">
+        <h3>📋 This Session's Answers</h3>
+        <div class="session-review-list" id="sessionReviewList"></div>
+      </div>
+
+      <div class="all-time-stats">
+        <h3>🌐 All-Time (Every Session Combined)</h3>
+        <div class="stats-summary-row" id="allTimeSummaryRow"></div>
+      </div>
+
       <button class="btn-primary" id="restartBtn">Back to Lessons Hub</button>
     </div>
   </div>
@@ -474,6 +560,7 @@
   let currentLevel = "1";
   let selectedMode = null;
   let selectedLessonIds = new Set(); // Batch C: which lessons are in play for the current session
+  let sessionLog = []; // Batch D+: every question answered/skipped this session, for the Results review list
 
   const KAHOOT_TIME_LIMIT = 15; // seconds per question
   let kahootRemainingMs = 0;
@@ -504,8 +591,16 @@
   const quizHashDisplay = document.getElementById('quizHashDisplay');
   const lessonsGrid = document.getElementById('lessonsGrid');
   const selectAllLessonsBtn = document.getElementById('selectAllLessonsBtn');
+  const unitedStatsBtn = document.getElementById('unitedStatsBtn');
   const startSessionBtn = document.getElementById('startSessionBtn');
   const lessonsError = document.getElementById('lessonsError');
+
+  // Stats modal
+  const statsModal = document.getElementById('statsModal');
+  const statsModalTitle = document.getElementById('statsModalTitle');
+  const statsModalSubtitle = document.getElementById('statsModalSubtitle');
+  const statsModalBody = document.getElementById('statsModalBody');
+  const statsModalCloseBtn = document.getElementById('statsModalCloseBtn');
 
   const quizTitleDisplay = document.getElementById('quizTitleDisplay');
   const quizCountDisplay = document.getElementById('quizCountDisplay');
@@ -523,7 +618,10 @@
   const examQuestionText = document.getElementById('examQuestionText');
   const choicesContainer = document.getElementById('choicesContainer');
   const examNextBtn = document.getElementById('examNextBtn');
+  const examQuitBtn = document.getElementById('examQuitBtn');
+  const examSkipBtn = document.getElementById('examSkipBtn');
   let examAnswered = false;
+  let examQuestionStartedAt = 0;
 
   // Kahoot
   const kahootElapsedDisplay = document.getElementById('kahootElapsedDisplay');
@@ -535,6 +633,8 @@
   const kahootTimerNum = document.getElementById('kahootTimerNum');
   const kahootGrid = document.getElementById('kahootGrid');
   const kahootPointsFlash = document.getElementById('kahootPointsFlash');
+  const kahootQuitBtn = document.getElementById('kahootQuitBtn');
+  const kahootSkipBtn = document.getElementById('kahootSkipBtn');
 
   // Flashcard
   const flashElapsedDisplay = document.getElementById('flashElapsedDisplay');
@@ -548,6 +648,8 @@
   const flashGradeBtns = document.getElementById('flashGradeBtns');
   const flashDidntBtn = document.getElementById('flashDidntBtn');
   const flashKnewBtn = document.getElementById('flashKnewBtn');
+  const flashQuitBtn = document.getElementById('flashQuitBtn');
+  const flashSkipBtn = document.getElementById('flashSkipBtn');
   let flashRevealed = false;
 
   // Results
@@ -557,6 +659,8 @@
   const resultLabel2 = document.getElementById('resultLabel2');
   const resultValue3 = document.getElementById('resultValue3');
   const restartBtn = document.getElementById('restartBtn');
+  const sessionReviewList = document.getElementById('sessionReviewList');
+  const allTimeSummaryRow = document.getElementById('allTimeSummaryRow');
 
   // ---------- Screen management ----------
   function showScreen(name){
@@ -698,6 +802,227 @@
     return true;
   }
 
+  // ---------- Persistent stats (Batch D) ----------
+  // One localStorage key per lesson: quizTaker.stats.<lessonId> -> { lessonId, lessonName, questions:{ <questionId>: {...} } }
+  // Wrapped in try/catch throughout so a storage failure (private
+  // browsing, quota, disabled storage) degrades to a silent no-op
+  // rather than breaking gameplay.
+  const STATS_PREFIX = 'quizTaker.stats.';
+
+  function safeGetJSON(key, fallback){
+    try{
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    }catch(e){ return fallback; }
+  }
+  function safeSetJSON(key, value){
+    try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){ /* no-op: storage unavailable */ }
+  }
+  function safeRemove(key){
+    try{ localStorage.removeItem(key); }catch(e){ /* no-op */ }
+  }
+
+  function getLessonStats(lessonId){
+    return safeGetJSON(STATS_PREFIX + lessonId, { lessonId, lessonName: '', questions: {} });
+  }
+
+  // Write on every answered/skipped question (not just at session end) —
+  // this is what makes "quit mid-session still counts" correct by
+  // construction, and what lets the same combined-stats view work
+  // whether the person quit early or finished normally.
+  function recordAnswer(lessonId, questionId, opts){
+    if(!lessonId || !questionId) return;
+    opts = opts || {};
+    const stats = getLessonStats(lessonId);
+    const q = stats.questions[questionId] || {
+      timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0,
+      totalTimeMs: 0, lastAttemptAt: null, lastResult: null
+    };
+    q.timesSeen++;
+    if(opts.skipped){
+      q.timesSkipped = (q.timesSkipped || 0) + 1;
+      q.lastResult = 'skipped';
+    }else if(opts.correct){
+      q.timesCorrect++;
+      q.lastResult = 'correct';
+    }else{
+      q.timesWrong++;
+      q.lastResult = 'wrong';
+    }
+    if(typeof opts.timeMs === 'number' && !isNaN(opts.timeMs) && opts.timeMs >= 0){
+      q.totalTimeMs = (q.totalTimeMs || 0) + opts.timeMs;
+    }
+    q.lastAttemptAt = new Date().toISOString();
+    stats.questions[questionId] = q;
+
+    if(quizData && Array.isArray(quizData.lessons)){
+      const lesson = quizData.lessons.find(l => l.id === lessonId);
+      if(lesson) stats.lessonName = lesson.name || stats.lessonName;
+    }
+    stats.lessonId = lessonId;
+    safeSetJSON(STATS_PREFIX + lessonId, stats);
+  }
+
+  function resetLessonStats(lessonId){
+    safeRemove(STATS_PREFIX + lessonId);
+  }
+
+  function getAllStatsLessonIds(){
+    const ids = [];
+    try{
+      for(let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i);
+        if(k && k.indexOf(STATS_PREFIX) === 0) ids.push(k.slice(STATS_PREFIX.length));
+      }
+    }catch(e){ /* no-op */ }
+    return ids;
+  }
+
+  // "United" stats: everything ever recorded, across every lesson and
+  // every quiz file ever loaded on this browser/device — summed at read
+  // time from the per-lesson blobs rather than kept as a separate
+  // running total, so the two views can never drift out of sync.
+  function getUnitedStats(){
+    const totals = { timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0, totalTimeMs: 0 };
+    getAllStatsLessonIds().forEach(id => {
+      const stats = getLessonStats(id);
+      Object.values(stats.questions || {}).forEach(q => {
+        totals.timesSeen += q.timesSeen || 0;
+        totals.timesCorrect += q.timesCorrect || 0;
+        totals.timesWrong += q.timesWrong || 0;
+        totals.timesSkipped += q.timesSkipped || 0;
+        totals.totalTimeMs += q.totalTimeMs || 0;
+      });
+    });
+    return totals;
+  }
+
+  function formatStatsSummaryHTML(totals){
+    const answered = totals.timesCorrect + totals.timesWrong;
+    const accuracy = answered > 0 ? Math.round((totals.timesCorrect / answered) * 100) : 0;
+    const avgSec = totals.timesSeen > 0 ? Math.round(totals.totalTimeMs / totals.timesSeen / 1000) : 0;
+    return `
+      <div class="stat"><span>${totals.timesSeen}</span><label>Times Seen</label></div>
+      <div class="stat"><span>${accuracy}%</span><label>Accuracy</label></div>
+      <div class="stat"><span>${totals.timesWrong}</span><label>Wrong</label></div>
+      <div class="stat"><span>${totals.timesSkipped}</span><label>Skipped</label></div>
+    `;
+  }
+
+  // ---------- Stats modal (per-lesson + all-time) ----------
+  function openStatsModal(){ statsModal.classList.remove('hidden'); }
+  function closeStatsModal(){ statsModal.classList.add('hidden'); }
+  statsModalCloseBtn.addEventListener('click', closeStatsModal);
+  statsModal.addEventListener('click', (e) => { if(e.target === statsModal) closeStatsModal(); });
+
+  function showLessonStatsModal(lesson){
+    const stats = getLessonStats(lesson.id);
+    const lessonQuestions = (quizData && Array.isArray(quizData.questions))
+      ? quizData.questions.filter(q => q.lessonId === lesson.id)
+      : [];
+
+    const totals = { timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0, totalTimeMs: 0 };
+    const rows = lessonQuestions.map(q => {
+      const s = stats.questions[q.id] || { timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0, totalTimeMs: 0 };
+      totals.timesSeen += s.timesSeen || 0;
+      totals.timesCorrect += s.timesCorrect || 0;
+      totals.timesWrong += s.timesWrong || 0;
+      totals.timesSkipped += s.timesSkipped || 0;
+      totals.totalTimeMs += s.totalTimeMs || 0;
+      return { text: q.questionText, stats: s };
+    });
+
+    renderStatsModal(lesson.name || 'Lesson', 'Per-question breakdown for this lesson', totals, rows, true);
+  }
+
+  function showUnitedStatsModal(){
+    const totals = getUnitedStats();
+    renderStatsModal('🌐 All-Time Stats', 'Combined across every lesson and quiz ever played on this device', totals, [], false);
+  }
+
+  let statsSortMode = 'default';
+  let statsModalRowsCache = [];
+
+  function renderStatsModal(title, subtitle, totals, rows, showSort){
+    statsModalTitle.textContent = title;
+    statsModalSubtitle.textContent = subtitle;
+    statsModalRowsCache = rows;
+    statsSortMode = 'default';
+
+    let html = `<div class="stats-summary-row">${formatStatsSummaryHTML(totals)}</div>`;
+    if(showSort){
+      html += `
+        <div class="stats-sort-row">
+          <button class="btn-secondary" data-sort="wrong" style="width:auto;">Sort: Most Wrong</button>
+          <button class="btn-secondary" data-sort="time" style="width:auto;">Sort: Slowest</button>
+          <button class="btn-secondary" data-sort="default" style="width:auto;">Sort: Default</button>
+        </div>
+        <div id="statsQuestionList"></div>
+      `;
+    }
+    statsModalBody.innerHTML = html;
+
+    if(showSort){
+      statsModalBody.querySelectorAll('[data-sort]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          statsSortMode = btn.dataset.sort;
+          renderStatsQuestionList();
+        });
+      });
+      renderStatsQuestionList();
+    }
+
+    openStatsModal();
+  }
+
+  function renderStatsQuestionList(){
+    const container = document.getElementById('statsQuestionList');
+    if(!container) return;
+    let rows = statsModalRowsCache.slice();
+
+    if(statsSortMode === 'wrong'){
+      rows.sort((a, b) => {
+        const wrA = a.stats.timesSeen > 0 ? a.stats.timesWrong / a.stats.timesSeen : -1;
+        const wrB = b.stats.timesSeen > 0 ? b.stats.timesWrong / b.stats.timesSeen : -1;
+        return wrB - wrA;
+      });
+    }else if(statsSortMode === 'time'){
+      rows.sort((a, b) => {
+        const avgA = a.stats.timesSeen > 0 ? a.stats.totalTimeMs / a.stats.timesSeen : -1;
+        const avgB = b.stats.timesSeen > 0 ? b.stats.totalTimeMs / b.stats.timesSeen : -1;
+        return avgB - avgA;
+      });
+    }
+
+    container.innerHTML = rows.map(r => {
+      const s = r.stats;
+      if(s.timesSeen === 0){
+        return `<div class="stats-question-row"><div class="sq-text">${escapeHTML(r.text)}</div><div class="sq-meta">Not attempted yet</div></div>`;
+      }
+      const accuracy = (s.timesCorrect + s.timesWrong) > 0 ? Math.round((s.timesCorrect / (s.timesCorrect + s.timesWrong)) * 100) : 0;
+      const avgSec = (s.totalTimeMs / s.timesSeen / 1000).toFixed(1);
+      return `<div class="stats-question-row">
+        <div class="sq-text">${escapeHTML(r.text)}</div>
+        <div class="sq-meta">
+          <span>Seen: ${s.timesSeen}</span>
+          <span>Correct: ${s.timesCorrect}</span>
+          <span>Wrong: ${s.timesWrong}</span>
+          <span>Skipped: ${s.timesSkipped || 0}</span>
+          <span>Accuracy: ${accuracy}%</span>
+          <span>Avg time: ${avgSec}s</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function escapeHTML(str){
+    const div = document.createElement('div');
+    div.textContent = String(str == null ? '' : str);
+    return div.innerHTML;
+  }
+
+  unitedStatsBtn.addEventListener('click', showUnitedStatsModal);
+
   // ---------- Lessons Hub (Batch B) + session composition (Batch C) ----------
   const LESSON_AVATAR_COLORS = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16'];
 
@@ -750,8 +1075,8 @@
         <div class="lesson-name">${name}</div>
         <div class="lesson-actions">
           <button type="button" class="lesson-action-btn" data-action="play">▶ Play</button>
-          <button type="button" class="lesson-action-btn" data-action="stats" disabled>📊 Stats</button>
-          <button type="button" class="lesson-action-btn" data-action="reset" disabled>↺ Reset</button>
+          <button type="button" class="lesson-action-btn" data-action="stats">📊 Stats</button>
+          <button type="button" class="lesson-action-btn" data-action="reset">↺ Reset</button>
         </div>
       `;
 
@@ -769,8 +1094,16 @@
         selectedLessonIds = new Set([lesson.id]);
         startSessionSetup();
       });
-      // "Stats" (Batch E) and "Reset" (Batch D) are stubbed disabled
-      // until those batches exist — intentionally not wired to a no-op.
+      card.querySelector('[data-action="stats"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        showLessonStatsModal(lesson);
+      });
+      card.querySelector('[data-action="reset"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(confirm(`Reset all saved progress for "${name}"? This can't be undone.`)){
+          resetLessonStats(lesson.id);
+        }
+      });
 
       lessonsGrid.appendChild(card);
     });
@@ -1112,6 +1445,21 @@
     return `${mm}:${ss}`;
   }
 
+  // ---------- Quit mid-session (Batch F) ----------
+  // Per-question stats are already written as each question is answered
+  // or skipped, so quitting needs no special "discard partial progress"
+  // logic — it would take extra code to throw that away, so the default
+  // behavior here is correct by construction. Routes straight to the
+  // Lessons Hub, bypassing Results entirely (quitting isn't "finishing").
+  function quitToLessonsHub(){
+    stopTimer();
+    if(kahootTickInterval){ clearInterval(kahootTickInterval); kahootTickInterval = null; }
+    if(quizData) goToLessonsHub(quizData);
+  }
+  examQuitBtn.addEventListener('click', quitToLessonsHub);
+  kahootQuitBtn.addEventListener('click', quitToLessonsHub);
+  flashQuitBtn.addEventListener('click', quitToLessonsHub);
+
   // ---------- Start button (branches by mode) ----------
   // Batch C interleave/shuffle decision (Open Questions #1): shuffle the
   // combined set together when more than one lesson is in play (matches
@@ -1128,6 +1476,7 @@
     score = 0;
     correctCount = 0;
     elapsedSeconds = 0;
+    sessionLog = [];
 
     const selectedQuestions = getSelectedQuestions();
     if(selectedQuestions.length === 0){
@@ -1180,6 +1529,7 @@
   function renderExamQuestion(){
     const q = preparedQuestions[currentIndex];
     examAnswered = false;
+    examQuestionStartedAt = Date.now();
 
     examMeta.textContent = `Question ${currentIndex + 1} of ${preparedQuestions.length} · ${LEVEL_LABELS[currentLevel]}`;
     examQuestionText.textContent = q.questionText;
@@ -1196,6 +1546,7 @@
 
     examProgressBar.style.width = `${(currentIndex / preparedQuestions.length) * 100}%`;
     examNextBtn.classList.add('hidden');
+    examSkipBtn.classList.remove('hidden');
   }
 
   function selectExamChoice(selectedIndex){
@@ -1210,15 +1561,37 @@
       else if(idx === selectedIndex) btn.classList.add('incorrect');
     });
 
-    if(selectedIndex === q.correctAnswerIndex){
+    const isCorrect = selectedIndex === q.correctAnswerIndex;
+    if(isCorrect){
       score++;
       correctCount++;
       examScoreDisplay.textContent = `Score: ${score}`;
     }
 
+    const timeMs = Date.now() - examQuestionStartedAt;
+    recordAnswer(q.lessonId, q.id, { correct: isCorrect, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: isCorrect ? 'correct' : 'wrong' });
+
+    examSkipBtn.classList.add('hidden');
     examNextBtn.textContent = (currentIndex === preparedQuestions.length - 1) ? 'Finish Quiz →' : 'Next Question →';
     examNextBtn.classList.remove('hidden');
   }
+
+  examSkipBtn.addEventListener('click', () => {
+    if(examAnswered) return;
+    examAnswered = true;
+    const q = preparedQuestions[currentIndex];
+    const timeMs = Date.now() - examQuestionStartedAt;
+    recordAnswer(q.lessonId, q.id, { skipped: true, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: 'skipped' });
+
+    currentIndex++;
+    if(currentIndex >= preparedQuestions.length){
+      finishSession('exam');
+    }else{
+      renderExamQuestion();
+    }
+  });
 
   examNextBtn.addEventListener('click', () => {
     currentIndex++;
@@ -1268,6 +1641,7 @@
 
     kahootProgressBar.style.width = `${(currentIndex / preparedQuestions.length) * 100}%`;
 
+    kahootSkipBtn.classList.remove('hidden');
     kahootRemainingMs = KAHOOT_TIME_LIMIT * 1000;
     updateKahootTimerUI();
     if(kahootTickInterval) clearInterval(kahootTickInterval);
@@ -1321,6 +1695,11 @@
     }
     kahootScoreDisplay.textContent = `Points: ${score}`;
 
+    const timeMs = (KAHOOT_TIME_LIMIT * 1000) - kahootRemainingMs;
+    recordAnswer(q.lessonId, q.id, { correct: isCorrect, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: isCorrect ? 'correct' : 'wrong' });
+
+    kahootSkipBtn.classList.add('hidden');
     setTimeout(() => advanceKahoot(), 1400);
   }
 
@@ -1334,8 +1713,31 @@
       else tile.classList.add('k-faded');
     });
     kahootPointsFlash.textContent = "Time's up!";
+
+    recordAnswer(q.lessonId, q.id, { correct: false, timeMs: KAHOOT_TIME_LIMIT * 1000 });
+    sessionLog.push({ questionText: q.questionText, result: 'wrong' });
+
+    kahootSkipBtn.classList.add('hidden');
     setTimeout(() => advanceKahoot(), 1400);
   }
+
+  kahootSkipBtn.addEventListener('click', () => {
+    if(kahootAnswered) return;
+    kahootAnswered = true;
+    if(kahootTickInterval) clearInterval(kahootTickInterval);
+
+    const q = preparedQuestions[currentIndex];
+    const tiles = kahootGrid.querySelectorAll('.kahoot-tile');
+    tiles.forEach(tile => { tile.disabled = true; });
+    kahootPointsFlash.textContent = 'Skipped';
+
+    const timeMs = (KAHOOT_TIME_LIMIT * 1000) - kahootRemainingMs;
+    recordAnswer(q.lessonId, q.id, { skipped: true, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: 'skipped' });
+
+    kahootSkipBtn.classList.add('hidden');
+    setTimeout(() => advanceKahoot(), 500);
+  });
 
   function advanceKahoot(){
     currentIndex++;
@@ -1381,11 +1783,19 @@
   });
 
   function gradeFlashcard(knewIt){
+    const q = preparedQuestions[currentIndex];
     if(knewIt){
       score++;
       correctCount++;
       flashScoreDisplay.textContent = `Knew It: ${score}`;
     }
+    // Flashcard is self-paced (the person controls when they flip and
+    // grade), so a raw "time to answer" would mix thinking time with
+    // however long they got distracted mid-card — not comparable to the
+    // forced-pace Exam/Kahoot timing. timeMs is intentionally omitted.
+    recordAnswer(q.lessonId, q.id, { correct: knewIt });
+    sessionLog.push({ questionText: q.questionText, result: knewIt ? 'correct' : 'wrong' });
+
     currentIndex++;
     if(currentIndex >= preparedQuestions.length){
       finishSession('flashcard');
@@ -1396,6 +1806,19 @@
 
   flashKnewBtn.addEventListener('click', () => gradeFlashcard(true));
   flashDidntBtn.addEventListener('click', () => gradeFlashcard(false));
+
+  flashSkipBtn.addEventListener('click', () => {
+    const q = preparedQuestions[currentIndex];
+    recordAnswer(q.lessonId, q.id, { skipped: true });
+    sessionLog.push({ questionText: q.questionText, result: 'skipped' });
+
+    currentIndex++;
+    if(currentIndex >= preparedQuestions.length){
+      finishSession('flashcard');
+    }else{
+      renderFlashcard();
+    }
+  });
 
   // =========================================================
   // RESULTS
@@ -1421,6 +1844,20 @@
     resultLabel2.textContent = mode === 'flashcard' ? 'Retention' : 'Accuracy';
     resultValue2.textContent = `${accuracy}%`;
     resultValue3.textContent = formatTime(elapsedSeconds);
+
+    // Per-session review: every question-answer pair from this session,
+    // in the order they were played — separate from the persistent
+    // per-lesson stats, which accumulate across every session ever.
+    sessionReviewList.innerHTML = sessionLog.map(entry => `
+      <div class="sr-row">
+        <span class="sr-q">${escapeHTML(entry.questionText)}</span>
+        <span class="sr-badge ${entry.result}">${entry.result === 'correct' ? '✓ Correct' : entry.result === 'wrong' ? '✗ Wrong' : '⏭ Skipped'}</span>
+      </div>
+    `).join('') || '<p>No questions were answered this session.</p>';
+
+    // United/all-time stats: combined across every session and lesson
+    // ever recorded on this device, not just this run.
+    allTimeSummaryRow.innerHTML = formatStatsSummaryHTML(getUnitedStats());
 
     showScreen('results');
   }
