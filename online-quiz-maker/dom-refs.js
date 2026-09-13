@@ -56,13 +56,19 @@ const pptxLoadingState = document.getElementById('pptxLoadingState');
 
 const quizCodeModal = document.getElementById('quizCodeModal');
 const closeModalBtn = document.getElementById('closeModalBtn');
+// Wraps the secret-key label/input/Copy/Regenerate row; hidden in combined mode (Batch C — see quiz-export.js's updateSecretKeyRowVisibility()).
+const secretKeyRow = document.getElementById('secretKeyRow');
 const secretKeyInput = document.getElementById('secretKeyInput');
+// "Keep secret key separate from the code" checkbox; unchecked (default) = combined self-contained Quiz Code (Batch A/C).
+const combineKeyToggle = document.getElementById('combineKeyToggle');
 const copySecretBtn = document.getElementById('copySecretBtn');
 const regenSecretBtn = document.getElementById('regenSecretBtn');
 const generateCodeBtn = document.getElementById('generateCodeBtn');
 const codeResultBox = document.getElementById('codeResultBox');
 const quizCodeOutput = document.getElementById('quizCodeOutput');
 const copyCodeBtn = document.getElementById('copyCodeBtn');
+// Downloads the generated Quiz Code (or combined key+code string) as a .txt file (Batch C).
+const downloadCodeBtn = document.getElementById('downloadCodeBtn');
 const modalError = document.getElementById('modalError');
 
 // importDetails now lives in the top nav bar (moved out of the source panel); id is unchanged so this ref still resolves.
@@ -151,13 +157,16 @@ export {
   syncBadgeText,
   quizCodeModal,
   closeModalBtn,
+  secretKeyRow,
   secretKeyInput,
+  combineKeyToggle,
   copySecretBtn,
   regenSecretBtn,
   generateCodeBtn,
   codeResultBox,
   quizCodeOutput,
   copyCodeBtn,
+  downloadCodeBtn,
   modalError,
   importDetailsEl,
   sourceStackAreaEl,
