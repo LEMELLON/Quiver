@@ -1,4 +1,4 @@
-  html, body { height: 100%; }
+html, body { height: 100%; }
   body { background: #0b0f14; }
 
   /* thin dark scrollbars to match the tool's tone */
@@ -161,60 +161,58 @@
     color: #8296ab;
   }
 
-<<<<<<< Updated upstream
-  /* ---------- source panel + Pane 2 continuous drag-resize (batch 4) ----------
-     Width only — column height keeps tracking the section's normal 100%/flex height in both states via the
-     unchanged lg:sticky/lg:max-h-[...] utilities on #sourcePane/#pane2 themselves; only the grid column's size
-     changes. Scoped to the same 1024px breakpoint the base lg:grid-cols-[...] utility used to use (that
-     Tailwind class has been removed from #layoutRoot in the HTML — this @media block, keyed on the ID
-     selector, now owns column widths outright), so the single-column mobile layout (grid-cols-1) is untouched.
-     --source-panel-w and --pane2-w are written directly by main.js's drag handlers (setupPaneDrag) AND by
-     sourcePanelToggleBtn's click handler, both funneled through the single applyWidth() function — there is
-     no other code path that sets these. Defaults below reproduce batch 3's original collapsed/equal-fr layout
-     before any drag or toggle happens. Pane 1 and Pane 3 stay bare 1.4fr (decision #2, option (a) from the
-     batch-4 handoff): they keep splitting whatever space is left over after --pane2-w is subtracted, so
-     dragging Pane 2 changes Pane 1/Pane 3 only as a side effect of shared leftover fr space, by design. */
-=======
-  /* ---------- mother-pane grid ----------
-     Pane 2 and Pane 3 are fused into a single grid column — #motherPane — with #pane1 resizable against it
-     as a sibling on #layoutRoot's outer grid. Width only — column height keeps tracking each section's
-     normal 100%/flex height via the unchanged lg:sticky/lg:max-h-[...] utilities; only the grid column's
-     size changes. Scoped to the same 1024px breakpoint used elsewhere in this file, so the single-column
-     mobile layout (grid-cols-1) is untouched. --source-panel-w, --pane1-w, and --mother-pane-w are written
-     directly by main.js's drag handlers (setupPaneDrag) AND by sourcePanelToggleBtn's click handler, both
-     funneled through the single applyWidth() function — there is no other code path that sets these.
-     --pane2-fr / --pane3-fr are the separate fr-based split *inside* #motherPane (see that rule below),
-     written only by main.js's setupInternalSplitDrag()/applyInternalSplit(). --pane1-w and --mother-pane-w
-     below are px stand-ins — ASSUMPTION, confirm against design. */
->>>>>>> Stashed changes
+  /* ---------- mother-pane grid restructure (batch 5A) ----------
+     Supersedes decision #2 option (a) from the batch-4 handoff (Pane 1/Pane 3 staying bare 1.4fr). Pane 2 and
+     Pane 3 are now fused into a single grid column — #motherPane, the "mother pane" — with #pane1
+     resizable against it as a sibling on #layoutRoot's outer grid (#termPane was originally a second such
+     sibling too, but has since moved inside #pane2 — see the Move #termPane Into Pane 2 handoff). Width only — column height keeps
+     tracking each section's normal 100%/flex height via the unchanged lg:sticky/lg:max-h-[...] utilities;
+     only the grid column's size changes. Scoped to the same 1024px breakpoint the base lg:grid-cols-[...]
+     utility used to use (that Tailwind class was removed from #layoutRoot in the HTML back in batch 4 — this
+     @media block, keyed on the ID selector, owns column widths outright), so the single-column mobile layout
+     (grid-cols-1) is untouched. --source-panel-w, --pane1-w, and --mother-pane-w are written directly by
+     main.js's drag handlers (setupPaneDrag) AND by sourcePanelToggleBtn's click handler, both funneled
+     through the single applyWidth() function — there is no other code path that sets these. --pane2-fr /
+     --pane3-fr are the separate fr-based split *inside* #motherPane (see that rule below), written only by
+     main.js's setupInternalSplitDrag()/applyInternalSplit(). --pane1-w and --mother-pane-w below are px
+     stand-ins for the old bare-1.4fr rendering — ASSUMPTION, confirm against design. */
   #layoutRoot {
+    position: relative; /* establishes the containing block for #sourcePane.source-panel-overlay's
+      position: absolute — without this, .source-panel-overlay's top:0/left:0 anchors to the
+      document root instead of #layoutRoot, which is the actual misalignment bug. Plain
+      `relative` with no z-index does NOT create a new stacking context, so it won't change how
+      .source-panel-overlay's z-index:25 or any other descendant's z-index compares against
+      #header's z-index:30 or anything else outside #layoutRoot. */
     --source-panel-w: 96px;
-    --pane2-w: 1.4fr;
+    --pane1-w: 420px;        /* ASSUMPTION — approximate px stand-in for the old bare 1.4fr rendering; confirm against design */
+    --mother-pane-w: 900px;  /* ASSUMPTION — approximate px stand-in for the old pane2(1.4fr)+pane3(1.4fr) combined rendering */
+    --pane2-fr: 1fr;
+    --pane3-fr: 1fr;
   }
   @media (min-width: 1024px) {
     #layoutRoot {
-<<<<<<< Updated upstream
-      grid-template-columns: var(--source-panel-w) 1.4fr var(--pane2-w) 1.4fr minmax(200px, 0.7fr);
-=======
-      /* #motherPane is the last outer-grid track — --mother-pane-w stays the user-set/dragged *minimum*
-         width (via #motherPaneDivider), with minmax()/1fr letting it grow to fill the remaining space
-         instead — ASSUMPTION: if dead space (rather than a growing mother pane) is preferred, drop the
+      /* #motherPane is now the last outer-grid track (batch: Move #termPane Into Pane 2 handoff) — #termPane
+         moved inside #pane2 and is no longer a 4th sibling column here, so there's no separate track left to
+         absorb whatever width isn't claimed by the other two. --mother-pane-w stays the user-set/dragged
+         *minimum* width (via #motherPaneDivider), with minmax()/1fr letting it grow to fill the remaining
+         space instead — ASSUMPTION: if dead space (rather than a growing mother pane) is preferred, drop the
          minmax()/1fr and use var(--mother-pane-w) alone. */
       grid-template-columns: var(--source-panel-w) var(--pane1-w) minmax(var(--mother-pane-w), 1fr);
->>>>>>> Stashed changes
     }
+
+    /* Explicit line placement so #pane1/#motherPane always render in the track sized by their own var,
+       regardless of how many in-flow siblings precede them in the DOM. Without this, toggling
+       .source-panel-overlay onto #sourcePane (position: absolute) removes it from the auto-placement
+       cursor, which silently shifts #pane1 into track 1 (--source-panel-w, 96px) and #motherPane into
+       track 2 (--pane1-w, 420px), leaving track 3 empty. Scoped inside this @media block (not bare/
+       unscoped) so the grid-cols-1 mobile stack below 1024px never sees these line numbers — Grid would
+       otherwise create implicit tracks to satisfy an explicit out-of-range line on an in-flow item and
+       break the single-column layout. */
+    #sourcePane { grid-column: 1; }
+    #pane1      { grid-column: 2; }
+    #motherPane { grid-column: 3; }
   }
 
-<<<<<<< Updated upstream
-  /* Drag handles for the source panel and Pane 2 (batch 4). Positioned inside their pane's own box
-     (right: 0, not a negative offset) because both #sourcePane and #pane2 clip overflow (overflow-y-auto /
-     overflow-hidden respectively) — a handle hung outside the box via a negative offset would be clipped.
-     No position:relative needed on the panes: both already carry Tailwind's lg:sticky at this breakpoint,
-     which establishes a containing block for this absolutely-positioned child same as relative would.
-     Hidden below the 1024px breakpoint since the grid stacks to a single column there and there's nothing
-     to drag. Keyboard resizing is not implemented — pointer drag only; the source panel's toggle button
-     remains the keyboard-accessible path for that one pane. See batch-4 handoff for follow-up. */
-=======
   /* Source panel expand-as-overlay (replaces the old grid-track expand). --source-panel-w never changes
      from its 96px constant above; the "expanded" visual state lives entirely in this class + the separate
      --source-panel-overlay-w var, both toggled by sourcePanelToggleBtn's click handler in main.js. Because
@@ -251,12 +249,16 @@
      which already get a containing block for their divider from Tailwind's lg:sticky) because #motherPane is
      a plain wrapper div, not a Tailwind-classed section.
 
-     --pane2-fr/--pane3-fr are stored as complete track sizes, i.e. the string includes the `fr` unit itself
-     (see #layoutRoot's --pane2-fr: 1fr above, and applyInternalSplit() in main.js, which writes
-     `clamped + 'fr'`). `fr` is a <flex> value, which calc() cannot combine arithmetically with a bare
-     number — storing the unit in the property lets #motherPane use a plain var() reference below with no
-     calc() involved; getCurrentPane2Fr()'s parseFloat() read in main.js is unaffected since parseFloat()
-     stops at the first non-numeric character. */
+     Batch 5F fix: --pane2-fr/--pane3-fr are stored as complete track sizes, i.e. the string includes the
+     `fr` unit itself (see #layoutRoot's --pane2-fr: 1fr above, and applyInternalSplit() in main.js, which
+     now writes `clamped + 'fr'` instead of a bare number). That's the correct approach: `fr` is a <flex>
+     value, and <flex> is not a type calc() can combine arithmetically (only <number>, <length>,
+     <percentage>, <angle>, <time>, etc.), so an earlier fix that tried calc(var(--pane2-fr, 1) * 1fr) was
+     itself an invalid track size and collapsed the whole declaration to `none` — zero explicit columns,
+     which is why Pane 2/Pane 3 were stacking into implicit rows instead of sitting side by side. Storing
+     the unit in the property means #motherPane can go back to a plain var() reference below with no
+     calc() involved at all; getCurrentPane2Fr()'s parseFloat() read in main.js is unaffected since
+     parseFloat() stops at the first non-numeric character. */
   #motherPane {
     position: relative;
     min-width: 0;
@@ -266,7 +268,7 @@
   }
 
   /* Drag handles, generic across all four dividers (source panel, Pane 1, the internal pane2/pane3 split,
-     and #motherPane). Positioned inside their containing box (right: 0, not a negative
+     and #motherPane — batches 4 and 5A). Positioned inside their containing box (right: 0, not a negative
      offset) because #sourcePane/#pane2/#motherPane all clip overflow — a handle hung outside via a negative
      offset would be clipped. Each divider's containing block comes from Tailwind's lg:sticky on its own
      section (#sourcePane, #pane1, #pane2) except #motherPane, which is a plain wrapper div and gets an
@@ -274,7 +276,6 @@
      grid stacks to a single column there and there's nothing to drag. Keyboard resizing (arrow keys, Home/
      End) is implemented in main.js for all four — see setupPaneDrag()'s keydown handler and
      setupInternalSplitDrag()'s equivalent. */
->>>>>>> Stashed changes
   .pane-divider {
     display: none;
   }
@@ -420,34 +421,12 @@
   /* ---------- term nav bar ----------
      panel above the chip grid (see editor-render.js's buildTermGroups()/buildTermRowHtml()/renderTermBar() and #termBarDetails); reuses .nav-chip/.nav-pager-btn's palette. */
 
-<<<<<<< Updated upstream
-  /* #termBarDetails floats as a popup above surrounding panel content rather than sharing normal document
-     flow with it (see the Term Panel UI Fixes handoff). It's absolutely positioned against #termPane, so
-     #termPane needs to be a positioned ancestor to anchor against; at the lg breakpoint #termPane's own
-     lg:sticky already provides that (sticky counts as a positioned value), so this only adds position:
-     relative below lg, where #termPane is plain static (single-column mobile stack). z-index sits below
-     the selection toolbar (z-40) and the Quiz Code modal (z-50) but above ordinary, unpositioned panel
-     content — see styles.css's existing z-30/z-40/z-50 scale (header / selectionToolbar / quizCodeModal). */
-  @media (max-width: 1023.98px) {
-    #termPane {
-      position: relative;
-    }
-  }
-  #termBarDetails {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 20;
-    max-height: calc(100vh - 5.5rem - 2rem);
-    overflow-y: auto;
-  }
-=======
-  /* #termBarDetails is the sole content of #termPanelPopup — a manually-toggled popup launched from a
-     button in #pane1's header. It's normal in-flow content within that popup; #termPanelPopup itself
-     supplies the fixed positioning, sizing, and scrolling (see that rule further down this file) rather
-     than anything here. */
->>>>>>> Stashed changes
+  /* #termBarDetails has moved twice: first from an absolutely-positioned popup (its own outer-grid sibling,
+     see the Term Panel UI Fixes handoff), to plain in-flow content nested inside #pane2 (see the Move #termPane
+     Into Pane 2 handoff), to its current home as the sole content of #termPanelPopup — a manually-toggled
+     popup launched from a button in #pane1's header (see the Term Panel as a Pane-1 Popup handoff). It's
+     normal in-flow content within that popup; #termPanelPopup itself supplies the fixed positioning, sizing,
+     and scrolling (see that rule further down this file) rather than anything here. */
 
   .term-row {
     position: relative; /* anchors .term-row-dupe-actions' overlay positioning below */
@@ -571,8 +550,8 @@
   }
   .term-filter-clear:hover { color: #e7edf5; }
 
-  /* ---------- term-pane scope toggle + search ----------
-     #termScopeToggle / #termSearchInput sit above #termBar inside #termPane (see renderTermBar()/filterTermGroupsForPanel()); reuses the .term-row-* palette. Stacked vertically, each control taking the column's full width, since there isn't horizontal room for both on one line. */
+  /* ---------- term-panel scope toggle + search ----------
+     #termScopeToggle / #termSearchInput sit above #termBar inside #termPanelPopup (see renderTermBar()/filterTermGroupsForPanel()); reuses the .term-row-* palette. Stacked vertically, each control taking the popup's full width, since there isn't horizontal room for both on one line. */
   .term-scope-toggle {
     display: flex;
     gap: 0.4rem;
@@ -819,16 +798,14 @@
 
   /* PPTX loading placeholder, shown while Tier 1/2 are being attempted; reuses pdfEmptyState's layout and the existing .animate-beacon pulse. */
   #pptxLoadingState p { color: #8296ab; }
-<<<<<<< Updated upstream
-=======
 
-  /* ---------- Floating Pane 1 shell ----------
+  /* ---------- Floating Pane 1 shell (batch 5B) ----------
      Background/border come from Tailwind's bg-panel/border-edge/rounded-lg/shadow-2xl utilities on the shell
      markup itself (matching #pane2/#pane3's own bg-panel border-edge rounded-lg treatment) rather than
      duplicated here as raw hex — this rule only owns the structural/positioning/behavior pieces Tailwind's
-     utility classes can't express. z-index: 45, not 50 — #quizCodeModal is also z-50, so sitting just below
-     it means the modal always wins if both are ever visible at once, while still clearing .pane-divider's
-     z-index:10 by a wide margin. */
+     utility classes can't express. z-index: 45, not 50 — the handoff flagged a possible clash with
+     #quizCodeModal (which is also z-50); sitting just below it means the modal always wins if both are ever
+     visible at once, while still clearing .pane-divider's z-index:10 by a wide margin. */
   .pane1-float-shell {
     position: fixed;
     top: 96px;
@@ -884,8 +861,9 @@
     }
   }
 
-  /* ---------- Term panel popup ----------
-     Hidden by default; shown by main.js's openTermPanel() removing the .hidden class. Top/left and z-index are both set inline
+  /* ---------- Term panel popup (batch: Term Panel as a Pane-1 Popup handoff) ----------
+     Replaces the old #pane2-nested term sidebar. Hidden by default; shown by main.js's
+     openTermPanel() removing the .hidden class. Top/left and z-index are both set inline
      via JS, not here, since both depend on pane1Floating at open-time (docked anchors off
      #pane1's box at z-index 20; floating anchors off .pane1-float-shell's box at z-index
      46, one above the shell's own 45 and still below #quizCodeModal's 50). This rule only
@@ -899,4 +877,3 @@
     overflow-y: auto;
   }
   #termPanelPopup.hidden { display: none; }
->>>>>>> Stashed changes

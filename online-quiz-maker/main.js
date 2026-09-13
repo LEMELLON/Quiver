@@ -41,6 +41,19 @@ import {
   sourcePaneEl,
   layoutRootEl,
   sourcePanelToggleBtn,
+  pane1,
+  pane1DividerEl,
+  pane2DividerEl,
+  motherPaneEl,
+  motherPaneDividerEl,
+  pane1FloatToggleBtn,
+  pane1FloatShell,
+  pane1FloatHeader,
+  pane1FloatBody,
+  pane1CollapseToggleBtn,
+  pane1DockBtn,
+  termPanelPopup,
+  termPanelToggleBtn,
 } from './dom-refs.js';
 
 // Clicking a shared highlight mark activates the first question id in its data-qid list.
@@ -178,23 +191,29 @@ if (sourceStackAreaEl) {
   });
 }
 
-// ---------- Source panel / Pane 1 / #motherPane continuous drag-resize ----------
+// ---------- Source panel / Pane 1 / #motherPane continuous drag-resize (batch 4, restructured in 5A) ----------
 // applyWidth() is the ONLY place that writes --source-panel-w / --pane1-w / --mother-pane-w on #layoutRoot —
-// both the drag handlers below and the toggle button's click handler funnel through it, so there's a single
-// code path for writing a pane's width. The internal pane2/pane3 fr-split has its own single-writer
-// function, applyInternalSplit(), a few lines below setupPaneDrag().
+// both the drag handlers below and the toggle button's click handler funnel through it, per the batch-4
+// handoff's requirement that there be a single code path for writing a pane's width. The internal pane2/pane3
+// fr-split has its own single-writer function, applyInternalSplit(), a few lines below setupPaneDrag().
+
+// minWidth/maxWidth for the source panel are grounded in batch 3's actual CSS (96px collapsed thumb-only
+// row) and the handoff's own values. pane1/motherPane's min/max and the source panel's expandedWidth are NOT
+// specified anywhere in the handoff — these are reasonable placeholder defaults, not extracted from a spec,
+// and should be confirmed against the real design before shipping (flagged in the batch-4 and 5A handbacks).
 const PANE_DRAG_CONFIG = {
-  // --source-panel-w is a load-time constant (styles.css) with no runtime writer; expandedWidth only seeds
-  // the overlay's --source-panel-overlay-w var via the toggle handler below.
+  // minWidth/maxWidth removed (source-panel-overlay handoff): they existed only to feed setupPaneDrag()'s
+  // clamp/aria logic for #sourcePanelDivider, which is gone. --source-panel-w is now a load-time constant
+  // (styles.css) with a single writer nowhere near this config; expandedWidth now only seeds the overlay's
+  // --source-panel-overlay-w var via the toggle handler below.
   source: {
     varName: '--source-panel-w',
-    minWidth: 96,          // thumb-only collapsed width — matches batch 3's CSS and the .source-stack-meta breakpoint
-    maxWidth: 480,          // ASSUMPTION — not specified in the handoff
     collapsedWidth: 96,
-    expandedWidth: 320, // seeds --source-panel-overlay-w
+    expandedWidth: 320, // now only seeds --source-panel-overlay-w
   },
-  // pane2/pane3 are the fr-split inside #motherPane (see applyInternalSplit()/setupInternalSplitDrag()
-  // below); pane1 and motherPane are the outer-grid px tracks.
+  // pane2 is no longer a px-tracked pane on the outer grid as of batch 5A — it's the fr-split inside
+  // #motherPane now (see applyInternalSplit()/setupInternalSplitDrag() below). pane1 and motherPane take
+  // over the outer-grid px tracks that Pane 1/Pane 3's old bare-1.4fr columns used to occupy.
   pane1: {
     varName: '--pane1-w',
     minWidth: 380,   // ASSUMPTION — confirm against design.
@@ -216,17 +235,31 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+// Step sizes for keyboard resizing.
+const KEY_STEP = 16;
+const KEY_STEP_LARGE = 48;
+
+// Syncs a divider's aria-value* attributes with the pane's current width.
+function updateDividerAria(dividerEl, cfg, widthPx) {
+  dividerEl.setAttribute('aria-valuemin', String(cfg.minWidth));
+  dividerEl.setAttribute('aria-valuemax', String(cfg.maxWidth));
+  dividerEl.setAttribute('aria-valuenow', String(Math.round(widthPx)));
+}
+
 // Reads a pane's current rendered width once. Only ever called at drag start or from the toggle button —
-// NEVER from inside a pointermove handler, which is the #1 cause of drag jank.
+// NEVER from inside a pointermove handler, which is the #1 cause of drag jank (see batch-4 handoff).
 function getPaneCurrentWidthPx(paneEl) {
   return paneEl.getBoundingClientRect().width;
 }
 
-// Pane 1's effective max width isn't just PANE_DRAG_CONFIG.pane1.maxWidth — it also can't grow past however
-// much room is left before #motherPane would be pushed below its own current floor (--mother-pane-w, the
-// last value #motherPaneDivider was dragged to — not PANE_DRAG_CONFIG.motherPane.minWidth). Reads live
-// rather than caching, since viewport size and --mother-pane-w can each change independently of a pane1
-// drag. Called once at pointerdown/keydown — never from inside onPointerMove.
+// Pane 1's effective max width isn't just PANE_DRAG_CONFIG.pane1.maxWidth — it also can't be allowed to grow
+// past however much room is actually left before #motherPane would be pushed below its own current floor.
+// #motherPane's grid track is minmax(var(--mother-pane-w), 1fr) (styles.css), so that floor is whatever
+// --mother-pane-w is *currently* set to (last value #motherPaneDivider was dragged to), not
+// PANE_DRAG_CONFIG.motherPane.minWidth — those are two independent numbers. Reads live (clientWidth, computed
+// padding/gap, current --mother-pane-w, current source panel width) rather than caching, since viewport size
+// and --mother-pane-w can each change independently of a pane1 drag. Called once at pointerdown/keydown, same
+// "read at drag start only" discipline as startWidth above — never from inside onPointerMove.
 function getPane1EffectiveMaxWidth() {
   const cfg = PANE_DRAG_CONFIG.pane1;
   if (!layoutRootEl || !sourcePaneEl) return cfg.maxWidth;
@@ -251,8 +284,8 @@ function applyWidth(paneKey, widthPx) {
 }
 
 // Wires one divider to one pane: pointer events + pointer capture (not mousemove on document), width cached
-// once at pointerdown, DOM writes batched to requestAnimationFrame — avoids per-move layout reads, the
-// usual cause of laggy drag-resize.
+// once at pointerdown, DOM writes batched to requestAnimationFrame — see the batch-4 handoff's "Why naive
+// drag-resize gets laggy" section for why each of these choices matters.
 function setupPaneDrag(paneKey, dividerEl, paneEl) {
   if (!dividerEl || !paneEl) return;
   const cfg = PANE_DRAG_CONFIG[paneKey];
@@ -260,13 +293,18 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
   let startWidth = 0;
   let pendingWidth = null;
   let rafId = null;
+  let dragMaxWidth = cfg.maxWidth; // recomputed at pointerdown below when cfg.getMaxWidth exists (pane1 only)
+
+  updateDividerAria(dividerEl, cfg, getPaneCurrentWidthPx(paneEl));
 
   function onPointerMove(e) {
     // Pure arithmetic only — no getBoundingClientRect/clientWidth/offsetWidth reads here.
-    pendingWidth = clamp(startWidth + (e.clientX - startX), cfg.minWidth, cfg.maxWidth);
+    const rawRequested = startWidth + (e.clientX - startX);
+    pendingWidth = clamp(rawRequested, cfg.minWidth, dragMaxWidth);
     if (rafId == null) {
       rafId = requestAnimationFrame(() => {
         applyWidth(paneKey, pendingWidth);
+        updateDividerAria(dividerEl, cfg, pendingWidth);
         rafId = null;
       });
     }
@@ -277,7 +315,7 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
     try { dividerEl.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
     paneEl.style.willChange = '';
     dividerEl.classList.remove('dragging');
-    resumeTier1Scaling(); // resumes the PPTX Tier 1 ResizeObserver paused at pointerdown
+    resumeTier1Scaling();
   }
 
   dividerEl.addEventListener('pointerdown', (e) => {
@@ -285,25 +323,49 @@ function setupPaneDrag(paneKey, dividerEl, paneEl) {
     dividerEl.setPointerCapture(e.pointerId);
     startX = e.clientX;
     startWidth = getPaneCurrentWidthPx(paneEl); // read once, here only
+    dragMaxWidth = cfg.getMaxWidth ? Math.min(cfg.maxWidth, cfg.getMaxWidth()) : cfg.maxWidth;
     paneEl.style.willChange = 'width';
     dividerEl.classList.add('dragging');
-    pauseTier1Scaling(); // suspends the PPTX Tier 1 ResizeObserver for the duration of the drag
+    pauseTier1Scaling();
     dividerEl.addEventListener('pointermove', onPointerMove);
     dividerEl.addEventListener('pointerup', onPointerUp, { once: true });
   });
+
+  // Left/Right step the pane's width, Shift+Left/Right take a bigger step, Home/End jump to min/max.
+  dividerEl.addEventListener('keydown', (e) => {
+    const current = getPaneCurrentWidthPx(paneEl);
+    // Cheap to recompute per keypress (not a drag loop) — same dynamic ceiling as the pointer-drag path above.
+    const effectiveMaxWidth = cfg.getMaxWidth ? Math.min(cfg.maxWidth, cfg.getMaxWidth()) : cfg.maxWidth;
+    let targetWidth;
+    if (e.key === 'ArrowLeft') {
+      targetWidth = current - (e.shiftKey ? KEY_STEP_LARGE : KEY_STEP);
+    } else if (e.key === 'ArrowRight') {
+      targetWidth = current + (e.shiftKey ? KEY_STEP_LARGE : KEY_STEP);
+    } else if (e.key === 'Home') {
+      targetWidth = cfg.minWidth;
+    } else if (e.key === 'End') {
+      targetWidth = effectiveMaxWidth;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    const clamped = applyWidth(paneKey, Math.min(targetWidth, effectiveMaxWidth));
+    updateDividerAria(dividerEl, cfg, clamped);
+  });
 }
 
-setupPaneDrag('source', sourcePanelDividerEl, sourcePaneEl);
-setupPaneDrag('pane2', pane2DividerEl, pane2El);
+setupPaneDrag('pane1', pane1DividerEl, pane1);
+setupPaneDrag('motherPane', motherPaneDividerEl, motherPaneEl);
 
-// ---------- Internal pane2/pane3 fr-split drag ----------
-// #pane2Divider resizes the pane2:pane3 ratio *inside* #motherPane only — it can't reuse setupPaneDrag() as-is
-// because that function writes a single px custom property; this one writes two fr custom properties computed
-// relative to #motherPane's own content width. --pane2-fr/--pane3-fr live on #layoutRoot and drive
-// #motherPane's own grid-template-columns in styles.css, so resizing Pane 1 or #motherPane itself changes
-// #motherPane's total width for free via fr units — this function only fires when the internal divider moves.
-// Same performance discipline as setupPaneDrag(): one bounding-rect read at pointerdown only, arithmetic-only
-// in pointermove, single requestAnimationFrame-batched write, pointer capture.
+// ---------- Internal pane2/pane3 fr-split drag (batch 5A) ----------
+// #pane2Divider now resizes the pane2:pane3 ratio *inside* #motherPane only — it can't reuse setupPaneDrag()
+// as-is because that function writes a single px custom property; this one writes two fr custom properties
+// computed relative to #motherPane's own content width. --pane2-fr/--pane3-fr live on #layoutRoot (same as
+// every other pane width var) and drive #motherPane's own grid-template-columns in styles.css — dragging
+// divider A/B (Pane 1 or #motherPane's own outer-grid width) changes #motherPane's total width for free via
+// fr units, with no JS recompute needed on that path; this function only fires when the internal divider
+// itself moves. Same performance discipline as setupPaneDrag(): one bounding-rect read at pointerdown only,
+// arithmetic-only in pointermove, single requestAnimationFrame-batched write, pointer capture.
 const INTERNAL_SPLIT_TOTAL_FR = 2;
 const INTERNAL_SPLIT_MIN_FR = 0.4;  // ASSUMPTION — confirm neither pane visually collapses at this ratio
 const INTERNAL_SPLIT_MAX_FR = INTERNAL_SPLIT_TOTAL_FR - INTERNAL_SPLIT_MIN_FR;
@@ -396,30 +458,37 @@ function setupInternalSplitDrag(dividerEl, motherPaneEl) {
 setupInternalSplitDrag(pane2DividerEl, motherPaneEl);
 
 // Toggle button: expands the source panel as an absolutely-positioned overlay (styles.css's
-// #sourcePane.source-panel-overlay) instead of growing the grid track — --source-panel-w is set once at page
-// load and stays a constant for the session. .source-panel-expanded stays on #sourcePane for
-// .source-stack-meta's show/hide in styles.css — unrelated to width.
+// #sourcePane.source-panel-overlay) instead of growing the grid track — --source-panel-w is never written
+// here anymore; it's set once at page load and stays a constant for the session. .source-panel-expanded
+// stays on #sourcePane only, for .source-stack-meta's show/hide in styles.css — unrelated to width, unchanged.
 if (sourcePanelToggleBtn && sourcePaneEl) {
   sourcePanelToggleBtn.addEventListener('click', () => {
     const cfg = PANE_DRAG_CONFIG.source;
-    const isCurrentlyCollapsed = getPaneCurrentWidthPx(sourcePaneEl) <= cfg.minWidth + 1; // +1px tolerance
-    const expanded = isCurrentlyCollapsed;
-    applyWidth('source', expanded ? cfg.expandedWidth : cfg.collapsedWidth);
-    sourcePaneEl.classList.toggle('source-panel-expanded', expanded);
+    const isOpen = sourcePaneEl.classList.contains('source-panel-overlay');
+    const expanded = !isOpen;
+    if (expanded) {
+      layoutRootEl.style.setProperty('--source-panel-overlay-w', `${cfg.expandedWidth}px`);
+    }
+    sourcePaneEl.classList.toggle('source-panel-overlay', expanded);
+    sourcePaneEl.classList.toggle('source-panel-expanded', expanded); // unchanged — still drives .source-stack-meta's show/hide
     sourcePanelToggleBtn.setAttribute('aria-expanded', String(expanded));
     sourcePanelToggleBtn.title = expanded ? 'Collapse source panel' : 'Expand source panel';
   });
 }
 
-// ---------- Floating Pane 1 ----------
-// Manual-trigger only — #pane1FloatToggleBtn is the only way to enter/exit windowed mode. #pane1's actual DOM
-// node is reparented (not cloned/rebuilt) between #layoutRoot and #pane1FloatBody, so every existing
-// listener/ref on it keeps working untouched. #pane1 still carries its lg:sticky/lg:max-h-[...] Tailwind
-// utilities from the grid layout; these are inert once it's inside the shell's own flex/overflow container.
+// ---------- Floating Pane 1 (batch 5B) ----------
+// Manual-trigger only — #pane1FloatToggleBtn is the only way to enter/exit windowed mode.
+// #pane1's actual DOM node is reparented (not cloned/rebuilt) between #layoutRoot and #pane1FloatBody, so
+// every existing listener/ref on it (question nav, add/remove, editor fields, etc.) keeps working untouched —
+// nothing else needs to know #pane1 moved. Note: #pane1 still carries its own lg:sticky/lg:max-h-[...]
+// Tailwind utilities from the grid layout; these are inert once it's inside the shell's own flex/overflow
+// container, but flag if any visual quirk shows up there — not addressed in this batch.
 let pane1Floating = false;
 
-// Reads/writes the shell's position once per call — inside the drag's rAF callback (once per frame) and on
-// window resize, never on every raw pointermove tick.
+// Reads/writes the shell's position once per call — used at drag-end-adjacent points (inside the drag's rAF
+// callback, once per frame, and on window resize), not on every raw pointermove tick. This is the project's
+// existing "one read per frame, not per event" discipline rather than setupPaneDrag's stricter "zero reads in
+// pointermove" rule — if this causes jank in practice, move the clamp to pointerup-only instead of every rAF tick.
 function clampShellToViewport() {
   if (!pane1FloatShell) return;
   const rect = pane1FloatShell.getBoundingClientRect();
@@ -432,7 +501,7 @@ function clampShellToViewport() {
 }
 
 // Undocks #pane1 into the floating shell. The outer grid's --pane1-w track collapses out entirely (via the
-// .pane1-floating class in styles.css) so #motherPane reclaims the freed space instead of leaving a dead gap.
+// .pane1-floating class in styles.css) so #motherPane reclaims the freed space, rather than leaving a dead gap.
 function floatPane1() {
   if (pane1Floating || !pane1FloatShell || !pane1FloatBody || !pane1) return;
   pane1Floating = true;
@@ -445,8 +514,8 @@ function floatPane1() {
 }
 
 // Redocks #pane1 back into #layoutRoot. Grid order is fixed (source, pane1, motherPane — #termPanelPopup is a
-// fixed-position sibling outside grid flow, so it's never a factor here), so this is just an insertBefore
-// against #motherPane.
+// fixed-position sibling outside grid flow, not a track, so it never needs to be accounted for here), so this
+// is just an insertBefore against #motherPane — no separate anchor/bookmark node needs to be tracked.
 function dockPane1() {
   if (!pane1Floating || !pane1 || !motherPaneEl) return;
   pane1Floating = false;
@@ -464,12 +533,13 @@ if (pane1FloatToggleBtn) {
 }
 if (pane1DockBtn) pane1DockBtn.addEventListener('click', dockPane1);
 
-// ---------- Term panel popup ----------
-// Manually toggled only (never auto-shown). Positioning and z-index both depend on pane1Floating at the
-// moment it's opened — docked and floating each get a distinct anchor and z-index (see the two branches
-// below). Closes automatically on any dock/float transition rather than trying to live-reposition against a
-// moving anchor mid-transition (see floatPane1()/dockPane1() above), and on window resize / outside click /
-// Escape (see further below).
+// ---------- Term panel popup (batch: Term Panel as a Pane-1 Popup handoff) ----------
+// Manually toggled only (never auto-shown). Positioning and z-index both depend on
+// pane1Floating at the moment it's opened — docked and floating each get a distinct
+// anchor and z-index (see the two branches below). Closes automatically on any
+// dock/float transition rather than trying to live-reposition against a moving anchor
+// mid-transition (see the ADDED lines inside floatPane1()/dockPane1() above), and on
+// window resize / outside click / Escape (see further below).
 let termPanelOpen = false;
 
 function positionTermPanelDocked() {
@@ -587,9 +657,10 @@ window.addEventListener('resize', () => {
   if (termPanelOpen) closeTermPanel();
 });
 
-// rAF-batched the same way setupPaneDrag() batches pointermove reads/writes — re-anchors the term popup on
-// scroll instead of recomputing layout on every raw scroll tick. capture: true so this also catches scrolls
-// inside inner containers (#docTextViewport etc.), not just the document itself.
+// rAF-batched the same way setupPaneDrag() batches pointermove reads/writes ("recorded... once per
+// frame... not on every raw pointermove tick") — re-anchors the term popup on scroll instead of
+// recomputing layout on every raw scroll tick. capture: true so this also catches scrolls inside
+// inner containers (#docTextViewport etc.), not just the document itself.
 let termPanelScrollRaf = null;
 window.addEventListener('scroll', () => {
   if (!termPanelOpen) return;
@@ -613,7 +684,6 @@ function openSource(sourceId, { skipAutoSelect = false } = {}) {
   // Clears the term search box on source switch; the term-scope preference itself is left untouched.
   resetTermSearchOnSourceSwitch();
   renderSourceList(); // updates which card shows the "active" styling
-  docPanelTitle.textContent = source.name;
 
   setupNavRange();
   renderDocPage(1);
@@ -769,7 +839,6 @@ function startRenamingSource(source, nameEl) {
     settled = true;
     const typed = input.value.trim();
     source.name = typed || previousName; // guard against an emptied field
-    if (source.id === state.activeSourceId) docPanelTitle.textContent = source.name;
     renderSourceList();
   };
   const cancel = () => {
@@ -842,10 +911,7 @@ if (sourceListEl) {
   });
 }
 
-// Lets editor-render.js's term-panel handlers (filterByTerm, viewFlaggedQuestion) trigger a full
-// source switch — same dependency direction as resetTermSearchOnSourceSwitch, just the opposite way.
 registerSourceSwitcher(openSource);
 
-// ---------- Init ----------
 renderTextVersion();
 addQuestion();
