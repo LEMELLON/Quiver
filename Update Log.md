@@ -41,3 +41,40 @@
 **FLAG (found, not fixed - out of scope):** `online-quiz-maker.html` contains the OLD Quiz Code modal. Three ids that `dom-refs.js` reads - `secretKeyRow`, `combineKeyToggle`, `downloadCodeBtn` - are not in it; they exist only in the standalone `quizCodeModal.html`, which looks like an unmerged update. `quiz-export.js` null-guards these so nothing crashes, but the combine-key toggle and "Download .txt" button never appear. Fix = replace the modal block in the HTML with `quizCodeModal.html`'s contents. Say the word and I'll do it as a separate small change.
 
 **`FILE_FUNCTION_MAP.md` edits to apply:** `snippet-question-generation.js` - new dependency on `question-model.js` (`newQuestion`, `newVariant`); note `selectionGenerateBtn` listener is now AI-free; `generateQuestionFromSnippet` is dead code pending Batch 10.
+
+## Snippet Pipeline Overhaul — Batch 3 (highlight engine) — completion + chat fix
+
+**State found:** `highlighting.js` already contained 3a–3d and the Batch 2 listener/HTML were in place, but `layout-formatting.js`'s `renderTextVersion()` still called the new three-slot ladder with the old two-slot shape (question drawn from `sourceSnippet`, no source pass, no parent context). Result: Pane 2 drew no question/answer marks and Sync Highlights reported everything missing.
+
+**Files changed:** `layout-formatting.js` (`renderTextVersion` only), `highlighting.js` (one line block in `recheckHighlightsForQuestion`), `styles.css`, `editor-render.js` (`setActiveCard` only for this batch).
+
+- `renderTextVersion()` (3e, D4): per-question `ctx` objects carry each resolved slot's range to its children. Draw order: source marks (longest first) → question marks (tier order) → answer marks. Results map is now `{ source, question, answer }` per qid, which `recheckHighlights()` already consumed.
+- `recheckHighlightsForQuestion`: the non-shortcut path now unwraps all three of the question's slots before redrawing, so a stale child mark can't widen a freshly drawn parent.
+- `styles.css` (3a): new `mark.source-highlight-source` (subtle outer wrapper, hover + active states, shares the inline/clone display rule); V-badge rules now exclude `[data-snippet-type="source"]`.
+- `setActiveCard` (3f): scrolls to the source mark first, then question, then answer (an outside answer on an earlier page no longer pulls the view away). `locateSnippetInDoc` already works for `source` generically.
+
+**Verified in a real browser (Chromium, stubbed neighbours, rendered DOM):** repeated-term case (answer lands in sentence 2; `answerOccurrence` 0/1 moves it), inside-scope answer not in source = no mark + Unverified, outside answer on page 1 with source/question on page 3 (marks on the right pages, Verified, per-question recheck leaves marks unchanged apart from the verify-tier attribute), nested source ⊃ question ⊃ answer with no empty shells and page text unchanged, two overlapping sources both fully located.
+
+**Known quirks (not fixed):**
+- Per-question recheck uses verify tier 2 for exact finds while the batch render uses tier 1, so `data-tier` flips 1↔2 on marks after a single-question recheck (pre-existing design).
+- An inside answer selected in the source but *outside* the question snippet, whose text also occurs inside the question snippet, resolves to the question-range match first (ladder order). Rare.
+- `mark` click handler in `main.js` was not changed (innermost mark wins, which is correct for nested marks); not exercised in the browser here.
+
+## Snippet Pipeline Overhaul — Batch 4 (editor UI, scanning, editing, auto-sync off)
+
+**Files changed:** `editor-render.js`, `snippet-question-generation.js`, `question-model.js` (two transient fields), `shared-constants.js`, `highlighting.js` (see above). `online-quiz-maker.html` needed no change (all new UI is rendered by `activeEditorTemplate`).
+
+- **Three snippet panels** (`snippetPanelTemplate`): Source (read-only), Question, Answer; each with Locate 🔍 and `data-action="scanField"` (`data-field-type="source|question|answer"`). Answer panel also has `➕ Answer outside source` (`scanAnswerOutside`). Badges: "Outside source · p.N" on outside answers; "⚠ Outside source" on any question/answer snippet that is not inside the source. Data-status tooltip updated.
+- **`handleScanField`**: question/answer require the selection to be inside the source (DOM range check on the same page first, so the right occurrence is validated; `fuzzyIncludes` fallback if the Range is stale). Rejections set `scanError` (answer message suggests "Answer outside source") and change no state. Occurrence is computed against the right parent (answer → question range if the selection is inside it, else source). Source scan replaces the source, may move `sourcePage`/`sourceId`, and applies D5: invalid children are cleared with a visible notice; an outside answer with no explicit page is pinned to the old source page, and is cleared only if the source file itself changed.
+- **`handleScanAnswerOutside`**: selection must be from the same source file; sets `answerScope: 'outside'`, `answerPage`, occurrence relative to that page; never touches `sourcePage`.
+- **Editable snippets** (`startSnippetEdit` / `saveSnippetEdit` / `cancelSnippetEdit`): Edit → textarea → Save/Cancel on Question and Answer only. Save validates (question and inside-answer inside the source; outside-answer present on `answerPage`); invalid = old value kept, editor stays open with the message. Valid = store, occurrence 0, found flag, forced single-question recheck. Empty clears. Draft text lives in transient `q.editDraft`/`q.editingField`.
+- **Auto-sync off (D10):** `AUTO_SYNC_ENABLED = false` in `shared-constants.js`. `onSnippetRelevantEdit(qid)` replaces every `scheduleAutoSync` call site in `editor-render.js`: always a debounced (900 ms, same as before, so the editor isn't re-rendered mid-tab) `recheckHighlightsForQuestion`; `scheduleAutoSync` only when the flag is true. Sync footer hidden when false (dormant `snippetBusy`/`snippetSyncPending` rendering kept). `scheduleAutoSync`, `runAutoSync`, `autoSyncTimers` untouched.
+- **Dormant resync kept connectable:** `RESYNC_SNIPPET_SYSTEM_PROMPT`, `resyncSnippetsForQuestion`, `handleResyncSnippets` now treat the source snippet as authoritative and fixed; the AI returns `questionSnippet` + `answerSnippet` (substrings of the source); outside answers are left alone. DIAGNOSTIC logs dropped in those two functions only.
+
+**Verified in a real browser (Chromium, stubbed neighbours):** 39 checks — scans (rejected from another page with no state change; accepted inside source; answer occurrence; outside answer stored/marked on page 2/Verified; normal answer scan resets scope; source replacement clears invalid children with notice and removes their marks), edits (invalid refused and editor stays open; valid redraws; empty clears → Unclassified), flag off = no network. Real `activeEditorTemplate` rendered and clicked through: 3 panels, 3 scan buttons, outside button, no Edit on Source, no sync footer, invalid edit message, cancel, outside badge. Flag on: edit → resync prompt contains the source only, question/answer updated, source unchanged, no throw.
+
+**Not verified:** the full app (only a subset of modules was available; the rest were stubbed), real Gemini/OpenAI calls, the real Pane 3 / `renderDocPage` interaction, touch devices.
+
+**Interim quirks:** `generateQuestionFromSnippet` and the unused `applyPreferredQuestionType` import remain until Batch 10. The "Locate" on a source/question/answer snippet uses whatever marks exist; an outside answer relocated by the ladder to a different page than `answerPage` isn't reflected in the badge.
+
+**`FILE_FUNCTION_MAP.md`:** see the "Snippet overhaul — Batch 3/4 additions" section appended to that file.

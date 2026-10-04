@@ -859,6 +859,8 @@ function recheckHighlightsForQuestion(qid, opts) {
     slots.forEach(t => { setFound(t, true); notes.push(`${SLOT_LABEL[t]}: already fine`); });
   } else {
     const ctx = {};
+    // Clear all three slots up front so a stale mark of this question can't widen a fresh parent mark drawn below.
+    SLOT_TYPES.forEach(t => unwrapMarksForQuestion(docTextContainer, q.id, t));
     SLOT_TYPES.forEach((type) => {
       if (!snippetOfSlot(q, type)) return;
       const located = locateAndHighlightSnippet(docTextContainer, q, type, 2, ctx);

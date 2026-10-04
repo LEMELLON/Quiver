@@ -260,3 +260,15 @@ Referenced export: `collectTargetTerms(questions)`.
 - **`state.duplicateMap`** — getter/setter pair in core-state.js; written by question-model.js (pending) and editor-render.js (pending).
 - **`state.docType`/`pages`/`pdfDoc`/`pptxFile`/`pptxZip`** — accessor shim in core-state.js, transparently proxied to `state.sources.find(active)`. Any file reading/writing these as plain properties is unaffected by the multi-source refactor.
 - **`state.sources[]` / `state.activeSourceId`** — new in UPDATE 2A; touched directly (not via shim) by main.js (pending), doc-pane-navigation.js (pending), batch-scan.js, quiz-export.js, selection-toolbar.js, slide-panel-mirror.js.
+
+---
+
+## Snippet overhaul — Batch 3/4 additions
+
+- **shared-constants.js**: now exports `MIN_CHOICES` and `AUTO_SYNC_ENABLED` (default `false`; flip here to re-enable AI auto-sync of snippets). Read by `editor-render.js`, `snippet-question-generation.js`.
+- **layout-formatting.js**: `renderTextVersion()` returns `Map<qid, { source, question, answer }>` (each a ladder result or null); draw order source (longest first) → question (tier order) → answer.
+- **highlighting.js**: three-slot ladder (`locateAndHighlightSnippet(docContainer, q, type, ownPageVerifyTier, ctx)`), scoped search + occurrence helpers (`findSnippetRange`, `selectionRangeIdx`, `computeOccurrenceIndex`) all exported. `recheckHighlightsForQuestion` clears all three slots before redrawing.
+- **styles.css**: `mark.source-highlight-source` (subtle outer mark, no V-badge).
+- **question-model.js**: `newQuestion()` also carries transient `editingField` / `editDraft` (never exported).
+- **editor-render.js**: new `snippetPanelTemplate` (source / question / answer panels). New click actions: `scanAnswerOutside`, `editSnippet`, `saveSnippetEdit`, `cancelSnippetEdit`. Depends additionally on `question-model.js` (`isContainedIn`) and `snippet-question-generation.js` (`onSnippetRelevantEdit`, `handleScanAnswerOutside`, `startSnippetEdit`, `saveSnippetEdit`, `cancelSnippetEdit`). `scheduleAutoSync` is no longer imported here.
+- **snippet-question-generation.js**: new exports `handleScanAnswerOutside`, `startSnippetEdit`, `saveSnippetEdit`, `cancelSnippetEdit`, `onSnippetRelevantEdit`. `handleScanField` is three-slot aware. Now imports `findSnippetRange`, `selectionRangeIdx`, `computeOccurrenceIndex` (highlighting.js), `isContainedIn` (question-model.js), `AUTO_SYNC_ENABLED`. No longer imports `unwrapMarksForQuestion` / `highlightSnippetInContainer`.

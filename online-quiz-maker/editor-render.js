@@ -18,14 +18,15 @@ import {
 
 import { normalizeTermKeyLoose } from './text-normalize.js';
 import { TIER_META, DATA_STATUS_META } from './classification-meta.js';
-import { MIN_CHOICES } from './shared-constants.js';
+import { MIN_CHOICES, AUTO_SYNC_ENABLED } from './shared-constants.js';
 
 // Functions from other modules that these functions/handlers call:
-import { computeDuplicateMap, computeDataClassification, deleteQuestion,
+import { computeDuplicateMap, computeDataClassification, deleteQuestion, isContainedIn,
          removeVariant, sortQuestionsByPage, addQuestion,
          removeFlaggedDuplicates } from './question-model.js';
 import { renderDocPage } from './doc-pane-navigation.js';
-import { scheduleAutoSync, handleScanField } from './snippet-question-generation.js';
+import { onSnippetRelevantEdit, handleScanField, handleScanAnswerOutside,
+         startSnippetEdit, saveSnippetEdit, cancelSnippetEdit } from './snippet-question-generation.js';
 import { handleGenerateVariant, handleRegenerateChoices } from './variant-generation.js';
 // markQidList reads a mark's data-qid, which may hold more than one id (a shared duplicate-pair mark).
 import { markQidList } from './highlighting.js';
@@ -525,6 +526,71 @@ const VARIANT_PLACEHOLDERS = {
   category: 'A "select all that apply" prompt (e.g. "What are the Components of a Computer?")',
 };
 
+
+const BTN_MUTED = 'text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-amber transition-colors';
+
+// One of the three snippet panels (source / question / answer). Source is read-only (changed only by scanning);
+// question and answer get an inline Edit → textarea → Save/Cancel flow (D9) that commits on Save, not per keystroke.
+function snippetPanelTemplate(q, field, tierMeta) {
+  const text = field === 'source' ? q.sourceSnippet : field === 'question' ? q.questionSnippet : q.answerSnippet;
+  const outsideAnswer = field === 'answer' && q.answerScope === 'outside';
+  const editable = field !== 'source';
+  const editing = editable && q.editingField === field;
+
+  const labels = {
+    source: ['Source snippet', 'subtle outline in Pane 2 · changed only by scanning'],
+    question: ['Question snippet', `${tierMeta.label} highlight · inside the source`],
+    answer: ['Answer snippet', 'green in Pane 2'],
+  }[field];
+  const scanTitles = {
+    source: "Highlight the broad passage this question is drawn from in the document text (Pane 2), then click here — it replaces the source snippet",
+    question: "Highlight the question passage INSIDE the source snippet (Pane 2), then click here",
+    answer: "Highlight the exact answer INSIDE the source snippet (Pane 2), then click here",
+  }[field];
+  const scanLabels = { source: '🔎 Scan source', question: '🔎 Scan question', answer: '🔎 Scan answer' };
+
+  // Warning badges: an 'outside' answer is deliberate; an 'inside' child that no longer fits in the source is a problem.
+  let badge = '';
+  if (outsideAnswer && text) {
+    badge = `<span class="text-[0.6rem] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded border border-edge text-amber"
+      title="This answer lives outside the source snippet, elsewhere in the same document">Outside source · p.${q.answerPage != null ? q.answerPage : q.sourcePage}</span>`;
+  } else if (editable && text && q.sourceSnippet && !isContainedIn(text, q.sourceSnippet)) {
+    badge = `<span class="text-[0.6rem] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded border border-danger/50 text-danger"
+      title="This snippet is not inside the source snippet">⚠ Outside source</span>`;
+  }
+
+  const body = editing
+    ? `<textarea data-snippet-edit="${field}" rows="3" class="input-base resize-y mt-1">${escapeHtml(q.editDraft)}</textarea>
+       <div class="flex items-center gap-3 mt-1.5">
+         <button type="button" data-action="saveSnippetEdit" data-field-type="${field}" class="${BTN_MUTED}">Save</button>
+         <button type="button" data-action="cancelSnippetEdit" data-field-type="${field}" class="${BTN_MUTED}">Cancel</button>
+       </div>`
+    : (text
+        ? `<p class="text-xs ${field === 'answer' ? 'text-emerald-400/90' : 'text-mute'} italic leading-relaxed">"${escapeHtml(text)}"</p>`
+        : `<p class="text-xs text-mute/60 italic">${field === 'source'
+            ? 'No source yet — highlight a passage in the document text, then click "Scan source".'
+            : `Not yet set — highlight the passage inside the source, then click "Scan ${field}".`}</p>`);
+
+  return `
+      <div class="mt-3 pt-3 border-t border-edge" data-snippet-panel="${field}">
+        <div class="flex items-center justify-between mb-1 gap-2">
+          <label class="field-label mb-0 flex items-center gap-2 flex-wrap">
+            <span>${labels[0]} <span class="normal-case text-mute/70">(${labels[1]})</span></span>${badge}
+          </label>
+          <div class="flex items-center gap-2 shrink-0 ml-2 flex-wrap justify-end">
+            ${text ? `<button type="button" data-action="locateSnippet" data-snippet-type="${field}"
+              class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-violet transition-colors">Locate 🔍</button>` : ''}
+            ${editable && !editing ? `<button type="button" data-action="editSnippet" data-field-type="${field}" class="${BTN_MUTED}">✎ Edit</button>` : ''}
+            <button type="button" data-action="scanField" data-field-type="${field}" title="${escapeAttr(scanTitles)}" class="${BTN_MUTED}">${scanLabels[field]}</button>
+            ${field === 'answer' ? `<button type="button" data-action="scanAnswerOutside"
+              title="The answer is named elsewhere in this document (e.g. an earlier page): highlight it there, then click here"
+              class="${BTN_MUTED}">➕ Answer outside source</button>` : ''}
+          </div>
+        </div>
+        ${body}
+      </div>`;
+}
+
 // Renders the active question's full editor card: status badges, duplicate warning, target term, variant tabs, question text, source/answer snippets, and sync status.
 function activeEditorTemplate(q, index, total) {
   const variant = q.variants[q.activeVariantIndex] || q.variants[0];
@@ -542,7 +608,7 @@ function activeEditorTemplate(q, index, total) {
           </span>
           <span class="text-[0.6rem] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded border"
             style="background-color: ${dataStatusMeta.color}22; color: ${dataStatusMeta.color}; border-color: ${dataStatusMeta.color}55;"
-            title="Data classification: Unclassified = source or answer snippet missing · Unverified = present but couldn't be highlighted · Verified = present and highlighted">
+            title="Data classification: Unclassified = source, question or answer snippet missing · Unverified = all present but one couldn't be highlighted or falls outside its source · Verified = all three present, highlighted and consistent">
             ${dataStatusMeta.label}
           </span>
           ${q.definitionType === 'extension' ? `
@@ -593,43 +659,13 @@ function activeEditorTemplate(q, index, total) {
           class="w-20 text-center bg-void border border-edge rounded py-1.5 font-mono text-sm focus:outline-none focus:border-amber" />
       </div>
 
-      <div class="mt-3 pt-3 border-t border-edge">
-        <div class="flex items-center justify-between mb-1">
-          <label class="field-label mb-0">Source snippet <span class="normal-case text-mute/70">(${tierMeta.label} highlight in Pane 2)</span></label>
-          <div class="flex items-center gap-2 shrink-0 ml-2">
-            ${q.sourceSnippet ? `<button type="button" data-action="locateSnippet" data-snippet-type="question"
-              class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-violet transition-colors">Locate 🔍</button>` : ''}
-            <button type="button" data-action="scanField" data-field-type="question"
-              title="Highlight the question/context passage in the document text (Pane 2), then click here — whatever you've selected becomes this snippet"
-              class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-amber transition-colors">
-              🔎 Scan question
-            </button>
-          </div>
-        </div>
-        ${q.sourceSnippet
-          ? `<p class="text-xs text-mute italic leading-relaxed">"${escapeHtml(q.sourceSnippet)}"</p>`
-          : `<p class="text-xs text-mute/60 italic">Not yet located — highlight the passage in the document text, then click "Scan question".</p>`}
-      </div>
-      <div class="mt-3 pt-3 border-t border-edge">
-        <div class="flex items-center justify-between mb-1">
-          <label class="field-label mb-0">Answer snippet <span class="normal-case text-mute/70">(green in Pane 2)</span></label>
-          <div class="flex items-center gap-2 shrink-0 ml-2">
-            ${q.answerSnippet ? `<button type="button" data-action="locateSnippet" data-snippet-type="answer"
-              class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-violet transition-colors">Locate 🔍</button>` : ''}
-            <button type="button" data-action="scanField" data-field-type="answer"
-              title="Highlight the exact answer/target-term passage in the document text (Pane 2), then click here — whatever you've selected becomes this snippet"
-              class="text-[0.62rem] font-mono uppercase tracking-wide text-mute hover:text-amber transition-colors">
-              🔎 Scan answer
-            </button>
-          </div>
-        </div>
-        ${q.answerSnippet
-          ? `<p class="text-xs text-emerald-400/90 italic leading-relaxed">"${escapeHtml(q.answerSnippet)}"</p>`
-          : `<p class="text-xs text-mute/60 italic">Not yet located — highlight the passage in the document text, then click "Scan answer".</p>`}
-        ${q.scanError ? `<p class="text-xs text-danger mt-1.5">⚠ ${escapeHtml(q.scanError)}</p>` : ''}
-      </div>
+      ${snippetPanelTemplate(q, 'source', tierMeta)}
+      ${snippetPanelTemplate(q, 'question', tierMeta)}
+      ${snippetPanelTemplate(q, 'answer', tierMeta)}
+      ${q.scanError ? `<p class="text-xs text-danger mt-1.5">⚠ ${escapeHtml(q.scanError)}</p>` : ''}
 
       <div class="mt-3 pt-3 border-t border-edge">
+        ${AUTO_SYNC_ENABLED ? `
         <div class="flex flex-wrap items-center gap-1.5">
           <span class="text-[0.62rem] font-mono uppercase tracking-wide ${q.snippetBusy ? 'text-amber' : 'text-mute'}">
             ${q.snippetBusy
@@ -638,7 +674,8 @@ function activeEditorTemplate(q, index, total) {
                   : '🔄 Auto-syncing snippets…')
               : '✓ Snippets auto-sync after each edit'}
           </span>
-        </div>
+        </div>` : `
+        <p class="text-[0.62rem] font-mono uppercase tracking-wide text-mute">Highlights recheck after each edit · snippets change only by scanning or editing them</p>`}
         ${q.snippetError ? `<p class="text-xs text-danger mt-1.5">⚠ ${escapeHtml(q.snippetError)}</p>` : ''}
       </div>
     </div>
@@ -683,6 +720,9 @@ activeEditorEl.addEventListener('input', (e) => {
   if (!q) return;
   const variant = q.variants[q.activeVariantIndex];
 
+  // Inline snippet editor: keep the unsaved text on the question so a re-render doesn't lose it; nothing is committed until Save.
+  if (e.target.dataset.snippetEdit) { q.editDraft = e.target.value; return; }
+
   const field = e.target.dataset.field;
   if (field === 'targetTerm') {
     q.targetTerm = e.target.value;
@@ -708,7 +748,7 @@ activeEditorEl.addEventListener('change', (e) => {
     const variant = q.variants[q.activeVariantIndex];
     variant.correctAnswerIndex = Number(e.target.dataset.choiceIndex);
     renderActiveQuestion();
-    scheduleAutoSync(q.id); // the correct answer just changed — re-check/resync its snippets
+    onSnippetRelevantEdit(q.id); // the correct answer just changed — re-check/resync its snippets
   } else if (e.target.dataset.action === 'toggleCorrect') {
     const variant = q.variants[q.activeVariantIndex];
     const i = Number(e.target.dataset.choiceIndex);
@@ -716,23 +756,23 @@ activeEditorEl.addEventListener('change', (e) => {
     if (set.has(i)) set.delete(i); else set.add(i);
     variant.correctAnswerIndices = Array.from(set).sort((a, b) => a - b);
     renderActiveQuestion();
-    scheduleAutoSync(q.id); // the correct answers just changed — re-check/resync its snippets
+    onSnippetRelevantEdit(q.id); // the correct answers just changed — re-check/resync its snippets
   } else if (e.target.dataset.field === 'sourcePage') {
     // Committed edit — re-sort by page and re-index the nav chips + active editor title.
     sortQuestionsByPage();
     renderQuestionNav();
     renderActiveQuestion();
-    scheduleAutoSync(q.id); // the source page moved — its old snippets may no longer apply
+    onSnippetRelevantEdit(q.id); // the source page moved — its old snippets may no longer apply
   } else if (e.target.dataset.field === 'targetTerm') {
     // Committed edit — a manual rename can create/resolve a duplicate, so re-run the checker and refresh the badges.
     renderQuestionNav();
     renderActiveQuestion();
-    scheduleAutoSync(q.id);
+    onSnippetRelevantEdit(q.id);
   } else if (e.target.dataset.field === 'questionText') {
     // Committed edit — the snippets may now point at the wrong passage; auto re-check + resync.
-    scheduleAutoSync(q.id);
+    onSnippetRelevantEdit(q.id);
   } else if (e.target.dataset.field === 'choice') {
-    scheduleAutoSync(q.id);
+    onSnippetRelevantEdit(q.id);
   }
 });
 
@@ -775,6 +815,30 @@ activeEditorEl.addEventListener('click', (e) => {
     const card = e.target.closest('.question-card');
     if (!card) return;
     handleScanField(card.dataset.id, scanFieldBtn.dataset.fieldType);
+    return;
+  }
+  const scanOutsideBtn = e.target.closest('[data-action="scanAnswerOutside"]');
+  if (scanOutsideBtn) {
+    const card = e.target.closest('.question-card');
+    if (card) handleScanAnswerOutside(card.dataset.id);
+    return;
+  }
+  const editSnipBtn = e.target.closest('[data-action="editSnippet"]');
+  if (editSnipBtn) {
+    const card = e.target.closest('.question-card');
+    if (card) startSnippetEdit(card.dataset.id, editSnipBtn.dataset.fieldType);
+    return;
+  }
+  const saveSnipBtn = e.target.closest('[data-action="saveSnippetEdit"]');
+  if (saveSnipBtn) {
+    const card = e.target.closest('.question-card');
+    if (card) saveSnippetEdit(card.dataset.id, saveSnipBtn.dataset.fieldType);
+    return;
+  }
+  const cancelSnipBtn = e.target.closest('[data-action="cancelSnippetEdit"]');
+  if (cancelSnipBtn) {
+    const card = e.target.closest('.question-card');
+    if (card) cancelSnippetEdit(card.dataset.id);
     return;
   }
   const jumpBtn = e.target.closest('[data-action="jumpToDuplicate"]');
@@ -848,7 +912,7 @@ activeEditorEl.addEventListener('click', (e) => {
       variant.correctAnswerIndex -= 1;
     }
     renderActiveQuestion();
-    scheduleAutoSync(q.id);
+    onSnippetRelevantEdit(q.id);
     return;
   }
 });
@@ -937,7 +1001,10 @@ function setActiveCard(id, viaUserClick = true) {
     });
     m.classList.toggle('unchecked-highlight', showUnchecked);
   });
-  const activeMark = docTextContainer.querySelector(`mark[data-qid~="${id}"]`);
+  // Prefer the source mark, then question, then answer: an outside answer on an earlier page must not pull the view away from the question.
+  const activeMark = ['source', 'question', 'answer']
+    .map(t => docTextContainer.querySelector(`mark[data-qid~="${id}"][data-snippet-type="${t}"]`))
+    .find(Boolean);
   if (activeMark) activeMark.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 

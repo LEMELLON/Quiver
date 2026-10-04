@@ -8,7 +8,7 @@ import { callGeminiApiWithRetry, callOpenAiApi, sleep, isGeminiModelNotFoundErro
 // Cross-module import cycle with question-model.js; safe since computeDuplicateMap is only called inside a function body, never at module-evaluation time.
 import { computeDuplicateMap } from './question-model.js';
 
-// Rebuilds Pane 2's HTML from state.pages and re-applies question/answer highlights; returns a qid -> {question, answer} results map.
+// Rebuilds Pane 2's HTML from state.pages and re-applies question/answer highlights; returns a qid -> {source, question, answer} results map.
 function renderTextVersion() {
   if (state.pages.length === 0) {
     docTextContainer.innerHTML = `
@@ -30,19 +30,30 @@ function renderTextVersion() {
     </div>
   `).join('');
 
-  // Highlights are re-applied in tier order (1 before 2/3), and question mark before answer mark, so narrower marks nest correctly inside broader ones.
+  // Draw order (D4): source marks first (longest first, so a shorter source nests inside a longer one), then question marks in
+  // tier order, then answer marks, so narrower marks always nest inside broader ones.
   // Refresh the duplicate map right before drawing so overlapping marks from duplicate questions share correctly instead of nesting/hiding one.
   setDuplicateMap(computeDuplicateMap());
-  // qid -> { question: LadderResult|null, answer: LadderResult|null }, collected so recheckHighlights() can rebuild each question's verify status from a full rebuild.
+  // qid -> { source, question, answer } ladder results (each LadderResult|null), collected so recheckHighlights() can rebuild
+  // each question's verify status from a full rebuild. ctxByQid carries each question's resolved parent ranges between passes.
   const results = new Map();
-  [...state.questions].sort((a, b) => (a.tier || 1) - (b.tier || 1)).forEach(q => {
-    // Only the active source's pages exist in this DOM, so other sources' questions can never match here.
-    if (q.sourceId !== state.activeSourceId) return;
-    const entry = { question: null, answer: null };
-    if (q.sourceSnippet) entry.question = locateAndHighlightSnippet(docTextContainer, q, 'question', 1);
-    if (q.answerSnippet) entry.answer = locateAndHighlightSnippet(docTextContainer, q, 'answer', 1);
-    results.set(q.id, entry);
+  const ctxByQid = new Map();
+  // Only the active source's pages exist in this DOM, so other sources' questions can never match here.
+  const active = state.questions.filter(q => q.sourceId === state.activeSourceId);
+  active.forEach(q => {
+    results.set(q.id, { source: null, question: null, answer: null });
+    ctxByQid.set(q.id, {});
   });
+  const draw = (q, type) => {
+    results.get(q.id)[type] = locateAndHighlightSnippet(docTextContainer, q, type, 1, ctxByQid.get(q.id));
+  };
+
+  [...active].filter(q => q.sourceSnippet)
+    .sort((a, b) => b.sourceSnippet.length - a.sourceSnippet.length)
+    .forEach(q => draw(q, 'source'));
+  const byTier = [...active].sort((a, b) => (a.tier || 1) - (b.tier || 1));
+  byTier.filter(q => q.questionSnippet).forEach(q => draw(q, 'question'));
+  byTier.filter(q => q.answerSnippet).forEach(q => draw(q, 'answer'));
 
   // Safety net: this function rebuilds innerHTML above, so there shouldn't be pre-existing marks to straddle, but guard against that assumption breaking.
   dedupeMarks(docTextContainer);

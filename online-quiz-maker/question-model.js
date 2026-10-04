@@ -101,6 +101,9 @@ function newQuestion() {
     snippetError: null,
     // transient UI-only state for per-field "scan question/answer" buttons
     scanError: null,
+    // transient UI-only state for the inline snippet editor: which slot ('question' | 'answer') is being edited and its unsaved text
+    editingField: null,
+    editDraft: '',
   };
 }
 
