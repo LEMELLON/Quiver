@@ -91,6 +91,7 @@ Rules (follow strictly):
      * The only time "questionSnippet" may span more than one line is when a single item's own definition legitimately wraps across a line break in the source — it must still end the instant the next bullet/number/item begins, not before.
      * Each bullet or numbered item in a list produces its OWN separate collection with its OWN narrowly-scoped questionSnippet — never merge several list items into one collection's snippet just because they're adjacent in the source.
    - "answerSnippet": the exact substring (usually shorter, often contained within questionSnippet) that names or states the target term/answer as it literally appears in the source — the same single-item boundary rule applies; it must never spill into a neighboring list item either.
+   - ANSWER LOCATION: the preferred case is an "answerSnippet" that sits INSIDE "questionSnippet" — do this whenever the target term appears in the question's own passage. The ONLY exception is a subject that is described across several pages/slides but whose name/term is stated just once (usually on an earlier page) and does NOT appear in this collection's "questionSnippet". In that case, return the "answerSnippet" copied verbatim from the page where the term actually appears, plus "answerPage" (that page's number) and "answerScope": "outside". Never use this exception just because a better-looking answer exists elsewhere; the "answerSnippet" must still be a short verbatim substring that obeys the single-item boundary rule on ITS page. For an ordinary collection omit "answerPage" and "answerScope" (or use "answerScope": "inside").
    If you cannot find a true verbatim substring for either that respects these boundaries, return an empty string for it rather than inventing one or widening the snippet to the whole paragraph/list to "play it safe".
 6. OUTPUT FORMAT: reply with ONLY a single JSON object, no markdown code fences and no commentary, in exactly this shape:
 ${definitionTypeRuleLine}
@@ -101,6 +102,8 @@ ${definitionTypeRuleLine}
       "sourcePage": 1,
       "questionSnippet": "string — exact verbatim substring of the source page, ONLY this one sentence/bullet/numbered item — never the surrounding list or block it's part of (or \"\")",
       "answerSnippet": "string — exact verbatim substring of the source page, same single-item boundary as questionSnippet (or \"\")",
+      "answerPage": "optional integer — ONLY when the answer lives on a different page than sourcePage (see ANSWER LOCATION)",
+      "answerScope": "optional string — \\"inside\\" (default) or \\"outside\\" (see ANSWER LOCATION)",
 ${definitionTypeSchemaLine}      "variants": {
         "clamp": {
           "sentence": "string — one full sentence, target term as its leading subject, e.g. 'TargetTerm is a ...'",

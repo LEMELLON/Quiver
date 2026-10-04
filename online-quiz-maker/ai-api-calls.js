@@ -263,6 +263,47 @@ async function callOpenAiApi(apiKey, model, systemPrompt, userPrompt, useJsonMod
 // ---------------------------------------------------------------------
 // Verbatim from source, lines 4242-4327
 // ---------------------------------------------------------------------
+// Batch 6 — cleaned text of page `pageNum` of the active source (state.pages is the active source's pages), or null if no such page.
+function cleanedTextOfPage(pageNum) {
+  const page = state.pages.find(p => p.pageNumber === pageNum);
+  return page ? cleanExtractedText(page.text || '') : null;
+}
+
+// Batch 6 — answer validation chain, first match wins:
+//   1. answer inside questionSnippet                          -> inside
+//   2. answer on the AI-stated answerPage (same source)       -> outside, that page
+//   3. answer on any other page of the source, the question's own page first, then the nearest
+//      preceding pages, then following pages                  -> outside, that page
+//   4. nowhere                                                -> '' (unclassified, never a made-up highlight)
+// Returns { answerSnippet, answerScope, answerPage }.
+function resolveAnswerLocation(answerRaw, questionSnippet, sourcePage, statedPage) {
+  const none = { answerSnippet: '', answerScope: 'inside', answerPage: null };
+  if (!answerRaw || !answerRaw.trim()) return none;
+
+  if (questionSnippet && fuzzyIncludes(questionSnippet, answerRaw)) {
+    return { answerSnippet: answerRaw, answerScope: 'inside', answerPage: null };
+  }
+
+  if (Number.isInteger(statedPage)) {
+    const text = cleanedTextOfPage(statedPage); // null for a hallucinated page number
+    if (text != null && fuzzyIncludes(text, answerRaw)) {
+      return { answerSnippet: answerRaw, answerScope: 'outside', answerPage: statedPage };
+    }
+  }
+
+  const pageNums = state.pages.map(p => p.pageNumber);
+  const preceding = pageNums.filter(n => n < sourcePage).sort((a, b) => b - a);
+  const following = pageNums.filter(n => n > sourcePage).sort((a, b) => a - b);
+  const order = (pageNums.includes(sourcePage) ? [sourcePage] : []).concat(preceding, following);
+  for (const n of order) {
+    const text = cleanedTextOfPage(n);
+    if (text != null && fuzzyIncludes(text, answerRaw)) {
+      return { answerSnippet: answerRaw, answerScope: 'outside', answerPage: n };
+    }
+  }
+  return none;
+}
+
 function parseAiQuestions(rawText, fallbackPage, tier, registry) {
   const parsed = safeParseAIJson(rawText);
   if (!parsed) throw new Error('The AI response was not valid JSON.');
@@ -300,7 +341,15 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
     // The AI's questionSnippet is stored in BOTH questionSnippet and sourceSnippet (bulk scan has no
     // separate broader container, so the source is the question passage itself).
     const questionSnippet = fuzzyIncludes(cleanedPageText, questionSnippetRaw) ? questionSnippetRaw : '';
-    let answerSnippet = fuzzyIncludes(cleanedPageText, answerSnippetRaw) ? answerSnippetRaw : '';
+    // Batch 6: the answer is resolved through the inside -> stated page -> other pages -> '' chain instead of a
+    // single page check. Only an explicit "outside" scope or a stated page is trusted as a hint; the text itself is
+    // always verified against the real page text.
+    const statedAnswerPage = Number.isInteger(Number(item.answerPage)) && item.answerPage !== null && item.answerPage !== ''
+      ? Number(item.answerPage) : null;
+    const resolved = resolveAnswerLocation(answerSnippetRaw, questionSnippet, sourcePage, statedAnswerPage);
+    let answerSnippet = resolved.answerSnippet;
+    let answerScope = resolved.answerScope;
+    let answerPage = resolved.answerPage;
     let targetTerm = typeof item.targetTerm === 'string' ? cleanExtractedText(item.targetTerm) : '';
 
     // Only Tier 2 items are ever classified as "extension" — Tier 1 and
@@ -313,6 +362,26 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
         definitionType = 'extension';
         targetTerm = parent.targetTerm;       // inherit the parent's exact term
         answerSnippet = parent.answerSnippet; // and its exact answer snippet
+        // Batch 6: inherit where that answer lives. If the inherited text happens to sit inside this item's own
+        // question passage it stays 'inside'; otherwise it is an 'outside' answer on the parent's page, so a later-page
+        // extension of an earlier-page term highlights the term where it actually appears instead of silently failing.
+        if (!answerSnippet) {
+          answerScope = 'inside';
+          answerPage = null;
+        } else if (questionSnippet && fuzzyIncludes(questionSnippet, answerSnippet)) {
+          answerScope = 'inside';
+          answerPage = null;
+        } else {
+          const parentText = cleanedTextOfPage(parent.answerPage);
+          if (parentText != null && fuzzyIncludes(parentText, answerSnippet)) {
+            answerScope = 'outside';
+            answerPage = parent.answerPage;
+          } else {
+            answerSnippet = ''; // can't be placed anywhere — leave unclassified rather than invent a highlight
+            answerScope = 'inside';
+            answerPage = null;
+          }
+        }
       }
       // else: named a parent that isn't registered — treat as its own
       // "new" definition instead of leaving it orphaned.
@@ -323,7 +392,13 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
     if (definitionType === 'new' && registry) {
       const registryKey = normalizeTermKey(targetTerm);
       if (registryKey && !registry.has(registryKey)) {
-        registry.set(registryKey, { targetTerm, answerSnippet });
+        // answerPage here is the page the answer lives on: its own page if outside, else this item's sourcePage.
+        registry.set(registryKey, {
+          targetTerm,
+          answerSnippet,
+          answerPage: answerScope === 'outside' ? answerPage : sourcePage,
+          answerScope,
+        });
       }
     }
 
@@ -352,9 +427,9 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
       sourceFound: !!questionSnippet,
       questionFound: !!questionSnippet,
       answerFound: !!answerSnippet,
-      // Batch 6 adds the outside-answer fallback chain; until then every AI answer is 'inside' scope.
-      answerScope: 'inside',
-      answerPage: null,
+      // Set by the Batch 6 answer chain: 'inside' (answer within questionSnippet) or 'outside' (on answerPage, same source).
+      answerScope,
+      answerPage,
       sourceOccurrence: 0,
       questionOccurrence: 0,
       answerOccurrence: 0,

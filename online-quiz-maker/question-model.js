@@ -135,6 +135,40 @@ function addQuestion() {
   });
 }
 
+// Clones a question (Batch 5, D6): deep-copies plain data, resets transient UI state, marks the clone an 'extension'
+// (not dupeDismissed) so the shared-mark duplicate path keeps working and Remove Duplicates leaves it alone.
+// Inserted right after the original; sortQuestionsByPage() is stable, so it stays adjacent. Returns the clone.
+function duplicateQuestion(id) {
+  const index = state.questions.findIndex(x => x.id === id);
+  if (index === -1) return null;
+  const src = state.questions[index];
+
+  // Plain-data deep copy via JSON (every field on a question is JSON-safe), so variants are independent of the original's.
+  const clone = JSON.parse(JSON.stringify(src));
+  state.idCounter += 1;
+  clone.id = 'q_' + state.idCounter;
+
+  // Transient UI-only state — never carried over.
+  clone.generatingType = null;
+  clone.variantGenError = null;
+  clone.choicesBusy = false;
+  clone.choicesError = null;
+  clone.snippetBusy = false;
+  clone.snippetError = null;
+  clone.snippetSyncPending = false;
+  clone.scanError = null;
+  clone.editingField = null;
+  clone.editDraft = '';
+  clone.dupeDismissed = false;
+  clone.aiUnchecked = false;
+  clone.definitionType = 'extension';
+
+  state.questions.splice(index + 1, 0, clone);
+  sortQuestionsByPage();
+  updateQuestionCount();
+  return clone;
+}
+
 function deleteQuestion(id) {
   state.questions = state.questions.filter(q => q.id !== id);
   if (state.activeCardId === id) {
@@ -261,6 +295,7 @@ export {
   newQuestion,
   toClampPrompt,
   addQuestion,
+  duplicateQuestion,
   deleteQuestion,
   removeFlaggedDuplicates,
   removeVariant,
