@@ -8,94 +8,13 @@ import {
 import { fuzzyIncludes, findSnippetRange, selectionRangeIdx, computeOccurrenceIndex, recheckHighlightsForQuestion } from './highlighting.js';
 import { callAi, ensureProviderReady, isProviderConfigured } from './ai-provider.js';
 import { safeParseAIJson } from './ai-prompt-builders.js';
-import { parseClampVariantSet, handleApiError } from './variant-generation.js';
+import { handleApiError } from './variant-generation.js';
 import { renderQuestionNav, renderActiveQuestion, setActiveCard } from './editor-render.js';
 import { renderTextVersion } from './layout-formatting.js';
 import { newQuestion, newVariant, updateQuestionCount, sortQuestionsByPage, isContainedIn } from './question-model.js';
 import { AUTO_SYNC_ENABLED } from './shared-constants.js';
 import { hideSelectionToolbar } from './selection-toolbar.js';
 import { setSelectionGenStatus } from './status-helpers.js';
-import { applyPreferredQuestionType } from './batch-scan.js';
-
-// System prompt for generating a definition-first question collection from a selected snippet.
-const SNIPPET_SYSTEM_PROMPT = `You are a quiz-writing assistant embedded in a document-to-quiz tool that builds "question collections" — one target term/concept drawn from a snippet, starting with a fill-in-the-blank question. You will be given one short snippet of text extracted from a document, plus the page/slide number it came from.
-
-Work definition-first, based strictly and only on the given snippet — never introduce facts that are not present in it:
-1. Identify the single most important term or concept defined or explained in the snippet (the "target term").
-2. CLAMP variant (sentence-continuation / fill-in-the-blank): write ONE full declarative sentence that states the snippet's definition of the term, with the target term itself as the sentence's leading subject — e.g. "Computer is an electronic machine that operates under the control of instructions...". Do NOT phrase this as a question and do NOT omit the term; the app strips the leading term itself to build the blank, so the term must be the very first words of the sentence. It also needs 4 answer choices (one of them the target term itself, i.e. what fills the blank) with exactly one correct answer.
-
-Rules (follow strictly):
-1. SELF-CONTAINED STEMS: every question/sentence must be understandable with no access to the source document.
-2. CHOICE COUNTS: 4 choices by default (no fixed upper limit — a few more are fine if the concept genuinely calls for it, but never fewer than 2).
-3. CLEAN TEXT: silently repair any OCR hyphenation or stray line breaks in the snippet; never reproduce them in a question, sentence, or choice.
-4. ANSWER SNIPPET: also return "answerSnippet" — the exact substring, copied verbatim character-for-character from the given snippet (same spelling, spacing, and line breaks), that names/states the target term as it appears in the source. It must be a real substring of the snippet you were given, not a paraphrase. If no exact verbatim mention of the term exists in the snippet, return an empty string for it.
-5. OUTPUT FORMAT: reply with ONLY a single JSON object, no markdown code fences and no commentary, in exactly this shape:
-
-{
-"targetTerm": "string — the key term or concept being defined",
-"answerSnippet": "string — exact verbatim substring of the snippet naming the target term (or \"\" if none)",
-"variants": {
-  "clamp": {
-    "sentence": "string — one full sentence, target term as its leading subject, e.g. 'TargetTerm is a ...'",
-    "choices": ["string", "string", "string", "string"],
-    "correctAnswerIndex": 0
-  }
-}
-}
-
-"correctAnswerIndex" is an integer indexing into that variant's own "choices" array.`;
-
-// Generates a question collection from a selected snippet via AI; statusElement is an optional (msg, tone) reporter for quota/rate-limit errors.
-async function generateQuestionFromSnippet(snippet, pageNum, statusElement) {
-  ensureProviderReady();
-  if (snippet.length < 10) throw new Error('Select a longer snippet of text (more than 10 characters).');
-
-  const userPrompt = `Snippet (from page/slide ${pageNum}):\n"""\n${snippet}\n"""\n\nGenerate the definition-first question collection now, and return only the JSON object.`;
-
-  let rawText;
-  try {
-    rawText = await callAi(SNIPPET_SYSTEM_PROMPT, userPrompt);
-  } catch (err) {
-    if (handleApiError(err, statusElement)) {
-      // Reuse handleApiError's friendly wording so the caller's message stays consistent.
-      throw new Error('⚠ API Quota Exceeded or Rate Limited. You have run out of API usage or are making requests too quickly.');
-    }
-    throw err;
-  }
-
-  let parsed;
-  try {
-    parsed = safeParseAIJson(rawText);
-  } catch (e) {
-    parsed = null;
-  }
-
-  const variantSet = parseClampVariantSet(parsed);
-  if (!variantSet) throw new Error('The AI response was not a usable question collection. Try selecting a different snippet.');
-
-  // Kept verbatim (not cleaned) so it exact-matches the rendered text for highlighting, and validated as a real substring of the snippet.
-  const answerSnippetRaw = parsed && typeof parsed.answerSnippet === 'string' ? parsed.answerSnippet : '';
-  const answerSnippet = fuzzyIncludes(snippet, answerSnippetRaw) ? answerSnippetRaw : '';
-
-  state.idCounter += 1;
-  return {
-    id: 'q_' + state.idCounter,
-    sourcePage: pageNum,
-    sourceId: state.activeSourceId,
-    sourceSnippet: snippet,
-    answerSnippet,
-    targetTerm: parsed && typeof parsed.targetTerm === 'string' ? cleanExtractedText(parsed.targetTerm) : '',
-    tier: 1,             // user-selected snippets are treated as top-tier by default
-    verifyTier: 1,        // freshly located against the live selection — assumed exact
-    sourceFound: true,     // the source snippet IS the live selection — guaranteed present
-    answerFound: !!answerSnippet, // only true if the AI's answer passed the fuzzyIncludes check above
-    definitionType: 'new',
-    activeVariantIndex: 0,
-    variants: variantSet,
-    generatingType: null,
-    variantGenError: null,
-  };
-}
 
 // System prompt used by resyncSnippetsForQuestion (dormant while AUTO_SYNC_ENABLED is false). The SOURCE snippet is authoritative and fixed:
 // the AI only re-picks the question and answer snippets from inside it.
@@ -551,7 +470,6 @@ function cleanExtractedText(text) {
 }
 
 export {
-  generateQuestionFromSnippet,
   resyncSnippetsForQuestion,
   handleResyncSnippets,
   handleScanField,

@@ -8,7 +8,6 @@ import {
 } from './dom-refs.js';
 
 import {
-  getPendingSelection,
   setPendingSelection,
   setLastDocSelection,
 } from './core-state.js';
