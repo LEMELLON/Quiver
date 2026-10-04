@@ -419,9 +419,9 @@
         <h3 class="font-mono text-sm uppercase tracking-wide text-amber">Generate Quiz Code</h3>
         <button id="closeModalBtn" class="text-mute hover:text-ink text-lg leading-none">✕</button>
       </div>
-      <p class="text-sm text-mute">Compresses (gzip) and encrypts (AES-256-GCM, PBKDF2-derived key) the current quiz into a Base64URL Quiz Code, compatible with <code class="text-ink">offline-quiz-runner.html</code>.</p>
+      <p class="text-sm text-mute">Compresses (gzip) and encodes (AES-256-GCM, PBKDF2-derived key) the current quiz into a Base64URL Quiz Code, compatible with <code class="text-ink">offline-quiz-runner.html</code>. By default the secret key travels inside the same code — one string to copy and share, but not private, since anyone holding it can decode it.</p>
 
-      <div>
+      <div id="secretKeyRow">
         <label class="field-label">Secret key</label>
         <div class="flex gap-2">
           <input id="secretKeyInput" type="text" class="input-base flex-1" placeholder="Auto-generated (optional)">
@@ -430,6 +430,11 @@
         </div>
       </div>
 
+      <label class="flex items-center gap-2 text-xs text-mute cursor-pointer">
+        <input id="combineKeyToggle" type="checkbox" class="w-4 h-4 accent-amber">
+        Keep secret key separate from the code <span class="text-mute/70">(shows the key in its own field instead of combining it into one code)</span>
+      </label>
+
       <button id="generateCodeBtn" class="w-full font-mono text-xs tracking-wide uppercase bg-amber hover:bg-amber/90 text-void font-bold px-4 py-2.5 rounded transition-colors">
         Generate →
       </button>
@@ -437,7 +442,10 @@
       <div id="codeResultBox" class="hidden space-y-2">
         <label class="field-label">Quiz Code</label>
         <textarea id="quizCodeOutput" readonly rows="4" class="input-base font-mono text-xs"></textarea>
-        <button id="copyCodeBtn" type="button" class="icon-btn">Copy</button>
+        <div class="flex gap-2">
+          <button id="copyCodeBtn" type="button" class="icon-btn">Copy</button>
+          <button id="downloadCodeBtn" type="button" class="icon-btn">Download .txt</button>
+        </div>
       </div>
 
       <div id="modalError" class="hidden text-xs text-danger font-mono"></div>
