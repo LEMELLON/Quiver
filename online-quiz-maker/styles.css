@@ -894,3 +894,21 @@ html, body { height: 100%; }
     overflow-y: auto;
   }
   #termPanelPopup.hidden { display: none; }
+
+  /* Field sync row (Batch 4): sits directly under the Target term input / clamp Question text textarea. The slot is always present but
+     empty (zero height) when the pair is in sync, so there is no gap and no layout shift for the rest of the card. */
+  .field-sync-slot:empty { display: none; }
+  .field-sync-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    margin-top: 0.3rem;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+  }
+  .field-sync-row-desynced .field-sync-msg { color: #f5b942; }
+  .field-sync-row-underivable .field-sync-msg { color: #8296ab; }
+  .field-sync-row button { text-transform: uppercase; }
+  .field-sync-row button:disabled { opacity: 0.45; cursor: not-allowed; }

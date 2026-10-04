@@ -32,6 +32,8 @@ import { onSnippetRelevantEdit, handleScanField, handleScanAnswerOutside,
 import { handleGenerateVariant, handleRegenerateChoices } from './variant-generation.js';
 // markQidList reads a mark's data-qid, which may hold more than one id (a shared duplicate-pair mark).
 import { markQidList } from './highlighting.js';
+// Field sync (Batch 4): sync-state for the derived target term / clamp question text, plus the Sync / Keep mine actions.
+import { getFieldSyncState, getUnderivableReason, applyFieldSync, keepFieldAsIs, getClampVariant } from './field-sync.js';
 
 // Injected by main.js (registerSourceSwitcher) so term-panel handlers can trigger a full source switch
 // (state.activeSourceId update, pane re-renders, etc.) without editor-render.js importing main.js back.
@@ -593,6 +595,52 @@ function snippetPanelTemplate(q, field, tierMeta) {
       </div>`;
 }
 
+// ---------- Field sync row (Batch 4) ----------
+// "Field sync" = target term / clamp question text vs. their snippets. Not the dormant AI resync, not Sync Highlights, not syncBadge.
+const FIELD_SYNC_TITLE_MAX = 300; // the Sync button's title shows the exact value it will write, truncated past this
+const FIELD_SYNC_PAIR_LABEL = { term: 'Answer', question: 'Question' }; // which snippet the pair is out of sync with, for the row text
+
+// Inner HTML of one sync row slot, built from getFieldSyncState(). '' for 'synced' / 'none' (the slot stays an empty, zero-height div).
+function fieldSyncRowInnerHtml(q, pair) {
+  const { state: syncState, derived } = getFieldSyncState(q, pair);
+  if (syncState === 'desynced') {
+    const title = derived.length > FIELD_SYNC_TITLE_MAX ? derived.slice(0, FIELD_SYNC_TITLE_MAX) + '…' : derived;
+    return `
+      <div class="field-sync-row field-sync-row-desynced">
+        <span class="field-sync-msg">Out of sync with the ${FIELD_SYNC_PAIR_LABEL[pair]} snippet</span>
+        <button type="button" data-action="fieldSync" data-pair="${pair}" title="${escapeAttr(title)}" class="${BTN_MUTED}">↻ Sync from snippet</button>
+        <button type="button" data-action="fieldSyncKeep" data-pair="${pair}" title="Keep the text as typed and stop flagging it" class="${BTN_MUTED}">Keep mine</button>
+      </div>`;
+  }
+  if (syncState === 'underivable') {
+    return `
+      <div class="field-sync-row field-sync-row-underivable">
+        <span class="field-sync-msg">Can’t derive: ${escapeHtml(getUnderivableReason(q, pair))}</span>
+        <button type="button" data-action="fieldSync" data-pair="${pair}" disabled title="Nothing to sync from" class="${BTN_MUTED}">↻ Sync from snippet</button>
+        <button type="button" data-action="fieldSyncKeep" data-pair="${pair}" title="Accept the text as typed and stop flagging it" class="${BTN_MUTED}">Keep mine</button>
+      </div>`;
+  }
+  return '';
+}
+
+// The always-present slot under a derived field: the `input` handler patches just this element (data-sync-row) while typing.
+function fieldSyncSlotTemplate(q, pair) {
+  return `<div class="field-sync-slot" data-sync-row="${pair}">${fieldSyncRowInnerHtml(q, pair)}</div>`;
+}
+
+// True when the question-text textarea currently shows the clamp variant that the 'question' pair derives (the only variant ever derived/flagged).
+function isDerivedQuestionVariant(q, variant) {
+  return !!variant && variant.type === 'clamp' && variant === getClampVariant(q);
+}
+
+// Re-renders only the sync row of one pair in place (never the field itself), so the buttons aren't replaced while the person is typing.
+function patchFieldSyncRow(q, pair) {
+  const slot = activeEditorEl.querySelector(`.question-card[data-id="${q.id}"] [data-sync-row="${pair}"]`);
+  if (!slot) return;
+  const html = fieldSyncRowInnerHtml(q, pair);
+  if (slot.innerHTML.trim() !== html.trim()) slot.innerHTML = html;
+}
+
 // Renders the active question's full editor card: status badges, duplicate warning, target term, variant tabs, question text, source/answer snippets, and sync status.
 function activeEditorTemplate(q, index, total) {
   const variant = q.variants[q.activeVariantIndex] || q.variants[0];
@@ -649,15 +697,19 @@ function activeEditorTemplate(q, index, total) {
       </div>`;
       })()}
 
-      <label class="field-label">Target term <span class="normal-case text-mute/70">(the concept being defined)</span></label>
+      <label class="field-label">Target term <span class="normal-case text-mute/70">(derived from the Answer snippet · editable)</span></label>
       <input type="text" data-field="targetTerm" value="${escapeAttr(q.targetTerm)}" placeholder="e.g. Confinement"
         class="input-base" />
+      ${fieldSyncSlotTemplate(q, 'term')}
 
       ${variantTabsTemplate(q)}
 
-      <label class="field-label">Question text <span class="normal-case text-mute/70">(${escapeHtml((VARIANT_GROUP_META[GROUP_OF_TYPE[variant.type]] || {}).label || variant.type.replace('_', ' '))} variant)</span></label>
+      <label class="field-label">Question text <span class="normal-case text-mute/70">(${isDerivedQuestionVariant(q, variant)
+        ? 'derived from the Question + Answer snippets · editable'
+        : escapeHtml((VARIANT_GROUP_META[GROUP_OF_TYPE[variant.type]] || {}).label || variant.type.replace('_', ' ')) + ' variant'})</span></label>
       <textarea data-field="questionText" rows="2" placeholder="${escapeAttr(VARIANT_PLACEHOLDERS[variant.type] || '')}"
         class="input-base resize-none">${escapeHtml(variant.questionText)}</textarea>
+      ${isDerivedQuestionVariant(q, variant) ? fieldSyncSlotTemplate(q, 'question') : ''}
 
       <div class="flex items-center justify-between mt-4 pt-3 border-t border-edge">
         <label class="field-label mb-0">Source page</label>
@@ -732,8 +784,10 @@ activeEditorEl.addEventListener('input', (e) => {
   const field = e.target.dataset.field;
   if (field === 'targetTerm') {
     q.targetTerm = e.target.value;
+    patchFieldSyncRow(q, 'term'); // field sync: indicator appears/disappears while typing; only the row is patched, never the input
   } else if (field === 'questionText') {
     variant.questionText = e.target.value;
+    if (isDerivedQuestionVariant(q, variant)) patchFieldSyncRow(q, 'question');
   } else if (field === 'choice') {
     const i = Number(e.target.dataset.choiceIndex);
     variant.choices[i] = e.target.value;
@@ -792,7 +846,34 @@ function dismissDuplicateForQuestion(qid) {
   renderActiveQuestion();
 }
 
+// Field sync buttons must not steal focus: mousedown on a button blurs the input first, the `change` handler then re-renders the whole editor
+// (renderActiveQuestion) and the button under the cursor is replaced before `click` fires, so the click is lost. Cancelling mousedown keeps the
+// input focused (no blur / change), and the click below lands on the real button. Keyboard activation (Tab + Enter) is unaffected.
+activeEditorEl.addEventListener('mousedown', (e) => {
+  if (e.target.closest('[data-action="fieldSync"], [data-action="fieldSyncKeep"]')) e.preventDefault();
+});
+
 activeEditorEl.addEventListener('click', (e) => {
+  // Field sync (Batch 4): "↻ Sync from snippet" / "Keep mine". Handled first; both are no-ops for a disabled / underivable pair.
+  const fieldSyncBtn = e.target.closest('[data-action="fieldSync"]');
+  if (fieldSyncBtn) {
+    const card = e.target.closest('.question-card');
+    const q = card && state.questions.find(x => x.id === card.dataset.id);
+    if (!q || fieldSyncBtn.disabled) return;
+    applyFieldSync(q, fieldSyncBtn.dataset.pair); // false (nothing written) when the pair can't be derived
+    renderQuestionNav();    // the target term feeds nav chip titles, the duplicate map and the term panel
+    renderActiveQuestion(); // shows the written value and drops the sync row
+    return;
+  }
+  const fieldKeepBtn = e.target.closest('[data-action="fieldSyncKeep"]');
+  if (fieldKeepBtn) {
+    const card = e.target.closest('.question-card');
+    const q = card && state.questions.find(x => x.id === card.dataset.id);
+    if (!q) return;
+    keepFieldAsIs(q, fieldKeepBtn.dataset.pair);
+    patchFieldSyncRow(q, fieldKeepBtn.dataset.pair); // text unchanged, so only the row needs to go
+    return;
+  }
   const deleteBtn = e.target.closest('[data-action="delete"]');
   if (deleteBtn) {
     const card = e.target.closest('.question-card');
