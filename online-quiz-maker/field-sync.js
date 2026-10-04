@@ -62,20 +62,29 @@ function deriveQuestionInfo(q) {
   if (!answerSnippet) return { text: null, reason: 'no-answer-snippet' };
   if (q.answerScope === 'outside') return { text: null, reason: 'answer-outside' };
 
-  // first occurrence: exact, then case-insensitive (a regex keeps indexes in the original string, unlike lowercasing both sides)
-  let index = questionSnippet.indexOf(answerSnippet);
-  let length = answerSnippet.length;
-  if (index === -1) {
-    const m = new RegExp(escapeRegExp(answerSnippet), 'i').exec(questionSnippet);
-    if (!m) return { text: null, reason: 'answer-not-in-question' };
-    index = m.index;
-    length = m[0].length;
+  // first occurrence: exact, then case-insensitive (a regex keeps indexes in the original string, unlike lowercasing both sides).
+  // Batch 6: if the full answer isn't found, retry with its edges trimmed (same trim as F3), because a highlighted answer often carries
+  // a trailing "." / "," / quote that the question snippet doesn't have at that spot.
+  const candidates = [answerSnippet];
+  const trimmed = trimTermEdges(answerSnippet);
+  if (trimmed && trimmed !== answerSnippet) candidates.push(trimmed);
+
+  for (const needle of candidates) {
+    let index = questionSnippet.indexOf(needle);
+    let length = needle.length;
+    if (index === -1) {
+      const m = new RegExp(escapeRegExp(needle), 'i').exec(questionSnippet);
+      if (!m) continue;
+      index = m.index;
+      length = m[0].length;
+    }
+    const occurrences = (questionSnippet.match(new RegExp(escapeRegExp(needle), 'gi')) || []).length;
+    return {
+      text: questionSnippet.slice(0, index) + BLANK + questionSnippet.slice(index + length),
+      occurrences,
+    };
   }
-  const occurrences = (questionSnippet.match(new RegExp(escapeRegExp(answerSnippet), 'gi')) || []).length;
-  return {
-    text: questionSnippet.slice(0, index) + BLANK + questionSnippet.slice(index + length),
-    occurrences,
-  };
+  return { text: null, reason: 'answer-not-in-question' };
 }
 
 // F4. The clamp variant's question text <- questionSnippet with the first occurrence of answerSnippet replaced by ___.
@@ -142,6 +151,9 @@ function getFieldSyncState(q, pair) {
   const base = q.syncBaseline[pair];
   const cur = currentKeys(q, pair);
 
+  // Batch 6: an EMPTY field that can be derived is never "in sync", whatever the baseline says (a baseline taken while the snippets
+  // already existed, e.g. a question created from a highlight, used to hide this and show no Sync button).
+  if (derived !== null && cur.field === '') return { state: 'desynced', derived };
   if (cur.snippet === base.snippet && cur.field === base.field) return { state: 'synced', derived };
   if (derived !== null && normalizeWhitespace(derived) === cur.field) return { state: 'synced', derived };
   return { state: derived !== null ? 'desynced' : 'underivable', derived };
