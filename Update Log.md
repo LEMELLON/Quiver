@@ -95,3 +95,46 @@
 
 **Not verified / known issues (recorded, not fixed):** the full app (real PDF/PPTX, live Gemini/OpenAI/Qwen bulk import, Sync Highlights / Format Layout redraws, mobile long-press, duplicate / Remove Duplicates, multi-source switching, a run with `AUTO_SYNC_ENABLED = true`). `quiz-export.js` was not uploaded, so the `syncBaseline`-not-exported check was not re-run (nothing in this change touches `buildQuizObject`; the earlier Batch 5 check stands). `snippet-question-generation.js` needed no change (`selectionGenerateBtn` already returns on a null pending selection). The grep for selection-length gates finds only `highlighting.js` `bestSentenceInBody`'s sentence filter, which is unrelated. Blanking `targetTerm` in the question snippet when there is no answer snippet was left out of scope (G4).
 
+
+## Mini Quizzes in the Offline Quiz Taker — Batch 1 (data layer + session scope, no UI)
+
+**Files changed:** `offline-quiz-taker.html` only (script section). Maker, importer, quiz file / Quiz Code format, integrity hash, `normalizeQuizData`, `recordAnswer`, `getLessonStats`, `getUnitedStats` untouched.
+
+**What changed**
+- New state: `selectedMiniKeys` (Set of `lessonId + '::' + miniId`) and `expandedMiniLessons` (Batch 2). `goToLessonsHub` resets `selectedMiniKeys`.
+- New data layer, placed just above the stats modal code: `MINI_PREFIX = 'quizTaker.mini.'`, `MAX_MINI_PER_LESSON = 30`, `getLessonQuestions`, `getMiniScopeKey` (M3, djb2 `shortHash`), `miniKey` / `parseMiniKey`, `loadMiniQuizzes` (M4 reconcile, never throws, adds `missingCount`), `getMiniQuiz`, `getMiniQuestions` (file order, same objects as `quizData.questions` so `lessonId` and `id` are untouched), `createMiniQuiz` / `updateMiniQuiz` / `deleteMiniQuiz` (return `{ ok, error?, mini?, persisted? }`, no alert), `validateMiniInput`, `describeMiniSelection`, name helpers (M10), `isMiniStoragePersistent`.
+- Storage: `localStorage['quizTaker.mini.' + scopeKey] = { lessonId, quizzes: [{ id, name, questionIds, createdAt, updatedAt }] }`. Reads use `safeGetJSON`. Writes use a direct try/catch (the existing `safeSetJSON` hides failure and Batch 4 needs to know). If a write fails, an in-memory copy keeps the session working and `isMiniStoragePersistent()` turns false.
+- `getSelectedQuestions()`: nothing selected = whole quiz as before; otherwise the union of selected lessons and selected mini quizzes, de-duplicated by question object, returned in file order. New helper `getSelectedUnitCount()` (lessons + mini quizzes); the Kahoot shuffle rule is now "more than one unit".
+- `goToModeSelect()` text: lessons only is word-for-word as before. Mini quizzes involved: `N questions from X mini quiz(zes)` or `N questions from X lesson(s) and Y mini quiz(zes)`.
+
+**Decisions as built**
+- M4: a save only rewrites the list for that lesson. Mini quizzes you did not touch are written back exactly as stored, so ids missing from the current file are not lost for them (they can return after a re-import). The mini quiz being edited is stored cleaned.
+- Blank name on create = default name `Mini quiz N · Q{a}-{b}` or `Mini quiz N · Custom`. Names are trimmed, whitespace-collapsed, capped at 60 characters, and made unique per lesson with ` (2)`, ` (3)`.
+- Lesson + one of its own mini quizzes selected together counts as 2 units, so Kahoot shuffles (follows the "more than one unit" rule literally; the question set is identical to the lesson).
+
+**Verified (real functions in headless Chromium, test-only copy with a hook; the delivered file has no hook):** 26 checks. 5-id mini from a 20-question lesson returns exactly those 5 in file order with the original lessonId; reload returns the same quiz; removing 2 ids leaves 3 with no throw; removing all 5 keeps it listed with 0 matching; loading only reconciles, it never erases stored ids; two different legacy files get different scope keys and do not see each other's mini quizzes; nothing selected = full quiz; lesson + own mini = no duplicates; two minis from two lessons = union in file order; `getAllStatsLessonIds()` unchanged; 30th allowed, 31st refused with an error string; naming rules; update/delete; `localStorage` get/set/remove all throwing = no exception, works in memory, `isMiniStoragePersistent()` false.
+
+**Known issue (recorded, not fixed):** membership is by question id, so a question without an `id` (possible in old flat files) cannot be in a mini quiz (creating one with no matching ids is refused with "Pick at least one question."). Those questions also record no stats today (`recordAnswer` skips a missing id), which is pre-existing. Batch 3's editor should say so instead of showing an empty checklist.
+
+## Mini Quizzes in the Offline Quiz Taker — Batch 2 (hub UI and playing)
+
+**Files changed:** `offline-quiz-taker.html` only (CSS, `renderLessonsHub`, handlers, one new stats function).
+
+**What changed**
+- Every lesson card has a full-width **✂ Mini quizzes** button (`data-action="mini-edit"`, 40px high). It is disabled on an empty lesson. It calls `openMiniEditor(lessonId, null)`.
+- `openMiniEditor` is a PLACEHOLDER: it shows a one-line message in the hub's existing `#lessonsError` paragraph naming the lesson (or the mini quiz when editing). Batch 3 replaces its body.
+- A lesson with at least one mini quiz gets a `.mini-list` inside its card: toggle `▸ N mini quizzes` (adds `· M selected` when some are ticked), collapsed by default. Open/closed state is `expandedMiniLessons` (in memory only; kept across re-renders and Quit, forgotten when a different file is loaded). Opening and closing does not re-render, so focus stays on the toggle.
+- Each row: checkbox (`mini-select`), name, `N questions`, ▶ Play (`mini-play`), 📊 (`mini-stats`), ✎ (`mini-row-edit`, calls `openMiniEditor(lessonId, miniId)`), 🗑 (`mini-delete`, confirm). All new tap targets are at least 40x40. Every handler stops propagation and the card click handler also ignores anything inside `.mini-list`, so clicking a mini row never toggles the lesson.
+- A mini quiz with 0 matching questions shows muted with `⚠ 0 questions match this file`; Play, checkbox and Stats are disabled; Edit and Delete work.
+- Mini Play: `selectedLessonIds = new Set(); selectedMiniKeys = new Set([key]); startSessionSetup()`. Lesson Play also clears `selectedMiniKeys`. Select All stays lessons-only and clears mini selections. Start Session is enabled when either set is non-empty. Back from Mode Select keeps both selections. Selected mini keys that no longer exist or have 0 matching questions are dropped at render time.
+- Mini Stats (`showMiniStatsModal`): the lesson's stats filtered to the mini quiz's questions, in the existing stats modal. Title `Lesson name · Mini quiz name`; the subtitle says the numbers are part of the lesson's stats. No stats keys are created for mini quizzes, and no reset is offered (M9).
+- New `escapeAttr` (built on `escapeHTML`, also escapes quotes) for attribute values. Mini names are escaped everywhere they reach `innerHTML`; the existing unescaped `lesson.name` in `renderLessonsHub` was left alone as instructed.
+- Lesson Reset is unchanged: it clears stats only and mini quizzes remain.
+
+**Verified (rendered DOM, real clicks, headless Chromium):** 71 checks. A lesson with no mini quizzes renders card HTML identical to the original except for the new ✂ button (diffed against the untouched file); ✂ present on every card and disabled on the empty one; clicking text or blank areas in a mini row never toggles the lesson, while clicking the lesson itself still does; selecting a mini and pressing Start lands on Mode Select with `5 questions from 1 mini quiz`; lesson + mini = `13 questions from 1 lesson and 1 mini quiz`; one mini plays Exam level 1 and level 3 (only its 5 questions, then Results), Kahoot (5, file order) and Flashcard (3); playing a mini of 5 in Exam gave exactly +5 `timesSeen` in the lesson's blob, no new `quizTaker.stats.*` key, All-Time +5, lesson Stats modal and mini Stats modal both showing the 5, the other mini showing 0; Quit mid-session returns to the hub with selections cleared; Reset keeps the mini quizzes; Delete removes the row and its selection; whole-lesson Play and Select All text and Kahoot order are unchanged while mini quizzes exist; mini names with markup and quotes are shown as text and stay intact in `aria-label`; 360px and 320px have no horizontal page scroll and nothing spills outside the card; with storage fully blocked the hub renders, ✂ works and an in-memory mini quiz survives a re-render, with no uncaught errors.
+
+**Not verified:** a real phone (only Chromium viewport emulation), a real exported Maker file or Quiz Code (fixtures were hand-built v2 and legacy flat files), and Flashcard and Kahoot played through to the Results screen from a mini quiz (they were started and quit, not finished). `FILE_FUNCTION_MAP.md` was not uploaded, so the taker-section check is still open for Batch 5.
+
+**Known quirks (recorded, not fixed)**
+- While a lesson is selected, its card keeps the existing hover/selected styling over the mini list too.
+- The two-unit Kahoot shuffle also applies to "lesson + its own mini quiz" (same question set, shuffled), see Batch 1.

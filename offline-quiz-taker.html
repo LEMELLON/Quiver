@@ -166,6 +166,35 @@
   .lesson-action-btn:hover:not(:disabled){ color:var(--text); border-color:var(--accent); }
   .lesson-action-btn:disabled{ opacity:.35; cursor:not-allowed; }
 
+  /* Mini quizzes (Batch 2): edit button on every lesson card + collapsible list under it */
+  .lesson-actions .mini-edit-btn{ flex:1 1 100%; min-height:40px; }
+  .mini-list{ margin-top:12px; padding-top:10px; border-top:1px dashed var(--border); cursor:default; }
+  .mini-toggle{
+    display:block; width:100%; min-height:40px; text-align:left;
+    background:transparent; border:0; color:var(--muted); font-size:.78rem; padding:6px 2px;
+  }
+  .mini-toggle:hover{ color:var(--text); }
+  .mini-rows[hidden]{ display:none; }
+  .mini-row{
+    display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px;
+    border:1px solid var(--border); border-radius:10px; padding:4px 8px 8px 2px; margin-bottom:8px;
+    background:rgba(15,23,42,.35);
+  }
+  .mini-row.selected{ border-color:var(--accent); background:rgba(59,130,246,.12); }
+  .mini-row.mini-empty{ opacity:.7; }
+  .mini-check{
+    display:flex; align-items:center; justify-content:center;
+    min-width:40px; min-height:40px; cursor:pointer;
+  }
+  .mini-check input{ width:20px; height:20px; cursor:pointer; margin:0; }
+  .mini-check input:disabled{ cursor:not-allowed; }
+  .mini-info{ flex:1 1 80px; min-width:0; }
+  .mini-name{ font-weight:700; font-size:.82rem; line-height:1.3; word-break:break-word; }
+  .mini-meta{ font-size:.72rem; color:var(--muted); margin-top:2px; }
+  .mini-row.mini-empty .mini-meta{ color:#fbbf24; }
+  .mini-actions{ flex:1 1 100%; display:flex; gap:6px; flex-wrap:wrap; padding-left:4px; }
+  .mini-actions .lesson-action-btn{ min-height:40px; min-width:40px; padding:6px 10px; }
+
   /* Shared quiz header */
   .quiz-header{
     display:flex; align-items:center; gap:16px;
@@ -570,6 +599,8 @@
   let currentLevel = "1";
   let selectedMode = null;
   let selectedLessonIds = new Set(); // Batch C: which lessons are in play for the current session
+  let selectedMiniKeys = new Set();  // Mini quizzes: keys are lessonId + '::' + miniId (see miniKey())
+  let expandedMiniLessons = new Set(); // Mini quizzes: lesson ids whose mini list is open on the hub (in memory only)
   let sessionLog = []; // Batch D+: every question answered/skipped this session, for the Results review list
 
   const KAHOOT_TIME_LIMIT = 15; // seconds per question
@@ -933,6 +964,244 @@
     `;
   }
 
+  // ---------- Mini quizzes: data layer (Mini Quiz Batch 1) ----------
+  // A mini quiz is a saved subset of ONE lesson's questions, kept only in
+  // this browser's storage: nothing is written to the quiz file / Quiz
+  // Code. Membership is by question id (survives re-loading a re-exported
+  // file). Mini quiz questions keep their original lessonId, so
+  // recordAnswer() already writes their stats into the main lesson's
+  // blob — there are deliberately NO separate stats keys for mini quizzes.
+  // Storage key prefix 'quizTaker.mini.' does not start with
+  // 'quizTaker.stats.', so getAllStatsLessonIds()/United stats ignore it.
+  const MINI_PREFIX = 'quizTaker.mini.';
+  const MAX_MINI_PER_LESSON = 30;
+  const MINI_NAME_MAX = 60;
+  const miniMemory = {};             // scopeKey -> blob; write-through copy used when storage fails
+  const miniUnpersisted = new Set(); // scopeKeys whose latest write did NOT reach storage
+
+  function shortHash(str){ // djb2 -> base36; stable, no crypto needed
+    str = String(str);
+    let h = 5381;
+    for(let i = 0; i < str.length; i++){ h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; }
+    return h.toString(36);
+  }
+
+  function hasQuestionId(q){ return q && q.id !== undefined && q.id !== null; }
+
+  // Questions of one lesson, in file order.
+  function getLessonQuestions(lessonId){
+    if(!quizData || !Array.isArray(quizData.questions)) return [];
+    return quizData.questions.filter(q => q && q.lessonId === lessonId);
+  }
+
+  // M3: real lessons are keyed by their (unique) id; the shared legacy id
+  // gets a content-derived suffix so two different legacy files don't
+  // share mini quizzes.
+  function getMiniScopeKey(lessonId){
+    if(lessonId !== LEGACY_LESSON_ID) return String(lessonId);
+    const sig = getLessonQuestions(lessonId)
+      .map(q => hasQuestionId(q) ? String(q.id) : String(q.questionText || ''))
+      .join(',');
+    return LEGACY_LESSON_ID + '.' + shortHash(String((quizData && quizData.title) || '') + '|' + sig);
+  }
+
+  function miniKey(lessonId, miniId){ return lessonId + '::' + miniId; }
+  function parseMiniKey(key){
+    const i = String(key).lastIndexOf('::');
+    return i < 0 ? null : { lessonId: String(key).slice(0, i), miniId: String(key).slice(i + 2) };
+  }
+
+  function newMiniId(){
+    try{
+      if(typeof crypto !== 'undefined' && crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    }catch(e){ /* fall through */ }
+    return 'm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  function isUsableMiniQuiz(m){
+    return !!m && typeof m === 'object' && typeof m.id === 'string' && m.id !== '' && Array.isArray(m.questionIds);
+  }
+
+  // Raw read: stored entries exactly as saved (not reconciled with the
+  // current file). Never throws.
+  function miniReadList(lessonId){
+    const scopeKey = getMiniScopeKey(lessonId);
+    const blob = miniUnpersisted.has(scopeKey)
+      ? (miniMemory[scopeKey] || null)
+      : safeGetJSON(MINI_PREFIX + scopeKey, null);
+    if(!blob || typeof blob !== 'object' || !Array.isArray(blob.quizzes)) return [];
+    return blob.quizzes.filter(isUsableMiniQuiz).map(m => Object.assign({}, m, { questionIds: m.questionIds.slice() }));
+  }
+
+  // Write the whole list for a lesson. Returns true if it reached storage;
+  // false means only the in-memory copy holds it (storage disabled / quota).
+  function miniWriteList(lessonId, list){
+    const scopeKey = getMiniScopeKey(lessonId);
+    const key = MINI_PREFIX + scopeKey;
+    miniMemory[scopeKey] = { lessonId, quizzes: list };
+    try{
+      if(list.length === 0) localStorage.removeItem(key);
+      else localStorage.setItem(key, JSON.stringify(miniMemory[scopeKey]));
+      miniUnpersisted.delete(scopeKey);
+      return true;
+    }catch(e){
+      miniUnpersisted.add(scopeKey);
+      return false;
+    }
+  }
+
+  // False once any save could not reach storage (the UI can say "won't be remembered").
+  function isMiniStoragePersistent(){ return miniUnpersisted.size === 0; }
+
+  // M4: drop ids that are no longer in the lesson. The quiz itself is kept
+  // even at 0 matches; `missingCount` says how many ids were dropped.
+  function reconcileMini(lessonId, m, validIds){
+    const kept = [];
+    const seen = new Set();
+    m.questionIds.forEach(id => { if(validIds.has(id) && !seen.has(id)){ seen.add(id); kept.push(id); } });
+    return Object.assign({}, m, {
+      name: typeof m.name === 'string' && m.name ? m.name : 'Mini quiz',
+      questionIds: kept,
+      missingCount: m.questionIds.length - kept.length
+    });
+  }
+
+  function loadMiniQuizzes(lessonId){
+    try{
+      const validIds = new Set(getLessonQuestions(lessonId).filter(hasQuestionId).map(q => q.id));
+      return miniReadList(lessonId).map(m => reconcileMini(lessonId, m, validIds));
+    }catch(e){ return []; }
+  }
+
+  function getMiniQuiz(lessonId, miniId){
+    return loadMiniQuizzes(lessonId).find(m => m.id === miniId) || null;
+  }
+
+  // The mini quiz's questions in FILE order (not stored order). They are the
+  // same objects as in quizData.questions, so lessonId/id are untouched.
+  function getMiniQuestions(lessonId, miniId){
+    const mini = getMiniQuiz(lessonId, miniId);
+    if(!mini) return [];
+    const ids = new Set(mini.questionIds);
+    return getLessonQuestions(lessonId).filter(q => hasQuestionId(q) && ids.has(q.id));
+  }
+
+  // 1-based positions within the lesson (M5) of the given ids, ascending.
+  function getMiniPositions(lessonId, ids){
+    const set = new Set(ids);
+    const out = [];
+    getLessonQuestions(lessonId).forEach((q, i) => { if(hasQuestionId(q) && set.has(q.id)) out.push(i + 1); });
+    return out;
+  }
+
+  // { count, start, end, contiguous } for a set of ids (start/end null when empty).
+  function describeMiniSelection(lessonId, ids){
+    const pos = getMiniPositions(lessonId, ids);
+    if(pos.length === 0) return { count: 0, start: null, end: null, contiguous: false };
+    const start = pos[0], end = pos[pos.length - 1];
+    return { count: pos.length, start, end, contiguous: end - start + 1 === pos.length };
+  }
+
+  // M10 naming
+  function normalizeMiniName(name){
+    return String(name == null ? '' : name).replace(/\s+/g, ' ').trim().slice(0, MINI_NAME_MAX).trim();
+  }
+  function defaultMiniName(lessonId, ids, ordinal){
+    const d = describeMiniSelection(lessonId, ids);
+    const tail = d.count === 0 ? 'Custom' : (d.contiguous ? `Q${d.start}-${d.end}` : 'Custom');
+    return normalizeMiniName(`Mini quiz ${ordinal} · ${tail}`);
+  }
+  function uniqueMiniName(base, takenNames){
+    const taken = new Set(takenNames.map(n => String(n).toLowerCase()));
+    if(!taken.has(base.toLowerCase())) return base;
+    for(let n = 2; n < 1000; n++){
+      const suffix = ` (${n})`;
+      const cand = base.slice(0, MINI_NAME_MAX - suffix.length).trimEnd() + suffix;
+      if(!taken.has(cand.toLowerCase())) return cand;
+    }
+    return base;
+  }
+
+  // Ids that really exist in the lesson, deduped, in file order.
+  function cleanMiniIds(lessonId, ids){
+    const want = new Set(Array.isArray(ids) ? ids : []);
+    const out = [];
+    const seen = new Set();
+    getLessonQuestions(lessonId).forEach(q => {
+      if(hasQuestionId(q) && want.has(q.id) && !seen.has(q.id)){ seen.add(q.id); out.push(q.id); }
+    });
+    return out;
+  }
+
+  // Validation for create/update and for the editor (no alert()).
+  // `input.name` blank -> a default name is generated. `excludeMiniId` lets an
+  // edit keep its own name without it counting as a duplicate.
+  function validateMiniInput(lessonId, input, excludeMiniId){
+    input = input || {};
+    if(getLessonQuestions(lessonId).length === 0) return { ok: false, error: 'This lesson has no questions.' };
+    const questionIds = cleanMiniIds(lessonId, input.questionIds);
+    if(questionIds.length === 0) return { ok: false, error: 'Pick at least one question.' };
+    const list = miniReadList(lessonId);
+    if(excludeMiniId == null && list.length >= MAX_MINI_PER_LESSON){
+      return { ok: false, error: `A lesson can have at most ${MAX_MINI_PER_LESSON} mini quizzes.` };
+    }
+    const others = list.filter(m => m.id !== excludeMiniId);
+    let name = normalizeMiniName(input.name);
+    if(!name) name = defaultMiniName(lessonId, questionIds, others.length + 1);
+    name = uniqueMiniName(name, others.map(m => m.name));
+    return { ok: true, name, questionIds };
+  }
+
+  function createMiniQuiz(lessonId, input){
+    try{
+      const v = validateMiniInput(lessonId, input, null);
+      if(!v.ok) return { ok: false, error: v.error };
+      const list = miniReadList(lessonId);
+      const now = new Date().toISOString();
+      const mini = { id: newMiniId(), name: v.name, questionIds: v.questionIds, createdAt: now, updatedAt: now };
+      list.push(mini);
+      const persisted = miniWriteList(lessonId, list);
+      return { ok: true, mini: Object.assign({}, mini), persisted };
+    }catch(e){ return { ok: false, error: 'Could not save the mini quiz.' }; }
+  }
+
+  // patch: { name?, questionIds? }. Other mini quizzes of the lesson are
+  // written back exactly as stored, so ids missing from this file are not
+  // lost for them (they may come back with a later re-import).
+  function updateMiniQuiz(lessonId, miniId, patch){
+    try{
+      patch = patch || {};
+      const list = miniReadList(lessonId);
+      const idx = list.findIndex(m => m.id === miniId);
+      if(idx < 0) return { ok: false, error: 'That mini quiz no longer exists.' };
+      const cur = list[idx];
+      const next = Object.assign({}, cur);
+      const ids = Array.isArray(patch.questionIds) ? patch.questionIds : null;
+      const v = validateMiniInput(lessonId, {
+        name: patch.name !== undefined ? patch.name : cur.name,
+        questionIds: ids !== null ? ids : cur.questionIds
+      }, miniId);
+      if(!v.ok) return { ok: false, error: v.error };
+      next.name = v.name;
+      if(ids !== null) next.questionIds = v.questionIds;
+      next.updatedAt = new Date().toISOString();
+      list[idx] = next;
+      const persisted = miniWriteList(lessonId, list);
+      return { ok: true, mini: Object.assign({}, next), persisted };
+    }catch(e){ return { ok: false, error: 'Could not save the mini quiz.' }; }
+  }
+
+  function deleteMiniQuiz(lessonId, miniId){
+    try{
+      const list = miniReadList(lessonId);
+      const next = list.filter(m => m.id !== miniId);
+      if(next.length === list.length) return { ok: false, error: 'That mini quiz no longer exists.' };
+      const persisted = miniWriteList(lessonId, next);
+      selectedMiniKeys.delete(miniKey(lessonId, miniId));
+      return { ok: true, persisted };
+    }catch(e){ return { ok: false, error: 'Could not delete the mini quiz.' }; }
+  }
+
   // ---------- Stats modal (per-lesson + all-time) ----------
   function openStatsModal(){ statsModal.classList.remove('hidden'); }
   function closeStatsModal(){ statsModal.classList.add('hidden'); }
@@ -957,6 +1226,27 @@
     });
 
     renderStatsModal(lesson.name || 'Lesson', 'Per-question breakdown for this lesson', totals, rows, true);
+  }
+
+  // Mini quiz stats (M9): the lesson's own stats, filtered to this mini
+  // quiz's questions. Nothing separate is stored.
+  function showMiniStatsModal(lesson, mini){
+    const stats = getLessonStats(lesson.id);
+    const totals = { timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0, totalTimeMs: 0 };
+    const rows = getMiniQuestions(lesson.id, mini.id).map(q => {
+      const s = stats.questions[q.id] || { timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0, totalTimeMs: 0 };
+      totals.timesSeen += s.timesSeen || 0;
+      totals.timesCorrect += s.timesCorrect || 0;
+      totals.timesWrong += s.timesWrong || 0;
+      totals.timesSkipped += s.timesSkipped || 0;
+      totals.totalTimeMs += s.totalTimeMs || 0;
+      return { text: q.questionText, stats: s };
+    });
+    renderStatsModal(
+      (lesson.name || 'Lesson') + ' · ' + mini.name,
+      'These numbers are part of the lesson\'s stats, shown for this mini quiz\'s questions only',
+      totals, rows, true
+    );
   }
 
   function showUnitedStatsModal(){
@@ -1069,8 +1359,10 @@
   // the new center of gravity both "start a session" and "review past
   // performance" begin from, per the Batch B screen graph.
   function goToLessonsHub(data){
+    if(quizData !== data) expandedMiniLessons = new Set(); // new file: forget which lists were open
     quizData = data;
     selectedLessonIds = new Set();
+    selectedMiniKeys = new Set();
     lessonsQuizTitle.textContent = data.title || 'Untitled Quiz';
     lessonsError.classList.add('hidden');
     clearError();
@@ -1096,6 +1388,7 @@
       : [];
 
     lessonsGrid.innerHTML = '';
+    const validMiniKeys = new Set(); // mini quizzes that can currently be selected/played
     lessons.forEach(lesson => {
       const questionCount = getLessonQuestionCount(lesson.id);
       const isEmpty = questionCount === 0;
@@ -1119,6 +1412,7 @@
           <button type="button" class="lesson-action-btn" data-action="play" ${isEmpty ? 'disabled' : ''}>▶ Play</button>
           <button type="button" class="lesson-action-btn" data-action="stats">📊 Stats</button>
           <button type="button" class="lesson-action-btn" data-action="reset">↺ Reset</button>
+          <button type="button" class="lesson-action-btn mini-edit-btn" data-action="mini-edit" ${isEmpty ? 'disabled' : ''}>✂ Mini quizzes</button>
         </div>
       `;
 
@@ -1128,6 +1422,7 @@
 
       card.addEventListener('click', (e) => {
         if(e.target.closest('.lesson-action-btn') || e.target === checkbox) return;
+        if(e.target.closest('.mini-list')) return; // clicks inside the mini quiz rows never toggle the lesson
         toggleLessonSelection(lesson.id);
       });
 
@@ -1135,6 +1430,7 @@
         e.stopPropagation();
         if(isEmpty) return;
         selectedLessonIds = new Set([lesson.id]);
+        selectedMiniKeys = new Set();
         startSessionSetup();
       });
       card.querySelector('[data-action="stats"]').addEventListener('click', (e) => {
@@ -1144,14 +1440,140 @@
       card.querySelector('[data-action="reset"]').addEventListener('click', (e) => {
         e.stopPropagation();
         if(confirm(`Reset all saved progress for "${name}"? This can't be undone.`)){
-          resetLessonStats(lesson.id);
+          resetLessonStats(lesson.id); // stats only; mini quiz definitions are left alone
         }
       });
+
+      card.querySelector('[data-action="mini-edit"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(isEmpty) return;
+        openMiniEditor(lesson.id, null);
+      });
+
+      const minis = loadMiniQuizzes(lesson.id);
+      if(minis.length > 0) card.appendChild(buildMiniList(lesson, minis, validMiniKeys));
 
       lessonsGrid.appendChild(card);
     });
 
+    // A selected mini quiz that no longer exists or has no matching
+    // questions can't be played, so it can't stay selected.
+    selectedMiniKeys = new Set(Array.from(selectedMiniKeys).filter(k => validMiniKeys.has(k)));
+
     updateStartSessionBtn();
+  }
+
+  function miniToggleLabel(lessonId, count, open){
+    let sel = 0;
+    selectedMiniKeys.forEach(k => { const p = parseMiniKey(k); if(p && p.lessonId === lessonId) sel++; });
+    return `${open ? '▾' : '▸'} ${count} mini quiz${count === 1 ? '' : 'zes'}${sel ? ` · ${sel} selected` : ''}`;
+  }
+
+  function escapeAttr(str){
+    return escapeHTML(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // The collapsible mini quiz list that sits inside a lesson card.
+  // Every handler stops propagation, and the card's own click handler also
+  // ignores anything inside .mini-list.
+  function buildMiniList(lesson, minis, validMiniKeys){
+    const lessonId = lesson.id;
+    const wrap = document.createElement('div');
+    wrap.className = 'mini-list';
+    wrap.addEventListener('click', (e) => e.stopPropagation());
+    const open = expandedMiniLessons.has(lessonId);
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'mini-toggle';
+    toggle.dataset.action = 'mini-toggle';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.textContent = miniToggleLabel(lessonId, minis.length, open);
+    wrap.appendChild(toggle);
+
+    const rows = document.createElement('div');
+    rows.className = 'mini-rows';
+    rows.hidden = !open;
+    wrap.appendChild(rows);
+
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nowOpen = rows.hidden; // hidden -> about to open
+      rows.hidden = !nowOpen;
+      if(nowOpen) expandedMiniLessons.add(lessonId); else expandedMiniLessons.delete(lessonId);
+      toggle.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+      toggle.textContent = miniToggleLabel(lessonId, minis.length, nowOpen);
+    });
+
+    minis.forEach(mini => {
+      const key = miniKey(lessonId, mini.id);
+      const n = mini.questionIds.length;
+      const isEmpty = n === 0;
+      const isSel = !isEmpty && selectedMiniKeys.has(key);
+      if(!isEmpty) validMiniKeys.add(key);
+
+      const row = document.createElement('div');
+      row.className = 'mini-row' + (isSel ? ' selected' : '') + (isEmpty ? ' mini-empty' : '');
+      row.dataset.miniId = mini.id;
+      row.innerHTML = `
+        <label class="mini-check"><input type="checkbox" class="mini-checkbox" data-action="mini-select" ${isSel ? 'checked' : ''} ${isEmpty ? 'disabled' : ''} aria-label="Select mini quiz ${escapeAttr(mini.name)}"></label>
+        <div class="mini-info">
+          <div class="mini-name">${escapeHTML(mini.name)}</div>
+          <div class="mini-meta">${isEmpty ? '⚠ 0 questions match this file' : `${n} question${n === 1 ? '' : 's'}`}</div>
+        </div>
+        <div class="mini-actions">
+          <button type="button" class="lesson-action-btn" data-action="mini-play" ${isEmpty ? 'disabled' : ''}>▶ Play</button>
+          <button type="button" class="lesson-action-btn" data-action="mini-stats" ${isEmpty ? 'disabled' : ''} aria-label="Stats for ${escapeAttr(mini.name)}" title="Stats">📊</button>
+          <button type="button" class="lesson-action-btn" data-action="mini-row-edit" aria-label="Edit ${escapeAttr(mini.name)}" title="Edit">✎</button>
+          <button type="button" class="lesson-action-btn" data-action="mini-delete" aria-label="Delete ${escapeAttr(mini.name)}" title="Delete">🗑</button>
+        </div>
+      `;
+
+      const cb = row.querySelector('.mini-checkbox');
+      cb.addEventListener('click', (e) => e.stopPropagation());
+      cb.addEventListener('change', () => {
+        if(cb.checked) selectedMiniKeys.add(key); else selectedMiniKeys.delete(key);
+        renderLessonsHub();
+        const again = lessonsGrid.querySelector(`.mini-row[data-mini-id="${mini.id}"] .mini-checkbox`);
+        if(again) again.focus();
+      });
+      row.querySelector('[data-action="mini-play"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(isEmpty) return;
+        selectedLessonIds = new Set();
+        selectedMiniKeys = new Set([key]);
+        startSessionSetup();
+      });
+      row.querySelector('[data-action="mini-stats"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(!isEmpty) showMiniStatsModal(lesson, mini);
+      });
+      row.querySelector('[data-action="mini-row-edit"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openMiniEditor(lessonId, mini.id);
+      });
+      row.querySelector('[data-action="mini-delete"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(confirm(`Delete the mini quiz "${mini.name}"? Your lesson stats are not affected.`)){
+          deleteMiniQuiz(lessonId, mini.id);
+          renderLessonsHub();
+        }
+      });
+      rows.appendChild(row);
+    });
+    return wrap;
+  }
+
+  // PLACEHOLDER (Mini Quiz Batch 2): Batch 3 replaces this with the real
+  // editor modal. Called with miniId === null to create a new mini quiz.
+  function openMiniEditor(lessonId, miniId){
+    const lesson = Array.isArray(quizData && quizData.lessons) ? quizData.lessons.find(l => l.id === lessonId) : null;
+    const lessonName = (lesson && lesson.name) || 'Lesson';
+    const mini = miniId ? getMiniQuiz(lessonId, miniId) : null;
+    lessonsError.textContent = mini
+      ? `The mini quiz editor is coming in the next update (editing "${mini.name}" in "${lessonName}").`
+      : `The mini quiz editor is coming in the next update (new mini quiz for "${lessonName}").`;
+    lessonsError.classList.remove('hidden');
   }
 
   function toggleLessonSelection(lessonId){
@@ -1162,7 +1584,7 @@
   }
 
   function updateStartSessionBtn(){
-    startSessionBtn.disabled = selectedLessonIds.size === 0;
+    startSessionBtn.disabled = selectedLessonIds.size === 0 && selectedMiniKeys.size === 0;
   }
 
   selectAllLessonsBtn.addEventListener('click', () => {
@@ -1171,12 +1593,13 @@
       : [];
     const allSelected = lessons.length > 0 && lessons.every(l => selectedLessonIds.has(l.id));
     selectedLessonIds = allSelected ? new Set() : new Set(lessons.map(l => l.id));
+    selectedMiniKeys = new Set(); // Select All is lessons-only; avoids a double meaning
     renderLessonsHub();
   });
 
 
   startSessionBtn.addEventListener('click', () => {
-    if(selectedLessonIds.size === 0) return;
+    if(selectedLessonIds.size === 0 && selectedMiniKeys.size === 0) return;
     startSessionSetup();
   });
 
@@ -1193,18 +1616,47 @@
   // this is the single place that selection is turned into a question set.
   function getSelectedQuestions(){
     if(!quizData || !Array.isArray(quizData.questions)) return [];
-    if(!selectedLessonIds || selectedLessonIds.size === 0) return quizData.questions.slice();
-    return quizData.questions.filter(q => selectedLessonIds.has(q.lessonId));
+    const noLessons = !selectedLessonIds || selectedLessonIds.size === 0;
+    const noMinis = !selectedMiniKeys || selectedMiniKeys.size === 0;
+    if(noLessons && noMinis) return quizData.questions.slice(); // nothing selected: unchanged behaviour
+    // Union (by question object, so a lesson plus its own mini quiz never
+    // duplicates a question), returned in the file's order.
+    const picked = new Set();
+    if(!noLessons){
+      quizData.questions.forEach(q => { if(selectedLessonIds.has(q.lessonId)) picked.add(q); });
+    }
+    if(!noMinis){
+      selectedMiniKeys.forEach(k => {
+        const p = parseMiniKey(k);
+        if(p) getMiniQuestions(p.lessonId, p.miniId).forEach(q => picked.add(q));
+      });
+    }
+    return quizData.questions.filter(q => picked.has(q));
+  }
+
+  // How many "units" (lessons + mini quizzes) are in play for this session.
+  function getSelectedUnitCount(){
+    return (selectedLessonIds ? selectedLessonIds.size : 0) + (selectedMiniKeys ? selectedMiniKeys.size : 0);
   }
 
   function goToModeSelect(){
     quizTitleDisplay.textContent = quizData.title || 'Untitled Quiz';
     const selectedQuestions = getSelectedQuestions();
     const lessonCount = selectedLessonIds.size;
+    const miniCount = selectedMiniKeys.size;
     const droppedNote = quizData._droppedQuestionCount
       ? ` (${quizData._droppedQuestionCount} question${quizData._droppedQuestionCount === 1 ? '' : 's'} skipped — missing a usable variant)`
       : '';
-    quizCountDisplay.textContent = `${selectedQuestions.length} question${selectedQuestions.length === 1 ? '' : 's'} selected from ${lessonCount} lesson${lessonCount === 1 ? '' : 's'}${droppedNote}`;
+    const qWord = `${selectedQuestions.length} question${selectedQuestions.length === 1 ? '' : 's'}`;
+    const lessonWord = `${lessonCount} lesson${lessonCount === 1 ? '' : 's'}`;
+    const miniWord = `${miniCount} mini quiz${miniCount === 1 ? '' : 'zes'}`;
+    if(miniCount === 0){
+      quizCountDisplay.textContent = `${qWord} selected from ${lessonWord}${droppedNote}`; // exactly as before
+    }else if(lessonCount === 0){
+      quizCountDisplay.textContent = `${qWord} from ${miniWord}${droppedNote}`;
+    }else{
+      quizCountDisplay.textContent = `${qWord} from ${lessonWord} and ${miniWord}${droppedNote}`;
+    }
     selectedMode = null;
     modeCards.forEach(c => c.classList.remove('selected'));
     examLevelPanel.classList.add('hidden');
@@ -1215,7 +1667,7 @@
   }
 
   // Back to Lessons Hub from Mode Select — deliberately does NOT go
-  // through goToLessonsHub() (that resets selectedLessonIds); it just
+  // through goToLessonsHub() (that resets selectedLessonIds and selectedMiniKeys); it just
   // re-shows the hub with whatever lessons were already checked, so the
   // person can tweak their selection rather than starting over.
   const modeBackBtn = document.getElementById('modeBackBtn');
@@ -1571,7 +2023,7 @@
       startExamMode();
     }else if(selectedMode === 'kahoot'){
       let kahootQuestions = selectedQuestions.map(q => Object.assign({}, q));
-      if(selectedLessonIds.size > 1) kahootQuestions = shuffleArray(kahootQuestions);
+      if(getSelectedUnitCount() > 1) kahootQuestions = shuffleArray(kahootQuestions); // lessons + mini quizzes
       preparedQuestions = kahootQuestions;
       startKahootMode();
     }else if(selectedMode === 'flashcard'){

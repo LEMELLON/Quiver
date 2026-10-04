@@ -247,18 +247,18 @@ function handleScanField(qid, fieldType) {
   }
   const check = checkSelectionInsideSource(q, sel);
   if (!check.ok) {
-    setScanMessage(q, fieldType === 'answer'
-      ? 'That selection is not inside this question\u2019s source snippet. Select the answer inside the source, or use \u201C\u2795 Answer outside source\u201D if it is named elsewhere in the document.'
-      : 'That selection is not inside this question\u2019s source snippet. Select the question passage inside the source.');
-    return;
+    q.scanError = fieldType === 'answer'
+      ? 'That selection is not inside this question’s source snippet, but it will still be kept as a custom answer with a warning.'
+      : 'That selection is not inside this question’s source snippet, but it will still be kept as a custom question with a warning.';
+  } else {
+    q.scanError = null;
   }
 
-  q.scanError = null;
   if (fieldType === 'question') {
-    // occurrence is counted inside the source range, matching how the highlight engine resolves it
+    // occurrence is counted inside the source range when the selection really does belong there; otherwise keep the text and warn only.
     q.questionSnippet = sel.text;
-    q.questionFound = true;
-    q.questionOccurrence = (check.body && check.srcRange) ? computeOccurrenceIndex(check.body, check.srcRange, sel.text, sel.range) : 0;
+    q.questionFound = check.ok;
+    q.questionOccurrence = (check.ok && check.body && check.srcRange) ? computeOccurrenceIndex(check.body, check.srcRange, sel.text, sel.range) : 0;
   } else {
     // answer: relative to the question range when the selection sits inside it, otherwise relative to the source range
     let parent = check.srcRange || null;
@@ -272,8 +272,8 @@ function handleScanField(qid, fieldType) {
     q.answerSnippet = sel.text;
     q.answerScope = 'inside';
     q.answerPage = null;
-    q.answerFound = true;
-    q.answerOccurrence = (check.body && parent) ? computeOccurrenceIndex(check.body, parent, sel.text, sel.range) : 0;
+    q.answerFound = check.ok;
+    q.answerOccurrence = (check.ok && check.body && parent) ? computeOccurrenceIndex(check.body, parent, sel.text, sel.range) : 0;
   }
   finishScan(q);
 }
@@ -342,27 +342,32 @@ function saveSnippetEdit(qid, field) {
 
   if (text) {
     if (!q.sourceSnippet) { q.scanError = 'Scan a source snippet first.'; renderActiveQuestion(); return; }
-    let valid;
-    let why;
+    let keptAsWarning = false;
     if (field === 'answer' && q.answerScope === 'outside') {
       const page = q.answerPage != null ? q.answerPage : q.sourcePage;
-      valid = textOnPage(q, page, text);
-      why = `That text does not appear on page ${page}, where this answer is located.`;
-    } else {
-      valid = isContainedIn(text, q.sourceSnippet);
-      why = `That text is not inside the source snippet, so it can't be saved as the ${field} snippet.`;
+      const valid = textOnPage(q, page, text);
+      if (!valid) {
+        q.scanError = `That text does not appear on page ${page}, where this answer is located.`;
+        renderActiveQuestion();
+        return;
+      }
+    } else if (!isContainedIn(text, q.sourceSnippet)) {
+      keptAsWarning = true;
     }
-    if (!valid) { q.scanError = why; renderActiveQuestion(); return; }
+    q.scanError = keptAsWarning
+      ? `That text is not inside the source snippet, but it will still be kept as a custom ${field} snippet with a warning.`
+      : null;
+  } else {
+    q.scanError = null;
   }
 
-  q.scanError = null;
   if (field === 'question') {
     q.questionSnippet = text;
-    q.questionFound = !!text;
+    q.questionFound = !!text && isContainedIn(text, q.sourceSnippet);
     q.questionOccurrence = 0;
   } else {
     q.answerSnippet = text;
-    q.answerFound = !!text;
+    q.answerFound = !!text && (q.answerScope === 'outside' ? textOnPage(q, q.answerPage != null ? q.answerPage : q.sourcePage, text) : isContainedIn(text, q.sourceSnippet));
     q.answerOccurrence = 0;
     if (!text) { q.answerScope = 'inside'; q.answerPage = null; }
   }
