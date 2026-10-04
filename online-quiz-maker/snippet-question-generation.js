@@ -14,6 +14,8 @@ import { renderTextVersion } from './layout-formatting.js';
 import { newQuestion, newVariant, updateQuestionCount, sortQuestionsByPage, isContainedIn } from './question-model.js';
 import { AUTO_SYNC_ENABLED } from './shared-constants.js';
 import { hideSelectionToolbar } from './selection-toolbar.js';
+// Field sync (Batch 3): only called inside function bodies, never at module-evaluation time, so the import cycle is safe.
+import { reconcileFieldSync } from './field-sync.js';
 import { setSelectionGenStatus } from './status-helpers.js';
 
 // System prompt used by resyncSnippetsForQuestion (dormant while AUTO_SYNC_ENABLED is false). The SOURCE snippet is authoritative and fixed:
@@ -115,6 +117,7 @@ async function handleResyncSnippets(qid) {
     if (preserved.length) {
       q.snippetError = `${preserved[0]}: kept the existing snippet`;
     }
+    reconcileFieldSync(q); // field sync: untouched target term / clamp question text follow the new snippets (before any re-render)
     recheckHighlightsForQuestion(qid, { force: true });
     renderQuestionNav();
   } catch (err) {
@@ -171,6 +174,9 @@ function finishScan(q) {
   window.getSelection().removeAllRanges();
   setLastDocSelection(null);
   hideSelectionToolbar();
+  // Field sync: untouched target term / clamp question text follow the new snippets. Runs BEFORE the recheck and the re-renders
+  // below so the nav chips (term), duplicate map and editor all render the new values.
+  reconcileFieldSync(q);
   recheckHighlightsForQuestion(q.id, { force: true });
   renderQuestionNav();
   renderActiveQuestion();
@@ -362,6 +368,7 @@ function saveSnippetEdit(qid, field) {
   }
   q.editingField = null;
   q.editDraft = '';
+  reconcileFieldSync(q); // field sync: the committed snippet may change what the term / clamp question text derive to (before the re-render)
   recheckHighlightsForQuestion(qid, { force: true });
   renderQuestionNav();
   renderActiveQuestion();

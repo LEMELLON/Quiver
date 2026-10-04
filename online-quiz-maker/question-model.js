@@ -14,6 +14,8 @@ import { normalizeTermKey, normalizeTermKeyLoose } from './text-normalize.js';
 // fuzzyIncludes / cleanExtractedText are only called inside function bodies (isContainedIn, answerLocatableOnPage), never at module-evaluation time, so the import cycles are safe.
 import { fuzzyIncludes } from './highlighting.js';
 import { cleanExtractedText } from './snippet-question-generation.js';
+// initFieldSyncBaseline is only called inside newQuestion()'s body, never at module-evaluation time, so this import cycle is safe too.
+import { initFieldSyncBaseline } from './field-sync.js';
 
 import { getDuplicateMap, setDuplicateMap } from './core-state.js';
 
@@ -65,7 +67,7 @@ function computeDataClassification(q) {
 // creates a new blank question collection with a default clamp (Multiple Choice) variant
 function newQuestion() {
   state.idCounter += 1;
-  return {
+  const q = {
     id: 'q_' + state.idCounter,
     sourcePage: state.currentPage || 1,
     // which state.sources[] entry this question belongs to; null if added before any document was imported
@@ -105,6 +107,9 @@ function newQuestion() {
     editingField: null,
     editDraft: '',
   };
+  // Field sync (F6): transient baseline of term/question-text vs their snippets, so a new question starts 'synced'. Never exported.
+  initFieldSyncBaseline(q);
+  return q;
 }
 
 // strips a leading term (tolerating a leading article) from sentence and returns a fill-in-the-blank prompt
@@ -144,6 +149,7 @@ function duplicateQuestion(id) {
   const src = state.questions[index];
 
   // Plain-data deep copy via JSON (every field on a question is JSON-safe), so variants are independent of the original's.
+  // This also carries syncBaseline (plain strings), so the clone starts with the same field-sync state as the original.
   const clone = JSON.parse(JSON.stringify(src));
   state.idCounter += 1;
   clone.id = 'q_' + state.idCounter;

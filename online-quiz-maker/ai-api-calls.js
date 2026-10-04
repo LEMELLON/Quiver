@@ -88,7 +88,9 @@ import { normalizeTermKey } from './text-normalize.js';
 import { callAi, getActiveProvider, getActiveModel, ensureProviderReady, providerNeedsThrottle } from './ai-provider.js';
 import { computePageBudgetChars, planPageChunks, getQwenContextWindow } from './qwen-local.js';
 import { cleanExtractedText } from './snippet-question-generation.js';
-import { fuzzyIncludes } from './highlighting.js';
+import { fuzzyIncludes, narrowQuestionSnippet } from './highlighting.js';
+// Field sync (F6/F10): initFieldSyncBaseline / getClampVariant are only called inside parseAiQuestions' body, so the import cycle is safe.
+import { initFieldSyncBaseline, getClampVariant } from './field-sync.js';
 import { parseClampVariantSet } from './variant-generation.js';
 import {
   TIER_SYSTEM_PROMPTS,
@@ -333,17 +335,17 @@ function cleanedTextOfPage(pageNum) {
 }
 
 // Batch 6 — answer validation chain, first match wins:
-//   1. answer inside questionSnippet                          -> inside
+//   1. answer inside the container snippet (the SOURCE snippet since the field-sync handoff) -> inside
 //   2. answer on the AI-stated answerPage (same source)       -> outside, that page
 //   3. answer on any other page of the source, the question's own page first, then the nearest
 //      preceding pages, then following pages                  -> outside, that page
 //   4. nowhere                                                -> '' (unclassified, never a made-up highlight)
 // Returns { answerSnippet, answerScope, answerPage }.
-function resolveAnswerLocation(answerRaw, questionSnippet, sourcePage, statedPage) {
+function resolveAnswerLocation(answerRaw, containerSnippet, sourcePage, statedPage) {
   const none = { answerSnippet: '', answerScope: 'inside', answerPage: null };
   if (!answerRaw || !answerRaw.trim()) return none;
 
-  if (questionSnippet && fuzzyIncludes(questionSnippet, answerRaw)) {
+  if (containerSnippet && fuzzyIncludes(containerSnippet, answerRaw)) {
     return { answerSnippet: answerRaw, answerScope: 'inside', answerPage: null };
   }
 
@@ -401,15 +403,18 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
     const cleanedPageText = cleanExtractedText(pageText);
     const questionSnippetRaw = typeof item.questionSnippet === 'string' ? item.questionSnippet : '';
     const answerSnippetRaw = typeof item.answerSnippet === 'string' ? item.answerSnippet : '';
-    // The AI's questionSnippet is stored in BOTH questionSnippet and sourceSnippet (bulk scan has no
-    // separate broader container, so the source is the question passage itself).
-    const questionSnippet = fuzzyIncludes(cleanedPageText, questionSnippetRaw) ? questionSnippetRaw : '';
+    // F10 (replaces D2's "stored in both"): the AI's validated raw snippet is the broad SOURCE container, unchanged. The
+    // question snippet is that raw snippet narrowed to the one sentence/bullet the question is about; it is computed below, once the
+    // final answer is known. When the raw snippet is already a single sentence the two are legitimately equal.
+    const sourceSnippet = fuzzyIncludes(cleanedPageText, questionSnippetRaw) ? questionSnippetRaw : '';
     // Batch 6: the answer is resolved through the inside -> stated page -> other pages -> '' chain instead of a
     // single page check. Only an explicit "outside" scope or a stated page is trusted as a hint; the text itself is
     // always verified against the real page text.
     const statedAnswerPage = Number.isInteger(Number(item.answerPage)) && item.answerPage !== null && item.answerPage !== ''
       ? Number(item.answerPage) : null;
-    const resolved = resolveAnswerLocation(answerSnippetRaw, questionSnippet, sourcePage, statedAnswerPage);
+    // Field sync handoff Batch 2: 'inside' is judged against the broad source snippet, not the narrowed question sentence,
+    // otherwise an answer in the source but outside the chosen sentence would be stored 'outside' with answerPage === sourcePage.
+    const resolved = resolveAnswerLocation(answerSnippetRaw, sourceSnippet, sourcePage, statedAnswerPage);
     let answerSnippet = resolved.answerSnippet;
     let answerScope = resolved.answerScope;
     let answerPage = resolved.answerPage;
@@ -431,7 +436,7 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
         if (!answerSnippet) {
           answerScope = 'inside';
           answerPage = null;
-        } else if (questionSnippet && fuzzyIncludes(questionSnippet, answerSnippet)) {
+        } else if (sourceSnippet && fuzzyIncludes(sourceSnippet, answerSnippet)) {
           answerScope = 'inside';
           answerPage = null;
         } else {
@@ -465,8 +470,19 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
       }
     }
 
+    // F10: narrow the broad source snippet to the sentence/bullet the question is about (needs the FINAL answerSnippet, which a Tier 2
+    // extension inherits from its parent above). Not narrowed -> the very same string as the source snippet.
+    const narrowed = sourceSnippet
+      ? narrowQuestionSnippet(sourceSnippet, {
+          questionText: (getClampVariant({ variants: variantSet }) || {}).questionText || '',
+          answerSnippet,
+          targetTerm,
+        })
+      : { snippet: '', narrowed: false };
+    const questionSnippet = narrowed.narrowed ? narrowed.snippet : sourceSnippet;
+
     state.idCounter += 1;
-    cleaned.push({
+    const question = {
       id: 'q_' + state.idCounter,
       sourcePage,
       // UPDATE 2A: tags the source this AI-generated question belongs
@@ -477,7 +493,7 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
       // generateQuestionsWithAI) and batch-scan.js's page-range scans
       // (which run against whichever source is already active).
       sourceId: state.activeSourceId,
-      sourceSnippet: questionSnippet,
+      sourceSnippet,
       questionSnippet,
       answerSnippet,
       targetTerm,
@@ -487,10 +503,10 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
       // fuzzyIncludes above (dropped to '' otherwise) — non-empty here
       // means "found", consistent with verifyTier's own "assumed exact
       // until the next recheck" default.
-      sourceFound: !!questionSnippet,
+      sourceFound: !!sourceSnippet,
       questionFound: !!questionSnippet,
       answerFound: !!answerSnippet,
-      // Set by the Batch 6 answer chain: 'inside' (answer within questionSnippet) or 'outside' (on answerPage, same source).
+      // Set by the Batch 6 answer chain: 'inside' (answer within the source snippet) or 'outside' (on answerPage, same source).
       answerScope,
       answerPage,
       sourceOccurrence: 0,
@@ -512,7 +528,10 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
       variants: variantSet,
       generatingType: null,
       variantGenError: null,
-    });
+    };
+    // F6: AI-provided target term / question text start 'synced', so they are not flagged on import.
+    initFieldSyncBaseline(question);
+    cleaned.push(question);
   }
   return cleaned;
 }

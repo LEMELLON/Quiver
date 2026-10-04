@@ -527,6 +527,67 @@ function extractSentences(text) {
   return (text || '').split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 10);
 }
 
+// ---------- Question-snippet narrowing (Field Sync handoff, Batch 2 / F10) ----------
+
+// Sentence terminators and list markers that separate "units" inside a snippet. PDF/OCR text wraps mid-sentence, so line breaks alone
+// never split (the input is whitespace-normalized first). Splits: after . ! ? (unless the word before is a common abbreviation or a
+// single capital initial, so "e.g. x", "Dr. Smith", "U.S. policy" stay whole) and before a bullet char or a 1-2 digit "1." / "1)" marker.
+const SNIPPET_UNIT_SPLIT_RE = /(?<=[.!?])(?<!\b(?:e\.g|i\.e|vs|cf|Dr|Mr|Mrs|Ms|Prof|Fig|No|approx)\.)(?<!\b[A-Z]\.)\s+|\s+(?=(?:[•▪●◦‣∙]|\d{1,2}[.)])\s)/;
+const SNIPPET_BARE_MARKER_RE = /^(?:[•▪●◦‣∙]|\d{1,2}[.)])$/;
+const SNIPPET_LEADING_MARKER_RE = /^(?:[•▪●◦‣∙]|\d{1,2}[.)])\s+/;
+
+// Splits whitespace-normalized text into sentence / bullet units. A bare marker ("2.") is glued to the unit after it.
+function splitSnippetUnits(normalized) {
+  const parts = normalized.split(SNIPPET_UNIT_SPLIT_RE).map(p => p.trim()).filter(Boolean);
+  const units = [];
+  for (let i = 0; i < parts.length; i++) {
+    let unit = parts[i];
+    if (SNIPPET_BARE_MARKER_RE.test(unit)) {
+      if (i + 1 >= parts.length) continue; // trailing marker with nothing after it
+      i += 1;
+      unit = unit + ' ' + parts[i];
+    }
+    units.push(unit);
+  }
+  return units;
+}
+
+// Narrows the AI's raw (often paragraph- or list-wide) snippet to the single sentence/bullet the question corresponds to.
+// Returns { snippet, narrowed }. Works in whitespace-normalized space, so the result is a valid stored snippet (snippets are matched
+// by normalizeWhitespace everywhere). Choice: among units containing the answer, the one most similar to the comparison text
+// (the clamp question text with its blank filled by the answer, or by the target term when there is no answer); with no
+// answer-containing unit, the most similar unit overall. ≤ 1 unit, no evidence at all (every similarity 0), or a result that
+// is not a substring of the raw snippet -> the raw snippet comes back with narrowed: false. A leading bullet/number marker is
+// dropped from the chosen unit (Pane 2 renders list items without it). Never returns an empty string for a non-empty input.
+function narrowQuestionSnippet(rawSnippet, { questionText = '', answerSnippet = '', targetTerm = '' } = {}) {
+  const normalizedRaw = normalizeWhitespace(rawSnippet);
+  if (!normalizedRaw) return { snippet: normalizedRaw, narrowed: false };
+
+  const units = splitSnippetUnits(normalizedRaw);
+  if (units.length <= 1) return { snippet: normalizedRaw, narrowed: false };
+
+  const answer = normalizeWhitespace(answerSnippet);
+  const fill = answer || normalizeWhitespace(targetTerm);
+  const comparison = normalizeWhitespace(questionText).replace(/_{2,}/g, fill) || fill;
+
+  let candidates = answer ? units.filter(u => fuzzyIncludes(u, answer)) : [];
+  const answerDecided = candidates.length > 0;
+  if (!answerDecided) candidates = units;
+
+  let best = null;
+  let bestScore = -1;
+  for (const unit of candidates) {
+    const score = calculateSimilarity(unit, comparison);
+    if (score > bestScore) { best = unit; bestScore = score; } // strict > keeps the earliest unit on ties
+  }
+  if (!best || (!answerDecided && bestScore <= 0)) return { snippet: normalizedRaw, narrowed: false };
+
+  const stripped = best.replace(SNIPPET_LEADING_MARKER_RE, '').trim();
+  const snippet = stripped || best;
+  if (!snippet || !fuzzyIncludes(rawSnippet, snippet)) return { snippet: normalizedRaw, narrowed: false };
+  return { snippet, narrowed: snippet !== normalizedRaw };
+}
+
 // Minimum similarity (0-1) a fallback sentence must reach before the ladder accepts it as a stand-in match.
 const SIMILARITY_FALLBACK_THRESHOLD = 0.4;
 
@@ -959,6 +1020,7 @@ export {
   markedTextLength,
   calculateSimilarity,
   extractSentences,
+  narrowQuestionSnippet,
   locateAndHighlightSnippet,
   recheckHighlights,
   recheckHighlightsForQuestion,
