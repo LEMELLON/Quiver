@@ -144,6 +144,7 @@ function highlightBlockAncestorOf(node, container) {
 }
 
 // Walks every text node under `container`, producing a whitespace-collapsed string plus a parallel offset-to-node map.
+// Wrapping text in <mark>s never changes this string, so index ranges stay valid across highlight calls on the same container.
 function buildNormalizedContainerIndex(container) {
   const chars = [];
   const map = [];
@@ -190,19 +191,18 @@ function buildNormalizedContainerIndex(container) {
   return { normalized: chars.join(''), map };
 }
 
-// Locates `snippet` inside `container`'s rendered text and wraps it in one or more <mark data-qid="…"> elements without
-// disturbing surrounding markup. `type` is 'question' (colored by `tier`) or 'answer' (always green). A match spanning
-// block boundaries is split into one <mark> per block segment; silently no-ops if the snippet isn't present.
+// Strips punctuation from str, returning the stripped string plus a map from each stripped index back to its original index.
 function stripPunctuationKeepMap(str) {
   const chars = [];
   const map = [];
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
+    SNIPPET_PUNCTUATION_RE.lastIndex = 0; // the regex has the /g flag, so test() is stateful; reset before every call
     if (SNIPPET_PUNCTUATION_RE.test(ch)) continue;
     chars.push(ch);
     map.push(i);
   }
-  SNIPPET_PUNCTUATION_RE.lastIndex = 0; // reset since the regex has the /g flag
+  SNIPPET_PUNCTUATION_RE.lastIndex = 0;
   return { stripped: chars.join(''), map };
 }
 
@@ -233,53 +233,141 @@ function stripListConjunctionsKeepMap(str) {
   return { stripped: chars.join(''), map };
 }
 
+// Finds every match of `snippet` in `normalized` (exact first, then punctuation-stripped, then list-conjunction-stripped),
+// restricted to scope { startIdx, endIdx(exclusive) } when given. Returns [{ idx, len }] in `normalized` coordinates, in order.
+function findMatchesInIndex(normalized, snippet, scope) {
+  const needle = normalizeWhitespace(snippet);
+  if (!needle) return [];
+  const lo = scope ? Math.max(0, scope.startIdx) : 0;
+  const hi = scope ? Math.min(normalized.length, scope.endIdx) : normalized.length;
+  if (hi <= lo) return [];
+
+  let out = [];
+  let from = lo;
+  while (true) {
+    const i = normalized.indexOf(needle, from);
+    if (i === -1 || i + needle.length > hi) break;
+    out.push({ idx: i, len: needle.length });
+    from = i + 1;
+  }
+  if (out.length) return out;
+
+  const collectStripped = (hay, map, strippedNeedle) => {
+    const found = [];
+    if (!strippedNeedle) return found;
+    let f = 0;
+    while (true) {
+      const si = hay.indexOf(strippedNeedle, f);
+      if (si === -1) break;
+      const start = map[si];
+      const end = map[si + strippedNeedle.length - 1]; // inclusive
+      if (start >= lo && end < hi) found.push({ idx: start, len: end - start + 1 });
+      f = si + 1;
+    }
+    return found;
+  };
+
+  const punct = stripPunctuationKeepMap(normalized);
+  out = collectStripped(punct.stripped, punct.map, stripPunctuationForMatch(needle));
+  if (out.length) return out;
+
+  const list = stripListConjunctionsKeepMap(normalized);
+  return collectStripped(list.stripped, list.map, stripListConjunctionsForMatch(needle));
+}
+
+// Picks the occurrence-th match (clamped to the last one) from findMatchesInIndex; returns { idx, len, count } or null.
+function resolveSnippetMatch(normalized, snippet, scope, occurrence) {
+  const matches = findMatchesInIndex(normalized, snippet, scope);
+  if (!matches.length) return null;
+  const want = Number.isInteger(occurrence) && occurrence > 0 ? occurrence : 0;
+  const m = matches[Math.min(want, matches.length - 1)];
+  return { idx: m.idx, len: m.len, count: matches.length };
+}
+
+// Resolves where `snippet` would land in `container` without touching the DOM: { startIdx, endIdx(exclusive), matchCount } or null.
+function findSnippetRange(container, snippet, scope, occurrence) {
+  if (!container) return null;
+  const { normalized, map } = buildNormalizedContainerIndex(container);
+  if (!map.length) return null;
+  const m = resolveSnippetMatch(normalized, snippet, scope || null, occurrence || 0);
+  return m ? { startIdx: m.idx, endIdx: m.idx + m.len, matchCount: m.count } : null;
+}
+
+// Converts a live selection Range into whitespace-trimmed { startIdx, endIdx(exclusive) } in `container`'s normalized space.
+// Returns null if the range is detached, outside the container, or covers no text.
+function selectionRangeIdx(container, selRange) {
+  if (!container || !selRange || !selRange.startContainer || !selRange.endContainer) return null;
+  if (!selRange.startContainer.isConnected || !selRange.endContainer.isConnected) return null;
+  if (!container.contains(selRange.startContainer) || !container.contains(selRange.endContainer)) return null;
+  const { normalized, map } = buildNormalizedContainerIndex(container);
+  if (!map.length) return null;
+
+  let start = -1;
+  let end = -1;
+  for (let i = 0; i < map.length; i++) {
+    const e = map[i];
+    const len = e.node.nodeValue.length;
+    let startsIn, endsIn;
+    try {
+      startsIn = selRange.comparePoint(e.node, e.offset) === 0;
+      endsIn = selRange.comparePoint(e.node, Math.min(e.offset + 1, len)) === 0;
+    } catch (err) {
+      continue;
+    }
+    if (startsIn && endsIn) {
+      if (start === -1) start = i;
+      end = i + 1;
+    }
+  }
+  if (start === -1) return null;
+  while (start < end && normalized[start] === ' ') start++;
+  while (end > start && normalized[end - 1] === ' ') end--;
+  return start < end ? { startIdx: start, endIdx: end } : null;
+}
+
+// Counts how many matches of `snippet` inside parentRange (or the whole container) start before the selection start,
+// i.e. which occurrence the person actually selected. Returns 0 when the selection can't be mapped (e.g. a stale Range).
+function computeOccurrenceIndex(container, parentRange, snippet, selectionRange) {
+  const sel = selectionRangeIdx(container, selectionRange);
+  if (!sel) return 0;
+  const { normalized } = buildNormalizedContainerIndex(container);
+  const matches = findMatchesInIndex(normalized, snippet, parentRange || null);
+  let n = 0;
+  for (const m of matches) {
+    if (m.idx < sel.startIdx) n++; else break;
+  }
+  return n;
+}
+
+// Locates `snippet` inside `container`'s rendered text and wraps it in one or more <mark data-qid="…"> elements without
+// disturbing surrounding markup. `type` is 'source' (subtle outer wrapper), 'question' (colored by importanceTier) or
+// 'answer' (always green). A match spanning block boundaries is split into one <mark> per block segment.
+// opts.scope ({ startIdx, endIdx } in buildNormalizedContainerIndex space) limits the search; opts.occurrence picks the Nth match.
+// Returns { startIdx, endIdx(exclusive), matchCount } of the resolved match, or null if nothing was found/wrapped.
 // importanceTier drives the mark's background color; verifyTier drives the separate V1-V4 badge — independent of each other.
-function highlightSnippetInContainer(container, snippet, qid, type, importanceTier, verifyTier) {
+function highlightSnippetInContainer(container, snippet, qid, type, importanceTier, verifyTier, opts) {
   const normalizedSnippet = normalizeWhitespace(snippet);
-  if (!normalizedSnippet) return;
+  if (!normalizedSnippet) return null;
+
+  const scope = (opts && opts.scope) || null;
+  const occurrence = (opts && opts.occurrence) || 0;
+  const snippetType = type === 'answer' ? 'answer' : type === 'source' ? 'source' : 'question';
 
   const resolvedImportance = importanceTier === 2 || importanceTier === 3 ? importanceTier : 1;
-  const cssClass = type === 'answer'
+  const cssClass = snippetType === 'answer'
     ? 'source-highlight-answer'
-    : (TIER_META[resolvedImportance] || TIER_META[1]).highlightClass;
+    : snippetType === 'source'
+      ? 'source-highlight-source'
+      : (TIER_META[resolvedImportance] || TIER_META[1]).highlightClass;
   const resolvedVerify = [1, 2, 3, 4].includes(verifyTier) ? verifyTier : 1;
   const { normalized, map } = buildNormalizedContainerIndex(container);
-  if (!map.length) return;
+  if (!map.length) return null;
 
-  let idx = normalized.indexOf(normalizedSnippet);
-  let matchLength = normalizedSnippet.length;
+  const match = resolveSnippetMatch(normalized, normalizedSnippet, scope, occurrence);
+  if (!match) return null; // genuinely not present (in scope), even after every fallback pass — no-op
 
-  if (idx === -1) {
-    // Fallback: retry with punctuation stripped from both sides, translating the match back to `normalized` offsets.
-    const { stripped: strippedHaystack, map: strippedMap } = stripPunctuationKeepMap(normalized);
-    const strippedNeedle = stripPunctuationForMatch(normalizedSnippet);
-    if (strippedNeedle) {
-      const strippedIdx = strippedHaystack.indexOf(strippedNeedle);
-      if (strippedIdx !== -1) {
-        idx = strippedMap[strippedIdx];
-        const lastStrippedIdx = strippedIdx + strippedNeedle.length - 1;
-        matchLength = strippedMap[lastStrippedIdx] - idx + 1;
-      }
-    }
-  }
-
-  if (idx === -1) {
-    // Second fallback: a snippet naming a list vs. the same list reformatted as bullets with connectors dropped.
-    const { stripped: listHaystack, map: listMap } = stripListConjunctionsKeepMap(normalized);
-    const listNeedle = stripListConjunctionsForMatch(normalizedSnippet);
-    if (listNeedle) {
-      const listIdx = listHaystack.indexOf(listNeedle);
-      if (listIdx !== -1) {
-        idx = listMap[listIdx];
-        const lastListIdx = listIdx + listNeedle.length - 1;
-        matchLength = listMap[lastListIdx] - idx + 1;
-      }
-    }
-  }
-
-  if (idx === -1) return; // genuinely not present, even after every fallback pass — no-op
-
-  const endIdx = idx + matchLength - 1; // inclusive index of last matched char
+  const idx = match.idx;
+  const endIdx = idx + match.len - 1; // inclusive index of last matched char
 
   // Group the matched span into contiguous runs sharing the same block-level ancestor, in document order.
   const groups = [];
@@ -300,6 +388,7 @@ function highlightSnippetInContainer(container, snippet, qid, type, importanceTi
     }
   }
 
+  let wrapped = 0;
   groups.forEach(g => {
     try {
       const range = document.createRange();
@@ -308,9 +397,9 @@ function highlightSnippetInContainer(container, snippet, qid, type, importanceTi
 
       // For a 'question' mark, check for an overlapping duplicate-related mark before the normal widen/extract/nest path.
       let extraQidsForNewMark = [];
-      if (type === 'question') {
+      if (snippetType === 'question') {
         const shareResult = tryShareDuplicateMark(container, range, qid);
-        if (shareResult && shareResult.skip) return; // folded into an existing mark — no new <mark> needed
+        if (shareResult && shareResult.skip) { wrapped++; return; } // folded into an existing mark — no new <mark> needed
         if (shareResult && shareResult.extraIds) extraQidsForNewMark = shareResult.extraIds;
       }
 
@@ -321,51 +410,41 @@ function highlightSnippetInContainer(container, snippet, qid, type, importanceTi
       mark.dataset.qid = extraQidsForNewMark.length
         ? Array.from(new Set([...extraQidsForNewMark, qid])).join(' ')
         : qid;
-      mark.dataset.snippetType = type === 'answer' ? 'answer' : 'question';
+      mark.dataset.snippetType = snippetType;
       mark.dataset.tier = String(resolvedVerify);
       if (resolvedVerify >= 3) mark.dataset.fuzzy = 'true';
       const frag = range.extractContents();
       mark.appendChild(frag);
       range.insertNode(mark);
+      wrapped++;
 
       // Un-nest any duplicate-related mark the widen step above may have nested inside `mark`.
-      if (type === 'question') mergeNestedDuplicateMarks(mark, qid);
+      if (snippetType === 'question') mergeNestedDuplicateMarks(mark, qid);
     } catch (e) {
       console.warn('highlightSnippetInContainer: a matched segment could not be wrapped and was skipped', { qid, type, snippet });
     }
   });
+
+  return wrapped > 0 ? { startIdx: idx, endIdx: idx + match.len, matchCount: match.count } : null;
 }
 
-// Widens `range` in place so no existing <mark data-qid> is left partially inside it; runs to a fixed point.
+// Widens `range` in place so no existing <mark data-qid> is PARTIALLY inside it (a mark that straddles one boundary);
+// runs to a fixed point. A mark that fully contains the range (e.g. a source mark around a question) is nesting, not
+// overlap, and is left alone — as are source marks entirely, which may be split by extractContents instead.
 function widenRangeToAvoidPartialMarks(container, range) {
   let changed = true;
   let guard = 0;
   while (changed && guard < 25) {
     changed = false;
     guard++;
-    const marks = container.querySelectorAll('mark[data-qid]');
+    const marks = container.querySelectorAll('mark[data-qid]:not([data-snippet-type="source"])');
     for (const mark of marks) {
-      if (mark === range.startContainer || mark === range.endContainer) continue;
-      let markRange;
+      const startInside = mark.contains(range.startContainer);
+      const endInside = mark.contains(range.endContainer);
+      if (startInside === endInside) continue; // both inside = nesting; neither = disjoint or fully swallowed
       try {
-        markRange = document.createRange();
-        markRange.selectNode(mark);
-      } catch (e) {
-        continue; // mark isn't a valid selectable node — skip it
-      }
-
-      const overlaps =
-        range.compareBoundaryPoints(Range.START_TO_END, markRange) < 0 &&
-        range.compareBoundaryPoints(Range.END_TO_START, markRange) > 0;
-      if (!overlaps) continue;
-
-      const markStartsBeforeRange = range.compareBoundaryPoints(Range.START_TO_START, markRange) > 0;
-      const markEndsAfterRange = range.compareBoundaryPoints(Range.END_TO_END, markRange) < 0;
-      if (!markStartsBeforeRange && !markEndsAfterRange) continue; // already fully contained — safe as-is
-
-      try {
-        if (markStartsBeforeRange) range.setStartBefore(mark);
-        if (markEndsAfterRange) range.setEndAfter(mark);
+        if (startInside) range.setStartBefore(mark);
+        if (endInside) range.setEndAfter(mark);
         changed = true;
       } catch (e) {
         // Leave the range as-is if it can't be widened safely here.
@@ -448,69 +527,175 @@ function extractSentences(text) {
   return (text || '').split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 10);
 }
 
-// Minimum similarity (0-1) a fallback sentence must reach before recheckHighlights accepts it as a stand-in match.
+// Minimum similarity (0-1) a fallback sentence must reach before the ladder accepts it as a stand-in match.
 const SIMILARITY_FALLBACK_THRESHOLD = 0.4;
 
-// Shared per-slot location ladder: own-page attempt -> document-wide fuzzy sentence-similarity scan -> raw
-// answer/target-term-only fallback. `ownPageVerifyTier` is the tier to record on an own-page find. Returns
-// `{ verifyTier, pageNum, score }` (score only set for a Tier 3 fuzzy match), or null if not located anywhere.
-function locateAndHighlightSnippet(docContainer, q, type, ownPageVerifyTier) {
-  const snippet = type === 'answer' ? q.answerSnippet : q.sourceSnippet;
-  if (!snippet) return null;
-  const expectedLen = normalizeWhitespace(snippet).length;
-  const pageBody = docContainer.querySelector(`.doc-page[data-page="${q.sourcePage}"] .doc-page-body`);
+const SLOT_TYPES = ['source', 'question', 'answer'];
 
-  // Rung 1/2 — own stated page.
-  if (pageBody) {
-    unwrapMarksForQuestion(pageBody, q.id, type);
-    highlightSnippetInContainer(pageBody, snippet, q.id, type, q.tier, ownPageVerifyTier);
-    if (expectedLen > 0 && markedTextLength(pageBody, q.id, type) >= expectedLen * 0.4) {
-      return { verifyTier: ownPageVerifyTier, pageNum: q.sourcePage, score: null };
-    }
-  }
-
-  // Rung 3 — document-wide fuzzy sentence-similarity scan.
-  unwrapMarksForQuestion(docContainer, q.id, type);
-  let best = null; // { score, sentence, pageNum, pageBody }
-  docContainer.querySelectorAll('.doc-page').forEach(pageEl => {
-    const body = pageEl.querySelector('.doc-page-body');
-    if (!body) return;
-    const pageNum = Number(pageEl.dataset.page);
-    const sentences = extractSentences(body.textContent);
-    sentences.forEach(sentence => {
-      const score = calculateSimilarity(sentence, snippet);
-      if (!best || score > best.score) {
-        best = { score, sentence, pageNum, pageBody: body };
-      }
-    });
-  });
-
-  if (best && best.score >= SIMILARITY_FALLBACK_THRESHOLD) {
-    highlightSnippetInContainer(best.pageBody, best.sentence, q.id, type, q.tier, 3);
-    if (markedTextLength(docContainer, q.id, type) > 0) {
-      return { verifyTier: 3, pageNum: best.pageNum, score: best.score };
-    }
-  }
-
-  // Rung 4 — last resort: is the raw answer/target term itself findable anywhere at all?
-  const termNeedle = type === 'answer' ? snippet : (q.targetTerm || q.answerSnippet || '');
-  const termPage = termNeedle
-    ? state.pages.find(p => fuzzyIncludes(cleanExtractedText(p.text), termNeedle))
-    : null;
-  if (termPage) {
-    const termPageBody = docContainer.querySelector(`.doc-page[data-page="${termPage.pageNumber}"] .doc-page-body`);
-    if (termPageBody) highlightSnippetInContainer(termPageBody, termNeedle, q.id, type, q.tier, 4);
-    if (termPageBody && markedTextLength(docContainer, q.id, type) > 0) {
-      return { verifyTier: 4, pageNum: termPage.pageNumber, score: null };
-    }
-  }
-
-  return null; // genuinely not present anywhere, even after every fallback rung
+function snippetOfSlot(q, type) {
+  return type === 'source' ? q.sourceSnippet : type === 'question' ? q.questionSnippet : q.answerSnippet;
 }
 
-// Batch recheck: rebuilds every question's highlight fresh via renderTextVersion() and reconciles verifyTier/
-// sourceFound/answerFound bookkeeping and the status message from what that rebuild's ladder found per question/slot.
-// Never touches importance (q.tier); updates q.verifyTier to the worse of a question's slot results this pass.
+function occurrenceOfSlot(q, type) {
+  const n = type === 'source' ? q.sourceOccurrence : type === 'question' ? q.questionOccurrence : q.answerOccurrence;
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+function bodyForPage(docContainer, pageNum) {
+  return docContainer.querySelector(`.doc-page[data-page="${pageNum}"] .doc-page-body`);
+}
+
+// Best sentence-similarity candidate for `snippet` inside a page body (optionally limited to a scope range).
+function bestSentenceInBody(body, scope, snippet) {
+  const { normalized } = buildNormalizedContainerIndex(body);
+  const lo = scope ? scope.startIdx : 0;
+  const hi = scope ? scope.endIdx : normalized.length;
+  let best = null;
+  extractSentences(normalized.slice(lo, hi)).forEach(sentence => {
+    const score = calculateSimilarity(sentence, snippet);
+    if (!best || score > best.score) best = { score, sentence };
+  });
+  return best;
+}
+
+// Locates one slot ('source' | 'question' | 'answer') of question q in the rendered pages, drawing its mark(s).
+// `ctx` is a per-question object ({ source, question }) that carries each resolved slot's { pageNum, startIdx, endIdx }
+// forward so children are searched only inside their parents. `ownPageVerifyTier` is the tier recorded on a stated-page find.
+//   source:   own page -> doc-wide fuzzy sentence similarity -> raw answer/target-term only
+//   question: inside the resolved source -> fuzzy sentence inside the source only -> not found
+//   answer (inside):  inside question -> inside source -> fuzzy inside source -> not found (never page-wide)
+//   answer (outside): answerPage -> fuzzy on answerPage -> any other page of the file (nearest preceding first) -> not found
+// Returns { verifyTier, pageNum, score } (score only for a fuzzy match), or null if not located.
+function locateAndHighlightSnippet(docContainer, q, type, ownPageVerifyTier, ctx) {
+  const snippet = snippetOfSlot(q, type);
+  if (!snippet) return null;
+  ctx = ctx || {};
+  const occurrence = occurrenceOfSlot(q, type);
+
+  if (type === 'source') {
+    unwrapMarksForQuestion(docContainer, q.id, 'source');
+    const ownBody = bodyForPage(docContainer, q.sourcePage);
+    if (ownBody) {
+      const r = highlightSnippetInContainer(ownBody, snippet, q.id, 'source', q.tier, ownPageVerifyTier, { occurrence });
+      if (r) {
+        ctx.source = { pageNum: q.sourcePage, startIdx: r.startIdx, endIdx: r.endIdx };
+        return { verifyTier: ownPageVerifyTier, pageNum: q.sourcePage, score: null };
+      }
+    }
+
+    // Rung 3 — document-wide fuzzy sentence-similarity scan.
+    let best = null; // { score, sentence, pageNum, body }
+    docContainer.querySelectorAll('.doc-page').forEach(pageEl => {
+      const body = pageEl.querySelector('.doc-page-body');
+      if (!body) return;
+      const cand = bestSentenceInBody(body, null, snippet);
+      if (cand && (!best || cand.score > best.score)) best = { ...cand, pageNum: Number(pageEl.dataset.page), body };
+    });
+    if (best && best.score >= SIMILARITY_FALLBACK_THRESHOLD) {
+      const r = highlightSnippetInContainer(best.body, best.sentence, q.id, 'source', q.tier, 3);
+      if (r) {
+        ctx.source = { pageNum: best.pageNum, startIdx: r.startIdx, endIdx: r.endIdx };
+        return { verifyTier: 3, pageNum: best.pageNum, score: best.score };
+      }
+    }
+
+    // Rung 4 — last resort: is the raw answer/target term itself findable anywhere at all?
+    const termNeedle = q.targetTerm || q.answerSnippet || '';
+    const termPage = termNeedle
+      ? state.pages.find(p => fuzzyIncludes(cleanExtractedText(p.text), termNeedle))
+      : null;
+    if (termPage) {
+      const termBody = bodyForPage(docContainer, termPage.pageNumber);
+      const r = termBody ? highlightSnippetInContainer(termBody, termNeedle, q.id, 'source', q.tier, 4) : null;
+      if (r) {
+        ctx.source = { pageNum: termPage.pageNumber, startIdx: r.startIdx, endIdx: r.endIdx };
+        return { verifyTier: 4, pageNum: termPage.pageNumber, score: null };
+      }
+    }
+    return null;
+  }
+
+  if (type === 'question') {
+    unwrapMarksForQuestion(docContainer, q.id, 'question');
+    if (!ctx.source) return null;
+    const body = bodyForPage(docContainer, ctx.source.pageNum);
+    if (!body) return null;
+    const scope = { startIdx: ctx.source.startIdx, endIdx: ctx.source.endIdx };
+    let r = highlightSnippetInContainer(body, snippet, q.id, 'question', q.tier, ownPageVerifyTier, { scope, occurrence });
+    if (r) {
+      ctx.question = { pageNum: ctx.source.pageNum, startIdx: r.startIdx, endIdx: r.endIdx };
+      return { verifyTier: ownPageVerifyTier, pageNum: ctx.source.pageNum, score: null };
+    }
+    const cand = bestSentenceInBody(body, scope, snippet);
+    if (cand && cand.score >= SIMILARITY_FALLBACK_THRESHOLD) {
+      r = highlightSnippetInContainer(body, cand.sentence, q.id, 'question', q.tier, 3, { scope });
+      if (r) {
+        ctx.question = { pageNum: ctx.source.pageNum, startIdx: r.startIdx, endIdx: r.endIdx };
+        return { verifyTier: 3, pageNum: ctx.source.pageNum, score: cand.score };
+      }
+    }
+    return null;
+  }
+
+  // type === 'answer'
+  unwrapMarksForQuestion(docContainer, q.id, 'answer');
+
+  if (q.answerScope === 'outside') {
+    const answerPage = q.answerPage != null ? q.answerPage : q.sourcePage;
+    const ownBody = bodyForPage(docContainer, answerPage);
+    if (ownBody) {
+      let r = highlightSnippetInContainer(ownBody, snippet, q.id, 'answer', q.tier, ownPageVerifyTier, { occurrence });
+      if (r) return { verifyTier: ownPageVerifyTier, pageNum: answerPage, score: null };
+      const cand = bestSentenceInBody(ownBody, null, snippet);
+      if (cand && cand.score >= SIMILARITY_FALLBACK_THRESHOLD) {
+        r = highlightSnippetInContainer(ownBody, cand.sentence, q.id, 'answer', q.tier, 3);
+        if (r) return { verifyTier: 3, pageNum: answerPage, score: cand.score };
+      }
+    }
+    // Any other page of the active file: nearest preceding page first, then following pages.
+    const pageNums = Array.from(docContainer.querySelectorAll('.doc-page')).map(el => Number(el.dataset.page));
+    const preceding = pageNums.filter(n => n < answerPage).sort((a, b) => b - a);
+    const following = pageNums.filter(n => n > answerPage).sort((a, b) => a - b);
+    for (const n of [...preceding, ...following]) {
+      const body = bodyForPage(docContainer, n);
+      const r = body ? highlightSnippetInContainer(body, snippet, q.id, 'answer', q.tier, 3) : null;
+      if (r) return { verifyTier: 3, pageNum: n, score: null };
+    }
+    return null;
+  }
+
+  // Inside scope: question range first, then source range — never page-wide.
+  const parents = [ctx.question, ctx.source].filter(Boolean);
+  if (!parents.length) return null;
+  const body = bodyForPage(docContainer, parents[0].pageNum);
+  if (!body) return null;
+  for (const p of parents) {
+    const r = highlightSnippetInContainer(body, snippet, q.id, 'answer', q.tier, ownPageVerifyTier,
+      { scope: { startIdx: p.startIdx, endIdx: p.endIdx }, occurrence });
+    if (r) return { verifyTier: ownPageVerifyTier, pageNum: p.pageNum, score: null };
+  }
+  if (ctx.source) {
+    const scope = { startIdx: ctx.source.startIdx, endIdx: ctx.source.endIdx };
+    const cand = bestSentenceInBody(body, scope, snippet);
+    if (cand && cand.score >= SIMILARITY_FALLBACK_THRESHOLD) {
+      const r = highlightSnippetInContainer(body, cand.sentence, q.id, 'answer', q.tier, 3, { scope });
+      if (r) return { verifyTier: 3, pageNum: ctx.source.pageNum, score: cand.score };
+    }
+  }
+  return null;
+}
+
+// Note text shared by the batch and single-question rechecks for a located slot.
+function pageNoteFor(q, type, located) {
+  const stated = (type === 'answer' && q.answerScope === 'outside' && q.answerPage != null) ? q.answerPage : q.sourcePage;
+  return located.pageNum !== stated ? ` (found on p.${located.pageNum}, not its stated p.${stated})` : '';
+}
+
+const SLOT_LABEL = { source: 'source', question: 'question', answer: 'answer' };
+
+// Batch recheck: rebuilds every question's highlights fresh via renderTextVersion() and reconciles verifyTier/
+// sourceFound/questionFound/answerFound bookkeeping and the status message from what that rebuild's ladder found per slot.
+// Never touches importance (q.tier); updates q.verifyTier to the worst of a question's slot results this pass.
 function recheckHighlights() {
   if (state.questions.length === 0) {
     setSelectionGenStatus('No questions to check.', 'error');
@@ -521,7 +706,7 @@ function recheckHighlights() {
   const results = renderTextVersion();
 
   let ok = 0; // Tier 1 — exact/near-exact own-page match this pass.
-  let fuzzyMatched = 0; // Tier 3 — doc-wide similarity fallback.
+  let fuzzyMatched = 0; // Tier 3 — fuzzy-sentence fallback.
   let unclassifiedCount = 0; // Tier 4 — term-only fallback.
   const stillMissing = [];
   const fuzzyNotes = [];
@@ -529,28 +714,28 @@ function recheckHighlights() {
 
   state.questions.forEach((q, i) => {
     // Pane 2 only shows the active source's pages this session — a question from another source has nothing in the
-    // DOM to be rechecked against, so leave its verifyTier/sourceFound/answerFound as-is and skip it.
+    // DOM to be rechecked against, so leave its verifyTier/found flags as-is and skip it.
     if (q.sourceId !== state.activeSourceId) return;
 
     const label = 'Q' + String(i + 1).padStart(2, '0');
-    const entry = results.get(q.id) || { question: null, answer: null };
+    const entry = results.get(q.id) || { source: null, question: null, answer: null };
     const slotTiers = []; // this question's tier(s) actually checked this pass
 
-    [
-      { type: 'question', snippet: q.sourceSnippet },
-      { type: 'answer', snippet: q.answerSnippet },
-    ].forEach(({ type, snippet }) => {
-      if (!snippet) return; // nothing to check for this slot
+    SLOT_TYPES.forEach((type) => {
+      if (!snippetOfSlot(q, type)) return; // nothing to check for this slot
 
       const located = entry[type];
-      if (type === 'question') q.sourceFound = !!located;
+      if (type === 'source') q.sourceFound = !!located;
+      else if (type === 'question') q.questionFound = !!located;
       else q.answerFound = !!located;
 
       if (!located) {
         slotTiers.push(4);
         stillMissing.push({
           label, type,
-          reason: `text (and its answer/target term) no longer matches anywhere in the document`,
+          reason: type === 'source'
+            ? `text (and its answer/target term) no longer matches anywhere in the document`
+            : `not found inside ${type === 'question' ? 'its source snippet' : (q.answerScope === 'outside' ? 'the document' : 'its source snippet')}`,
         });
         return;
       }
@@ -560,18 +745,19 @@ function recheckHighlights() {
         ok++;
       } else if (located.verifyTier === 3) {
         fuzzyMatched++;
-        const pageNote = located.pageNum !== q.sourcePage ? ` (found on p.${located.pageNum}, not its stated p.${q.sourcePage})` : '';
         fuzzyNotes.push({
           label, type,
-          reason: `no exact match — highlighted the closest sentence instead (${Math.round(located.score * 100)}% similar)${pageNote}; please verify it's correct`,
+          reason: `no exact match — highlighted the closest sentence instead (${Math.round((located.score || 0) * 100)}% similar)${pageNoteFor(q, type, located)}; please verify it's correct`,
         });
-      } else { // tier 4 — located, but only via the term-only fallback
+      } else if (located.verifyTier === 4) {
         unclassifiedCount++;
         const pageNote = located.pageNum !== q.sourcePage ? ` on p.${located.pageNum}` : '';
         unclassifiedNotes.push({
           label, type,
           reason: `context snippet not found anywhere — only the answer/target term was located${pageNote}`,
         });
+      } else {
+        ok++; // tier 2 can't come out of the batch pass (it always passes 1), but never drop a located slot silently
       }
     });
 
@@ -618,9 +804,31 @@ function recheckHighlights() {
 
 recheckHighlightsBtn.addEventListener('click', recheckHighlights);
 
-// Single-question version of recheckHighlights: same location ladder, scoped to one question. Backs the per-question
-// "🔎 Recheck this question" button, so a single edit doesn't require a full document-wide recheck.
-function recheckHighlightsForQuestion(qid) {
+// True if this slot already has exact (non-fuzzy) marks of reasonable length on the right page, nested inside the
+// right parent mark(s) of the same question — the "already fine" shortcut used by the single-question recheck.
+function slotAlreadyFine(q, type) {
+  const snippet = snippetOfSlot(q, type);
+  const expectedLen = normalizeWhitespace(snippet).length;
+  const pageNum = (type === 'answer' && q.answerScope === 'outside' && q.answerPage != null) ? q.answerPage : q.sourcePage;
+  const body = bodyForPage(docTextContainer, pageNum);
+  if (!body || expectedLen === 0) return false;
+  if (hasFuzzyMark(body, q.id, type) || markedTextLength(body, q.id, type) < expectedLen * 0.4) return false;
+
+  const parentTypes = type === 'question' ? ['source']
+    : (type === 'answer' && q.answerScope !== 'outside') ? ['question', 'source']
+    : null;
+  if (!parentTypes) return true;
+  const marks = body.querySelectorAll(`mark[data-qid~="${q.id}"][data-snippet-type="${type}"]`);
+  return Array.from(marks).every(m =>
+    parentTypes.some(pt => m.closest(`mark[data-snippet-type="${pt}"][data-qid~="${q.id}"]`))
+  );
+}
+
+// Single-question version of recheckHighlights: same three-slot ladder, scoped to one question. Backs the per-question
+// recheck so a single edit doesn't require a full document-wide recheck. { force: true } skips the "already fine" shortcut
+// (used after a snippet was replaced, when existing marks may be stale even though they look plausible).
+function recheckHighlightsForQuestion(qid, opts) {
+  const force = !!(opts && opts.force);
   const q = state.questions.find(x => x.id === qid);
   if (!q) return;
 
@@ -631,58 +839,49 @@ function recheckHighlightsForQuestion(qid) {
     return;
   }
 
-  const slots = [
-    { snippet: q.sourceSnippet, type: 'question' },
-    { snippet: q.answerSnippet, type: 'answer' },
-  ].filter(s => s.snippet);
-
+  const slots = SLOT_TYPES.filter(t => snippetOfSlot(q, t));
   if (slots.length === 0) {
-    setSelectionGenStatus('This question has no source/answer snippet to check yet.', 'error');
+    setSelectionGenStatus('This question has no source/question/answer snippet to check yet.', 'error');
     setTimeout(() => setSelectionGenStatus(''), 2500);
     return;
   }
 
+  const setFound = (type, val) => {
+    if (type === 'source') q.sourceFound = val;
+    else if (type === 'question') q.questionFound = val;
+    else q.answerFound = val;
+  };
+
   let worstTier = 1;
   const notes = [];
-  const found = {};
 
-  slots.forEach(({ snippet, type }) => {
-    const ownPageBody = docTextContainer.querySelector(`.doc-page[data-page="${q.sourcePage}"] .doc-page-body`);
-    const expectedLen = normalizeWhitespace(snippet).length;
-
-    if (ownPageBody) {
-      const existingLen = markedTextLength(ownPageBody, q.id, type);
-      if (!hasFuzzyMark(ownPageBody, q.id, type) && expectedLen > 0 && existingLen >= expectedLen * 0.4) {
-        notes.push(`${type}: already fine`);
-        found[type] = true;
-        return; // worstTier stays at whatever it already was — this slot is confirmed
+  if (!force && slots.every(t => slotAlreadyFine(q, t))) {
+    slots.forEach(t => { setFound(t, true); notes.push(`${SLOT_LABEL[t]}: already fine`); });
+  } else {
+    const ctx = {};
+    SLOT_TYPES.forEach((type) => {
+      if (!snippetOfSlot(q, type)) return;
+      const located = locateAndHighlightSnippet(docTextContainer, q, type, 2, ctx);
+      if (located) {
+        worstTier = Math.max(worstTier, located.verifyTier);
+        setFound(type, true);
+        if (located.verifyTier <= 2) {
+          notes.push(`${SLOT_LABEL[type]}: ${located.verifyTier === 2 ? 'relocated' : 'found'}${pageNoteFor(q, type, located)}`);
+        } else if (located.verifyTier === 3) {
+          notes.push(`${SLOT_LABEL[type]}: no exact match — closest match used instead${located.score != null ? ` (${Math.round(located.score * 100)}% similar)` : ''}${pageNoteFor(q, type, located)}, please verify`);
+        } else {
+          const pageNote = located.pageNum !== q.sourcePage ? ` on p.${located.pageNum}` : '';
+          notes.push(`${SLOT_LABEL[type]}: context not found anywhere — only the answer/target term was located${pageNote}`);
+        }
+        return;
       }
-    }
+      worstTier = Math.max(worstTier, 4);
+      setFound(type, false); // genuinely un-highlightable — this is what makes a question "Unverified"
+      notes.push(`${SLOT_LABEL[type]}: not found${type === 'source' ? ' anywhere in the document' : (type === 'answer' && q.answerScope === 'outside' ? ' in the document' : ' inside its source snippet')}`);
+    });
+    q.verifyTier = worstTier;
+  }
 
-    const located = locateAndHighlightSnippet(docTextContainer, q, type, 2);
-    if (located) {
-      worstTier = Math.max(worstTier, located.verifyTier);
-      found[type] = true;
-      if (located.verifyTier === 2) {
-        notes.push(`${type}: relocated on its own page`);
-      } else if (located.verifyTier === 3) {
-        const pageNote = located.pageNum !== q.sourcePage ? ` (found on p.${located.pageNum}, not its stated p.${q.sourcePage})` : '';
-        notes.push(`${type}: no exact match — closest sentence used instead (${Math.round(located.score * 100)}% similar)${pageNote}, please verify`);
-      } else {
-        const pageNote = located.pageNum !== q.sourcePage ? ` on p.${located.pageNum}` : '';
-        notes.push(`${type}: context not found anywhere — only the answer/target term was located${pageNote}`);
-      }
-      return;
-    }
-
-    worstTier = Math.max(worstTier, 4);
-    found[type] = false; // genuinely un-highlightable — this is what makes a question "Unverified"
-    notes.push(`${type}: still not found anywhere in the document`);
-  });
-
-  q.verifyTier = worstTier;
-  if ('question' in found) q.sourceFound = found.question;
-  if ('answer' in found) q.answerFound = found.answer;
   renderQuestionNav();
   if (state.activeCardId === qid) renderActiveQuestion();
   syncMarkActiveAndUncheckedState(state.activeCardId);
@@ -699,13 +898,13 @@ function logAllHighlights(label) {
   const marks = Array.from(docTextContainer.querySelectorAll('mark[data-qid]'));
   const byQid = {};
   marks.forEach(m => {
-    const type = m.dataset.snippetType; // 'question' | 'answer'
+    const type = m.dataset.snippetType; // 'source' | 'question' | 'answer'
     const pageEl = m.closest('.doc-page');
     const page = pageEl ? pageEl.dataset.page : null;
     // A shared mark carries more than one qid — attribute it to every question it belongs to.
     markQidList(m).forEach(qid => {
-      if (!byQid[qid]) byQid[qid] = { question: 0, answer: 0, entries: [] };
-      if (type === 'question' || type === 'answer') byQid[qid][type] += 1;
+      if (!byQid[qid]) byQid[qid] = { source: 0, question: 0, answer: 0, entries: [] };
+      if (type === 'source' || type === 'question' || type === 'answer') byQid[qid][type] += 1;
       byQid[qid].entries.push({
         type,
         tier: m.dataset.tier, // verify tier, see comment above
@@ -721,13 +920,13 @@ function logAllHighlights(label) {
   state.questions.forEach(q => {
     if (q.sourceId !== state.activeSourceId) return;
 
-    const marksForQ = byQid[q.id] || { question: 0, answer: 0 };
-    if (q.sourceSnippet && marksForQ.question === 0) {
-      missing.push({ qid: q.id, type: 'question', sourcePage: q.sourcePage, snippetPreview: q.sourceSnippet.slice(0, 60) });
-    }
-    if (q.answerSnippet && marksForQ.answer === 0) {
-      missing.push({ qid: q.id, type: 'answer', sourcePage: q.sourcePage, snippetPreview: q.answerSnippet.slice(0, 60) });
-    }
+    const marksForQ = byQid[q.id] || { source: 0, question: 0, answer: 0 };
+    SLOT_TYPES.forEach((type) => {
+      const snippet = snippetOfSlot(q, type);
+      if (snippet && marksForQ[type] === 0) {
+        missing.push({ qid: q.id, type, sourcePage: q.sourcePage, snippetPreview: snippet.slice(0, 60) });
+      }
+    });
   });
 
   console.log(`[highlight-dump] ${label}`, {
@@ -746,6 +945,10 @@ export {
   buildNormalizedContainerIndex,
   stripPunctuationKeepMap,
   stripListConjunctionsKeepMap,
+  findMatchesInIndex,
+  findSnippetRange,
+  selectionRangeIdx,
+  computeOccurrenceIndex,
   highlightSnippetInContainer,
   widenRangeToAvoidPartialMarks,
   unwrapMarksForQuestion,

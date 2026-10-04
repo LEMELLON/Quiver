@@ -13,7 +13,7 @@ import { safeParseAIJson } from './ai-prompt-builders.js';
 import { parseClampVariantSet, handleApiError } from './variant-generation.js';
 import { renderQuestionNav, renderActiveQuestion, setActiveCard } from './editor-render.js';
 import { renderTextVersion } from './layout-formatting.js';
-import { updateQuestionCount, sortQuestionsByPage } from './question-model.js';
+import { newQuestion, newVariant, updateQuestionCount, sortQuestionsByPage } from './question-model.js';
 import { hideSelectionToolbar } from './selection-toolbar.js';
 import { setSelectionGenStatus } from './status-helpers.js';
 import { applyPreferredQuestionType } from './batch-scan.js';
@@ -372,42 +372,30 @@ async function runAutoSync(qid) {
   }
 }
 
-selectionGenerateBtn.addEventListener('click', async () => {
-  if (!getPendingSelection()) return;
-  const { text, sourcePage } = getPendingSelection();
+// Creates a new blank question whose source snippet is the highlighted text; no AI call and no API key needed.
+selectionGenerateBtn.addEventListener('click', () => {
+  const sel = getPendingSelection();
+  if (!sel) return;
 
-  selectionGenerateBtn.disabled = true;
-  selectionGenerateBtn.textContent = 'Generating…';
-  setSelectionGenStatus('Generating a question from the selected text…');
+  const q = newQuestion();
+  q.sourcePage = sel.sourcePage;
+  q.sourceId = sel.sourceId || state.activeSourceId;
+  q.sourceSnippet = sel.text;
+  q.sourceFound = true; // the source snippet IS the live selection — guaranteed present
+  q.variants = [newVariant(selectionQuestionType.value)]; // dropdown only picks the type of the initial blank variant
 
-  try {
-    const q = await generateQuestionFromSnippet(text, sourcePage, setSelectionGenStatus);
-    await applyPreferredQuestionType([q], selectionQuestionType.value);
-    state.questions.push(q);
-    sortQuestionsByPage();
+  state.questions.push(q);
+  sortQuestionsByPage();
+  updateQuestionCount();
+  renderTextVersion(); // redraws Pane 2 so the new source highlight shows (a dedicated source mark comes in the highlight-engine batch)
 
-    // Uses highlightSnippetInContainer's text-search path (rather than wrapping the live Range directly) to avoid corrupting multi-block selections.
-    const pageBody = docTextContainer.querySelector(`.doc-page[data-page="${q.sourcePage}"] .doc-page-body`);
-    if (pageBody) {
-      highlightSnippetInContainer(pageBody, q.sourceSnippet, q.id, 'question', q.tier, 1);
-      if (q.answerSnippet) highlightSnippetInContainer(pageBody, q.answerSnippet, q.id, 'answer', q.tier, 1);
-    } else {
-      renderTextVersion(); // fall back to a full re-render + text-search highlight pass
-    }
+  window.getSelection().removeAllRanges();
+  setActiveCard(q.id);
+  hideSelectionToolbar();
 
-    window.getSelection().removeAllRanges();
-    updateQuestionCount();
-    setActiveCard(q.id);
-    setSelectionGenStatus(`Added Q${String(state.questions.length).padStart(2, '0')} from the selection.`, 'success');
-    setTimeout(() => setSelectionGenStatus(''), 3000);
-  } catch (err) {
-    console.error(err);
-    setSelectionGenStatus(err.message || 'Failed to generate a question from that selection.', 'error');
-  } finally {
-    selectionGenerateBtn.disabled = false;
-    selectionGenerateBtn.textContent = '⚡ Generate Question from Selection';
-    hideSelectionToolbar();
-  }
+  const num = state.questions.filter(x => x.sourceId === q.sourceId).findIndex(x => x.id === q.id) + 1;
+  setSelectionGenStatus(`Created Q${String(num).padStart(2, '0')} from the selection — now scan its question and answer snippets.`, 'success');
+  setTimeout(() => setSelectionGenStatus(''), 6000);
 });
 
 // Repairs common OCR/extraction artifacts (hyphenation across line breaks or spaces) before text is sent to the model or shown in an editor field.
