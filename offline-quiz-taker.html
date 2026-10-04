@@ -129,11 +129,105 @@
   .mode-card .mode-title{ font-weight:700; color:var(--text); font-size:.95rem; }
   .mode-card .mode-desc{ font-size:.78rem; color:var(--muted); margin-top:6px; line-height:1.35; }
 
+  /* Lessons Hub screen */
+  .lessons-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+  .lessons-toolbar .btn-secondary, .lessons-toolbar .btn-primary{ width:auto; margin-top:0; flex:0 0 auto; padding:11px 16px; }
+  .lessons-toolbar .btn-primary{ margin-left:auto; }
+  .lessons-grid{
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:14px;
+  }
+  .lesson-card{
+    position:relative;
+    background:var(--card-alt);
+    border:2px solid var(--border);
+    border-radius:12px;
+    padding:16px;
+    cursor:pointer;
+  }
+  .lesson-card:hover{ border-color:var(--accent); }
+  .lesson-card.selected{ border-color:var(--accent); background:rgba(59,130,246,.12); }
+  .lesson-card.lesson-empty{ opacity:.55; cursor:not-allowed; }
+  .lesson-card.lesson-empty:hover{ border-color:var(--border); }
+  .lesson-meta{ font-size:.72rem; color:var(--muted); margin:-10px 0 12px; }
+  .lesson-checkbox{
+    position:absolute; top:12px; right:12px; width:18px; height:18px; cursor:pointer;
+  }
+  .lesson-avatar{
+    width:44px; height:44px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:1rem; color:#fff; margin-bottom:12px;
+  }
+  .lesson-name{ font-weight:700; font-size:.95rem; margin-bottom:14px; line-height:1.3; word-break:break-word; }
+  .lesson-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+  .lesson-action-btn{
+    background:transparent; border:1px solid var(--border); color:var(--muted);
+    border-radius:8px; padding:6px 9px; font-size:.76rem;
+  }
+  .lesson-action-btn:hover:not(:disabled){ color:var(--text); border-color:var(--accent); }
+  .lesson-action-btn:disabled{ opacity:.35; cursor:not-allowed; }
+
   /* Shared quiz header */
   .quiz-header{
     display:flex; align-items:center; gap:16px;
     margin-bottom:20px;
   }
+  .quit-btn{
+    background:var(--card-alt); color:var(--muted);
+    border:1px solid var(--border); border-radius:10px;
+    padding:8px 12px; font-size:.85rem; white-space:nowrap;
+  }
+  .quit-btn:hover{ color:var(--text); border-color:var(--incorrect); }
+  .skip-btn{
+    background:transparent; color:var(--muted);
+    border:1px solid var(--border); border-radius:10px;
+    padding:12px; font-size:.9rem; width:100%; margin-top:12px;
+  }
+  .skip-btn:hover{ color:var(--text); border-color:var(--accent); }
+
+  /* Stats modal */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.6);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px; z-index:100;
+  }
+  .modal-overlay.hidden{ display:none; }
+  .modal-box{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    max-width:560px; width:100%; max-height:80vh; overflow-y:auto; padding:24px;
+  }
+  .modal-box h3{ margin:0 0 4px; }
+  .modal-close-btn{
+    width:auto; margin-top:18px; padding:10px 16px; background:var(--card-alt);
+    color:var(--text); border:1px solid var(--border);
+  }
+  .stats-summary-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:16px 0; }
+  .stats-summary-row .stat{ padding:12px 6px; }
+  .stats-summary-row .stat span{ font-size:1.2rem; }
+  .stats-question-row{
+    border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px;
+    font-size:.85rem;
+  }
+  .stats-question-row .sq-text{ color:var(--text); margin-bottom:6px; font-weight:600; }
+  .stats-question-row .sq-meta{ color:var(--muted); display:flex; gap:12px; flex-wrap:wrap; }
+  .stats-sort-row{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .stats-sort-row button{ flex:0 0 auto; }
+
+  /* Session review (Results screen) */
+  .session-review{ text-align:left; margin-top:22px; }
+  .session-review h3{ margin:0 0 10px; font-size:1rem; }
+  .session-review-list{ max-height:280px; overflow-y:auto; }
+  .sr-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border-bottom:1px solid var(--border); padding:8px 2px; font-size:.85rem;
+  }
+  .sr-row:last-child{ border-bottom:none; }
+  .sr-q{ color:var(--text); flex:1; }
+  .sr-badge{ font-weight:700; font-size:.75rem; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .sr-badge.correct{ background:rgba(34,197,94,.15); color:var(--correct); }
+  .sr-badge.wrong{ background:rgba(239,68,68,.15); color:var(--incorrect); }
+  .sr-badge.skipped{ background:rgba(148,163,184,.15); color:var(--muted); }
+  .all-time-stats{ margin-top:22px; text-align:left; }
+  .all-time-stats h3{ margin:0 0 10px; font-size:1rem; }
   .timer-pill{
     font-variant-numeric:tabular-nums;
     font-size:1.1rem; font-weight:700;
@@ -175,6 +269,9 @@
   .choice-btn:disabled{ cursor:default; }
   .choice-btn.correct{ background:rgba(34,197,94,.15); border-color:var(--correct); color:#bbf7d0; }
   .choice-btn.incorrect{ background:rgba(239,68,68,.15); border-color:var(--incorrect); color:#fecaca; }
+  .choice-btn.selected-multi{ border-color:var(--accent); background:rgba(59,130,246,.16); }
+  .choice-btn.selected-multi::before{ content:"☑ "; }
+  .choice-btn:not(.selected-multi).multi-choice::before{ content:"☐ "; color:var(--muted); }
 
   #examNextBtn{ margin-top:22px; }
 
@@ -211,6 +308,7 @@
   .kahoot-tile.k-faded{ opacity:.35; }
   .kahoot-tile.k-correct{ box-shadow:0 0 0 4px #fff inset; }
   .kahoot-tile.k-wrong{ box-shadow:0 0 0 4px rgba(0,0,0,.5) inset; }
+  .kahoot-tile.k-selected{ box-shadow:0 0 0 4px #fff inset; }
   .kahoot-points-flash{
     text-align:center; font-size:1.3rem; font-weight:800; color:var(--accent);
     margin-top:14px; min-height:1.6rem;
@@ -261,9 +359,12 @@
     .card{ padding:20px; }
     .result-stats{ grid-template-columns:1fr; }
     .mode-grid{ grid-template-columns:1fr; }
+    .lessons-grid{ grid-template-columns:1fr; }
+    .lessons-toolbar .btn-primary{ margin-left:0; width:100%; }
     .kahoot-grid{ grid-template-columns:1fr; }
     .quiz-header{ flex-wrap:wrap; }
     .score-pill{ order:3; width:100%; text-align:center; }
+    .stats-summary-row{ grid-template-columns:repeat(2,1fr); }
   }
 </style>
 </head>
@@ -283,22 +384,50 @@
       <label for="quizCodeInput">Paste Quiz Code</label>
       <textarea id="quizCodeInput" placeholder="Paste compressed Quiz Code here..."></textarea>
 
-      <label for="runnerSecretKey">Secret Key (If Encrypted)</label>
+      <label for="runnerSecretKey">Secret Key (If Encrypted, Not Needed For Combined Codes)</label>
       <div class="key-row">
         <input type="password" id="runnerSecretKey" placeholder="Enter secret key used to encrypt Quiz Code (optional)" style="flex:1">
         <button class="icon-btn" id="toggleRunnerKeyBtn" type="button">Show</button>
       </div>
       <button class="btn-secondary" id="decodeCodeBtn" style="margin-top:10px;">Load From Code</button>
 
+      <label for="quizCodeFileInput">Or Upload a Quiz Code (.txt)</label>
+      <input type="file" id="quizCodeFileInput" accept=".txt,text/plain">
+
       <p id="setupError" class="error hidden"></p>
+    </div>
+  </div>
+
+  <!-- LESSONS HUB SCREEN -->
+  <div class="screen" id="screen-lessons">
+    <h1 id="lessonsQuizTitle">📚 Lessons</h1>
+    <p id="quizHashDisplay" class="success-note"></p>
+    <div class="card">
+      <div class="lessons-toolbar">
+        <button class="btn-secondary" id="selectAllLessonsBtn" type="button">Select All</button>
+        <button class="btn-secondary" id="unitedStatsBtn" type="button" style="flex:0 0 auto;">🌐 All-Time Stats</button>
+        <button class="btn-primary" id="startSessionBtn" type="button" disabled>Start Session →</button>
+      </div>
+      <div class="lessons-grid" id="lessonsGrid"></div>
+      <p id="lessonsError" class="error hidden"></p>
+    </div>
+  </div>
+
+  <!-- STATS MODAL (shared: per-lesson and all-time) -->
+  <div class="modal-overlay hidden" id="statsModal">
+    <div class="modal-box">
+      <h3 id="statsModalTitle">Stats</h3>
+      <p id="statsModalSubtitle" class="success-note"></p>
+      <div id="statsModalBody"></div>
+      <button class="btn-secondary modal-close-btn" id="statsModalCloseBtn" type="button">Close</button>
     </div>
   </div>
 
   <!-- MODE SELECT SCREEN -->
   <div class="screen" id="screen-mode">
+    <button class="quit-btn" id="modeBackBtn" type="button" style="margin-bottom:14px;">← Back to Lessons</button>
     <h1 id="quizTitleDisplay">Quiz</h1>
     <p id="quizCountDisplay"></p>
-    <p id="quizHashDisplay" class="success-note"></p>
     <div class="card">
       <label>Choose Game Mode</label>
       <div class="mode-grid">
@@ -339,6 +468,7 @@
   <!-- EXAM MODE SCREEN -->
   <div class="screen" id="screen-exam">
     <div class="quiz-header">
+      <button class="quit-btn" id="examQuitBtn" type="button">☰ Menu</button>
       <div class="timer-pill" id="examTimerDisplay">00:00</div>
       <div class="progress-wrap"><div class="progress-fill" id="examProgressBar"></div></div>
       <div class="score-pill" id="examScoreDisplay">Score: 0</div>
@@ -347,13 +477,16 @@
       <p class="q-meta" id="examMeta"></p>
       <h2 id="examQuestionText"></h2>
       <div id="choicesContainer"></div>
+      <button class="skip-btn" id="examSkipBtn" type="button">⏭ Skip Question</button>
     </div>
+    <button class="btn-primary hidden" id="examSubmitBtn">Submit Answer</button>
     <button class="btn-primary hidden" id="examNextBtn">Next Question →</button>
   </div>
 
   <!-- KAHOOT MODE SCREEN -->
   <div class="screen" id="screen-kahoot">
     <div class="quiz-header">
+      <button class="quit-btn" id="kahootQuitBtn" type="button">☰ Menu</button>
       <div class="timer-pill" id="kahootElapsedDisplay">00:00</div>
       <div class="progress-wrap"><div class="progress-fill" id="kahootProgressBar"></div></div>
       <div class="score-pill" id="kahootScoreDisplay">Points: 0</div>
@@ -365,12 +498,15 @@
       <div class="kahoot-timer-num" id="kahootTimerNum">15s</div>
       <div class="kahoot-grid" id="kahootGrid"></div>
       <div class="kahoot-points-flash" id="kahootPointsFlash"></div>
+      <button class="btn-primary hidden" id="kahootSubmitBtn" type="button">Submit Answer</button>
+      <button class="skip-btn" id="kahootSkipBtn" type="button">⏭ Skip Question</button>
     </div>
   </div>
 
   <!-- FLASHCARD MODE SCREEN -->
   <div class="screen" id="screen-flashcard">
     <div class="quiz-header">
+      <button class="quit-btn" id="flashQuitBtn" type="button">☰ Menu</button>
       <div class="timer-pill" id="flashElapsedDisplay">00:00</div>
       <div class="progress-wrap"><div class="progress-fill" id="flashProgressBar"></div></div>
       <div class="score-pill" id="flashScoreDisplay">Knew It: 0</div>
@@ -388,6 +524,7 @@
         <button id="flashDidntBtn">✗ Didn't Know It</button>
         <button id="flashKnewBtn">✓ Knew It</button>
       </div>
+      <button class="skip-btn" id="flashSkipBtn" type="button">⏭ Skip Card</button>
     </div>
   </div>
 
@@ -401,7 +538,18 @@
         <div class="stat"><span id="resultValue2">0%</span><label id="resultLabel2">Accuracy</label></div>
         <div class="stat"><span id="resultValue3">00:00</span><label>Total Time</label></div>
       </div>
-      <button class="btn-primary" id="restartBtn">Choose Another Mode</button>
+
+      <div class="session-review">
+        <h3>📋 This Session's Answers</h3>
+        <div class="session-review-list" id="sessionReviewList"></div>
+      </div>
+
+      <div class="all-time-stats">
+        <h3>🌐 All-Time (Every Session Combined)</h3>
+        <div class="stats-summary-row" id="allTimeSummaryRow"></div>
+      </div>
+
+      <button class="btn-primary" id="restartBtn">Back to Lessons Hub</button>
     </div>
   </div>
 
@@ -421,6 +569,8 @@
   let timerInterval = null;
   let currentLevel = "1";
   let selectedMode = null;
+  let selectedLessonIds = new Set(); // Batch C: which lessons are in play for the current session
+  let sessionLog = []; // Batch D+: every question answered/skipped this session, for the Results review list
 
   const KAHOOT_TIME_LIMIT = 15; // seconds per question
   let kahootRemainingMs = 0;
@@ -430,6 +580,7 @@
   // ---------- DOM refs ----------
   const screens = {
     setup: document.getElementById('screen-setup'),
+    lessonsHub: document.getElementById('screen-lessons'),
     mode: document.getElementById('screen-mode'),
     exam: document.getElementById('screen-exam'),
     kahoot: document.getElementById('screen-kahoot'),
@@ -439,14 +590,30 @@
 
   const fileInput = document.getElementById('fileInput');
   const quizCodeInput = document.getElementById('quizCodeInput');
+  const quizCodeFileInput = document.getElementById('quizCodeFileInput');
   const decodeCodeBtn = document.getElementById('decodeCodeBtn');
   const setupError = document.getElementById('setupError');
   const runnerSecretKey = document.getElementById('runnerSecretKey');
   const toggleRunnerKeyBtn = document.getElementById('toggleRunnerKeyBtn');
 
+  // Lessons Hub
+  const lessonsQuizTitle = document.getElementById('lessonsQuizTitle');
+  const quizHashDisplay = document.getElementById('quizHashDisplay');
+  const lessonsGrid = document.getElementById('lessonsGrid');
+  const selectAllLessonsBtn = document.getElementById('selectAllLessonsBtn');
+  const unitedStatsBtn = document.getElementById('unitedStatsBtn');
+  const startSessionBtn = document.getElementById('startSessionBtn');
+  const lessonsError = document.getElementById('lessonsError');
+
+  // Stats modal
+  const statsModal = document.getElementById('statsModal');
+  const statsModalTitle = document.getElementById('statsModalTitle');
+  const statsModalSubtitle = document.getElementById('statsModalSubtitle');
+  const statsModalBody = document.getElementById('statsModalBody');
+  const statsModalCloseBtn = document.getElementById('statsModalCloseBtn');
+
   const quizTitleDisplay = document.getElementById('quizTitleDisplay');
   const quizCountDisplay = document.getElementById('quizCountDisplay');
-  const quizHashDisplay = document.getElementById('quizHashDisplay');
   const modeCards = document.querySelectorAll('.mode-card');
   const examLevelPanel = document.getElementById('examLevelPanel');
   const levelSelect = document.getElementById('levelSelect');
@@ -461,7 +628,12 @@
   const examQuestionText = document.getElementById('examQuestionText');
   const choicesContainer = document.getElementById('choicesContainer');
   const examNextBtn = document.getElementById('examNextBtn');
+  const examQuitBtn = document.getElementById('examQuitBtn');
+  const examSkipBtn = document.getElementById('examSkipBtn');
+  const examSubmitBtn = document.getElementById('examSubmitBtn');
   let examAnswered = false;
+  let examQuestionStartedAt = 0;
+  let examSelectedIndices = new Set(); // multi-answer (category) questions only
 
   // Kahoot
   const kahootElapsedDisplay = document.getElementById('kahootElapsedDisplay');
@@ -473,6 +645,10 @@
   const kahootTimerNum = document.getElementById('kahootTimerNum');
   const kahootGrid = document.getElementById('kahootGrid');
   const kahootPointsFlash = document.getElementById('kahootPointsFlash');
+  const kahootQuitBtn = document.getElementById('kahootQuitBtn');
+  const kahootSkipBtn = document.getElementById('kahootSkipBtn');
+  const kahootSubmitBtn = document.getElementById('kahootSubmitBtn');
+  let kahootSelectedIndices = new Set(); // multi-answer (category) questions only
 
   // Flashcard
   const flashElapsedDisplay = document.getElementById('flashElapsedDisplay');
@@ -486,6 +662,8 @@
   const flashGradeBtns = document.getElementById('flashGradeBtns');
   const flashDidntBtn = document.getElementById('flashDidntBtn');
   const flashKnewBtn = document.getElementById('flashKnewBtn');
+  const flashQuitBtn = document.getElementById('flashQuitBtn');
+  const flashSkipBtn = document.getElementById('flashSkipBtn');
   let flashRevealed = false;
 
   // Results
@@ -495,6 +673,8 @@
   const resultLabel2 = document.getElementById('resultLabel2');
   const resultValue3 = document.getElementById('resultValue3');
   const restartBtn = document.getElementById('restartBtn');
+  const sessionReviewList = document.getElementById('sessionReviewList');
+  const allTimeSummaryRow = document.getElementById('allTimeSummaryRow');
 
   // ---------- Screen management ----------
   function showScreen(name){
@@ -536,51 +716,100 @@
       || variants[0];
   }
 
+  // ---------- Lessons (Batch A) ----------
+  // Every quiz that reaches gameplay code has a top-level `lessons[]`
+  // array and every question a `lessonId` — the version-branching to
+  // make that true happens exactly once, here. Downstream code (Lessons
+  // Hub, session composition, per-lesson stats) never re-checks
+  // formatVersion itself.
+  const LEGACY_LESSON_ID = '__legacy__';
+
   function normalizeQuizData(data) {
     if (!data || typeof data !== 'object' || !Array.isArray(data.questions)) return data;
+
+    const formatVersion = typeof data.formatVersion === 'number' ? data.formatVersion : 1;
     const isCollectionFormat = data.questions.some(q => q && Array.isArray(q.variants));
-    if (!isCollectionFormat) return data; // already flat/legacy — nothing to normalize
 
-    const flatQuestions = [];
+    // Step 1: flatten "question collections" (variants[]) into the single
+    // representative question this runner has always played. Flat/legacy
+    // files skip this step entirely (shallow-copied so we can safely
+    // attach lessonId below without mutating the caller's data).
+    let flatQuestions;
     let droppedCount = 0;
-    for (const q of data.questions) {
-      if (!q || !Array.isArray(q.variants) || q.variants.length === 0) { droppedCount++; continue; }
-      const variant = pickRepresentativeVariant(q.variants);
-      if (!variant || typeof variant.questionText !== 'string' || !Array.isArray(variant.choices)) { droppedCount++; continue; }
+    if (isCollectionFormat) {
+      flatQuestions = [];
+      for (const q of data.questions) {
+        if (!q || !Array.isArray(q.variants) || q.variants.length === 0) { droppedCount++; continue; }
+        const variant = pickRepresentativeVariant(q.variants);
+        if (!variant || typeof variant.questionText !== 'string' || !Array.isArray(variant.choices)) { droppedCount++; continue; }
 
-      let correctAnswerIndex = variant.correctAnswerIndex;
-      if (variant.type === 'category') {
-        // "Select all that apply" type, reduced to a single answer for
-        // this single-answer runner: use its first listed correct choice.
-        // (Only reached when Category Selection is the only variant a
-        // collection has left.)
-        const idxs = Array.isArray(variant.correctAnswerIndices) ? variant.correctAnswerIndices : [];
-        correctAnswerIndex = idxs.length ? idxs[0] : 0;
+        let correctAnswerIndex = variant.correctAnswerIndex;
+        let multiAnswer = false;
+        let correctAnswerIndices = null;
+        if (variant.type === 'category') {
+          // "Select all that apply" type — this runner now supports it
+          // as a genuine multi-answer question rather than collapsing it
+          // down to a single correct choice (that used to silently lose
+          // 2 of 3 correct answers on an 8-choice question, for example).
+          const idxs = Array.isArray(variant.correctAnswerIndices) ? variant.correctAnswerIndices.slice() : [];
+          if (idxs.length === 0) { droppedCount++; continue; }
+          multiAnswer = true;
+          correctAnswerIndices = idxs;
+          correctAnswerIndex = idxs[0]; // kept for back-compat with any code that still reads a single index
+        }
+        if (typeof correctAnswerIndex !== 'number' || correctAnswerIndex < 0 || correctAnswerIndex >= variant.choices.length) { droppedCount++; continue; }
+        if (multiAnswer && correctAnswerIndices.some(i => typeof i !== 'number' || i < 0 || i >= variant.choices.length)) { droppedCount++; continue; }
+
+        const flat = {
+          id: q.id,
+          questionText: variant.questionText,
+          choices: variant.choices,
+          correctAnswerIndex,
+          sourcePage: q.sourcePage,
+          targetTerm: q.targetTerm || '',
+          tier: q.tier,
+          lessonId: q.lessonId !== undefined ? q.lessonId : null,
+        };
+        if (multiAnswer) {
+          flat.multiAnswer = true;
+          flat.correctAnswerIndices = correctAnswerIndices;
+        }
+
+        // Bonus: if this collection also has a *different* Multiple Choice
+        // rephrasing sitting alongside the chosen variant, keep it as
+        // `rephrasedText` — Exam Level 4 ("Keyword Recognition") uses that
+        // field to occasionally swap in the alternate phrasing.
+        const rephrasedVariant = q.variants.find(v => v && v.type === 'rephrased' && v !== variant);
+        if (rephrasedVariant && typeof rephrasedVariant.questionText === 'string') {
+          flat.rephrasedText = rephrasedVariant.questionText;
+        }
+
+        flatQuestions.push(flat);
       }
-      if (typeof correctAnswerIndex !== 'number' || correctAnswerIndex < 0 || correctAnswerIndex >= variant.choices.length) { droppedCount++; continue; }
-
-      const flat = {
-        questionText: variant.questionText,
-        choices: variant.choices,
-        correctAnswerIndex,
-        sourcePage: q.sourcePage,
-        targetTerm: q.targetTerm || '',
-        tier: q.tier,
-      };
-
-      // Bonus: if this collection also has a *different* Multiple Choice
-      // rephrasing sitting alongside the chosen variant, keep it as
-      // `rephrasedText` — Exam Level 4 ("Keyword Recognition") uses that
-      // field to occasionally swap in the alternate phrasing.
-      const rephrasedVariant = q.variants.find(v => v && v.type === 'rephrased' && v !== variant);
-      if (rephrasedVariant && typeof rephrasedVariant.questionText === 'string') {
-        flat.rephrasedText = rephrasedVariant.questionText;
-      }
-
-      flatQuestions.push(flat);
+    } else {
+      flatQuestions = data.questions.map(q => Object.assign({}, q));
     }
 
-    const normalized = Object.assign({}, data, { questions: flatQuestions });
+    // Step 2: lessons. formatVersion >= 2 is the lesson-aware shape (the
+    // Maker handoff's Batch B) — trust its lessons[]/lessonId as given.
+    // Anything below 2 (or absent) is legacy: synthesize one implicit
+    // lesson containing every question, so a bare old flat quiz still
+    // shows up in the Lessons Hub as a single card instead of a special
+    // no-lessons case every later batch would otherwise have to handle.
+    let lessons;
+    let questions;
+    if (formatVersion >= 2) {
+      lessons = Array.isArray(data.lessons) ? data.lessons.slice() : [];
+      questions = flatQuestions.map(q => Object.assign({}, q, {
+        lessonId: q.lessonId !== undefined ? q.lessonId : null
+      }));
+    } else {
+      const syntheticLesson = { id: LEGACY_LESSON_ID, name: data.title || 'Quiz', order: 0 };
+      lessons = [syntheticLesson];
+      questions = flatQuestions.map(q => Object.assign({}, q, { lessonId: syntheticLesson.id }));
+    }
+
+    const normalized = Object.assign({}, data, { questions, lessons, formatVersion });
     if (droppedCount > 0) normalized._droppedQuestionCount = droppedCount;
     return normalized;
   }
@@ -597,13 +826,385 @@
     return true;
   }
 
-  function goToModeSelect(data){
+  // ---------- Persistent stats (Batch D) ----------
+  // One localStorage key per lesson: quizTaker.stats.<lessonId> -> { lessonId, lessonName, questions:{ <questionId>: {...} } }
+  // Wrapped in try/catch throughout so a storage failure (private
+  // browsing, quota, disabled storage) degrades to a silent no-op
+  // rather than breaking gameplay.
+  const STATS_PREFIX = 'quizTaker.stats.';
+
+  function safeGetJSON(key, fallback){
+    try{
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    }catch(e){ return fallback; }
+  }
+  function safeSetJSON(key, value){
+    try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){ /* no-op: storage unavailable */ }
+  }
+  function safeRemove(key){
+    try{ localStorage.removeItem(key); }catch(e){ /* no-op */ }
+  }
+
+  function getLessonStats(lessonId){
+    return safeGetJSON(STATS_PREFIX + lessonId, { lessonId, lessonName: '', questions: {} });
+  }
+
+  // Write on every answered/skipped question (not just at session end) —
+  // this is what makes "quit mid-session still counts" correct by
+  // construction, and what lets the same combined-stats view work
+  // whether the person quit early or finished normally.
+  function recordAnswer(lessonId, questionId, opts){
+    if(!lessonId || !questionId) return;
+    opts = opts || {};
+    const stats = getLessonStats(lessonId);
+    const q = stats.questions[questionId] || {
+      timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0,
+      totalTimeMs: 0, lastAttemptAt: null, lastResult: null
+    };
+    q.timesSeen++;
+    if(opts.skipped){
+      q.timesSkipped = (q.timesSkipped || 0) + 1;
+      q.lastResult = 'skipped';
+    }else if(opts.correct){
+      q.timesCorrect++;
+      q.lastResult = 'correct';
+    }else{
+      q.timesWrong++;
+      q.lastResult = 'wrong';
+    }
+    if(typeof opts.timeMs === 'number' && !isNaN(opts.timeMs) && opts.timeMs >= 0){
+      q.totalTimeMs = (q.totalTimeMs || 0) + opts.timeMs;
+    }
+    q.lastAttemptAt = new Date().toISOString();
+    stats.questions[questionId] = q;
+
+    if(quizData && Array.isArray(quizData.lessons)){
+      const lesson = quizData.lessons.find(l => l.id === lessonId);
+      if(lesson) stats.lessonName = lesson.name || stats.lessonName;
+    }
+    stats.lessonId = lessonId;
+    safeSetJSON(STATS_PREFIX + lessonId, stats);
+  }
+
+  function resetLessonStats(lessonId){
+    safeRemove(STATS_PREFIX + lessonId);
+  }
+
+  function getAllStatsLessonIds(){
+    const ids = [];
+    try{
+      for(let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i);
+        if(k && k.indexOf(STATS_PREFIX) === 0) ids.push(k.slice(STATS_PREFIX.length));
+      }
+    }catch(e){ /* no-op */ }
+    return ids;
+  }
+
+  // "United" stats: everything ever recorded, across every lesson and
+  // every quiz file ever loaded on this browser/device — summed at read
+  // time from the per-lesson blobs rather than kept as a separate
+  // running total, so the two views can never drift out of sync.
+  function getUnitedStats(){
+    const totals = { timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0, totalTimeMs: 0 };
+    getAllStatsLessonIds().forEach(id => {
+      const stats = getLessonStats(id);
+      Object.values(stats.questions || {}).forEach(q => {
+        totals.timesSeen += q.timesSeen || 0;
+        totals.timesCorrect += q.timesCorrect || 0;
+        totals.timesWrong += q.timesWrong || 0;
+        totals.timesSkipped += q.timesSkipped || 0;
+        totals.totalTimeMs += q.totalTimeMs || 0;
+      });
+    });
+    return totals;
+  }
+
+  function formatStatsSummaryHTML(totals){
+    const answered = totals.timesCorrect + totals.timesWrong;
+    const accuracy = answered > 0 ? Math.round((totals.timesCorrect / answered) * 100) : 0;
+    const avgSec = totals.timesSeen > 0 ? Math.round(totals.totalTimeMs / totals.timesSeen / 1000) : 0;
+    return `
+      <div class="stat"><span>${totals.timesSeen}</span><label>Times Seen</label></div>
+      <div class="stat"><span>${accuracy}%</span><label>Accuracy</label></div>
+      <div class="stat"><span>${totals.timesWrong}</span><label>Wrong</label></div>
+      <div class="stat"><span>${totals.timesSkipped}</span><label>Skipped</label></div>
+    `;
+  }
+
+  // ---------- Stats modal (per-lesson + all-time) ----------
+  function openStatsModal(){ statsModal.classList.remove('hidden'); }
+  function closeStatsModal(){ statsModal.classList.add('hidden'); }
+  statsModalCloseBtn.addEventListener('click', closeStatsModal);
+  statsModal.addEventListener('click', (e) => { if(e.target === statsModal) closeStatsModal(); });
+
+  function showLessonStatsModal(lesson){
+    const stats = getLessonStats(lesson.id);
+    const lessonQuestions = (quizData && Array.isArray(quizData.questions))
+      ? quizData.questions.filter(q => q.lessonId === lesson.id)
+      : [];
+
+    const totals = { timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0, totalTimeMs: 0 };
+    const rows = lessonQuestions.map(q => {
+      const s = stats.questions[q.id] || { timesSeen: 0, timesCorrect: 0, timesWrong: 0, timesSkipped: 0, totalTimeMs: 0 };
+      totals.timesSeen += s.timesSeen || 0;
+      totals.timesCorrect += s.timesCorrect || 0;
+      totals.timesWrong += s.timesWrong || 0;
+      totals.timesSkipped += s.timesSkipped || 0;
+      totals.totalTimeMs += s.totalTimeMs || 0;
+      return { text: q.questionText, stats: s };
+    });
+
+    renderStatsModal(lesson.name || 'Lesson', 'Per-question breakdown for this lesson', totals, rows, true);
+  }
+
+  function showUnitedStatsModal(){
+    const totals = getUnitedStats();
+    renderStatsModal('🌐 All-Time Stats', 'Combined across every lesson and quiz ever played on this device', totals, [], false);
+  }
+
+  let statsSortMode = 'default';
+  let statsModalRowsCache = [];
+
+  function renderStatsModal(title, subtitle, totals, rows, showSort){
+    statsModalTitle.textContent = title;
+    statsModalSubtitle.textContent = subtitle;
+    statsModalRowsCache = rows;
+    statsSortMode = 'default';
+
+    let html = `<div class="stats-summary-row">${formatStatsSummaryHTML(totals)}</div>`;
+    if(showSort){
+      html += `
+        <div class="stats-sort-row">
+          <button class="btn-secondary" data-sort="wrong" style="width:auto;">Sort: Most Wrong</button>
+          <button class="btn-secondary" data-sort="time" style="width:auto;">Sort: Slowest</button>
+          <button class="btn-secondary" data-sort="default" style="width:auto;">Sort: Default</button>
+        </div>
+        <div id="statsQuestionList"></div>
+      `;
+    }
+    statsModalBody.innerHTML = html;
+
+    if(showSort){
+      statsModalBody.querySelectorAll('[data-sort]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          statsSortMode = btn.dataset.sort;
+          renderStatsQuestionList();
+        });
+      });
+      renderStatsQuestionList();
+    }
+
+    openStatsModal();
+  }
+
+  function renderStatsQuestionList(){
+    const container = document.getElementById('statsQuestionList');
+    if(!container) return;
+    let rows = statsModalRowsCache.slice();
+
+    if(statsSortMode === 'wrong'){
+      rows.sort((a, b) => {
+        const wrA = a.stats.timesSeen > 0 ? a.stats.timesWrong / a.stats.timesSeen : -1;
+        const wrB = b.stats.timesSeen > 0 ? b.stats.timesWrong / b.stats.timesSeen : -1;
+        return wrB - wrA;
+      });
+    }else if(statsSortMode === 'time'){
+      rows.sort((a, b) => {
+        const avgA = a.stats.timesSeen > 0 ? a.stats.totalTimeMs / a.stats.timesSeen : -1;
+        const avgB = b.stats.timesSeen > 0 ? b.stats.totalTimeMs / b.stats.timesSeen : -1;
+        return avgB - avgA;
+      });
+    }
+
+    container.innerHTML = rows.map(r => {
+      const s = r.stats;
+      if(s.timesSeen === 0){
+        return `<div class="stats-question-row"><div class="sq-text">${escapeHTML(r.text)}</div><div class="sq-meta">Not attempted yet</div></div>`;
+      }
+      const accuracy = (s.timesCorrect + s.timesWrong) > 0 ? Math.round((s.timesCorrect / (s.timesCorrect + s.timesWrong)) * 100) : 0;
+      const avgSec = (s.totalTimeMs / s.timesSeen / 1000).toFixed(1);
+      return `<div class="stats-question-row">
+        <div class="sq-text">${escapeHTML(r.text)}</div>
+        <div class="sq-meta">
+          <span>Seen: ${s.timesSeen}</span>
+          <span>Correct: ${s.timesCorrect}</span>
+          <span>Wrong: ${s.timesWrong}</span>
+          <span>Skipped: ${s.timesSkipped || 0}</span>
+          <span>Accuracy: ${accuracy}%</span>
+          <span>Avg time: ${avgSec}s</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function escapeHTML(str){
+    const div = document.createElement('div');
+    div.textContent = String(str == null ? '' : str);
+    return div.innerHTML;
+  }
+
+  unitedStatsBtn.addEventListener('click', showUnitedStatsModal);
+
+  // ---------- Lessons Hub (Batch B) + session composition (Batch C) ----------
+  const LESSON_AVATAR_COLORS = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16'];
+
+  function hashStringToIndex(str, mod){
+    let hash = 0;
+    for(let i = 0; i < str.length; i++){
+      hash = (hash * 31 + str.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash) % mod;
+  }
+
+  function lessonInitials(name){
+    const words = String(name || '?').trim().split(/\s+/).filter(Boolean);
+    if(words.length === 0) return '?';
+    if(words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+
+  // Entry point after any successful load (file upload or Quiz Code) —
+  // the new center of gravity both "start a session" and "review past
+  // performance" begin from, per the Batch B screen graph.
+  function goToLessonsHub(data){
     quizData = data;
-    quizTitleDisplay.textContent = data.title || 'Untitled Quiz';
-    const droppedNote = data._droppedQuestionCount
-      ? ` (${data._droppedQuestionCount} question${data._droppedQuestionCount === 1 ? '' : 's'} skipped — missing a usable variant)`
+    selectedLessonIds = new Set();
+    lessonsQuizTitle.textContent = data.title || 'Untitled Quiz';
+    lessonsError.classList.add('hidden');
+    clearError();
+    renderLessonsHub();
+    showScreen('lessonsHub');
+  }
+
+
+  // A lesson (source) with zero questions can happen if, e.g., a source
+  // file's questions were all dropped during flattening, or an empty
+  // source was included in the export. Check for it here so the Hub
+  // never offers to "play" or select a lesson that has nothing in it.
+  function getLessonQuestionCount(lessonId){
+    if(!quizData || !Array.isArray(quizData.questions)) return 0;
+    let count = 0;
+    for(const q of quizData.questions){ if(q.lessonId === lessonId) count++; }
+    return count;
+  }
+
+  function renderLessonsHub(){
+    const lessons = Array.isArray(quizData.lessons)
+      ? quizData.lessons.slice().sort((a, b) => (a.order || 0) - (b.order || 0))
+      : [];
+
+    lessonsGrid.innerHTML = '';
+    lessons.forEach(lesson => {
+      const questionCount = getLessonQuestionCount(lesson.id);
+      const isEmpty = questionCount === 0;
+      const isSelected = !isEmpty && selectedLessonIds.has(lesson.id);
+      const card = document.createElement('div');
+      card.className = 'lesson-card' + (isSelected ? ' selected' : '') + (isEmpty ? ' lesson-empty' : '');
+      card.dataset.lessonId = lesson.id;
+
+      const color = LESSON_AVATAR_COLORS[hashStringToIndex(String(lesson.id), LESSON_AVATAR_COLORS.length)];
+      const name = lesson.name || 'Untitled Lesson';
+      const metaText = isEmpty
+        ? '⚠ No questions in this source'
+        : `${questionCount} question${questionCount === 1 ? '' : 's'}`;
+
+      card.innerHTML = `
+        <input type="checkbox" class="lesson-checkbox" ${isSelected ? 'checked' : ''} ${isEmpty ? 'disabled' : ''} aria-label="Select ${name}">
+        <div class="lesson-avatar" style="background:${color}">${lessonInitials(name)}</div>
+        <div class="lesson-name">${name}</div>
+        <div class="lesson-meta">${metaText}</div>
+        <div class="lesson-actions">
+          <button type="button" class="lesson-action-btn" data-action="play" ${isEmpty ? 'disabled' : ''}>▶ Play</button>
+          <button type="button" class="lesson-action-btn" data-action="stats">📊 Stats</button>
+          <button type="button" class="lesson-action-btn" data-action="reset">↺ Reset</button>
+        </div>
+      `;
+
+      const checkbox = card.querySelector('.lesson-checkbox');
+      checkbox.addEventListener('click', (e) => e.stopPropagation());
+      checkbox.addEventListener('change', () => toggleLessonSelection(lesson.id));
+
+      card.addEventListener('click', (e) => {
+        if(e.target.closest('.lesson-action-btn') || e.target === checkbox) return;
+        toggleLessonSelection(lesson.id);
+      });
+
+      card.querySelector('[data-action="play"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(isEmpty) return;
+        selectedLessonIds = new Set([lesson.id]);
+        startSessionSetup();
+      });
+      card.querySelector('[data-action="stats"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        showLessonStatsModal(lesson);
+      });
+      card.querySelector('[data-action="reset"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(confirm(`Reset all saved progress for "${name}"? This can't be undone.`)){
+          resetLessonStats(lesson.id);
+        }
+      });
+
+      lessonsGrid.appendChild(card);
+    });
+
+    updateStartSessionBtn();
+  }
+
+  function toggleLessonSelection(lessonId){
+    if(getLessonQuestionCount(lessonId) === 0) return; // sources with no questions can't be selected
+    if(selectedLessonIds.has(lessonId)) selectedLessonIds.delete(lessonId);
+    else selectedLessonIds.add(lessonId);
+    renderLessonsHub();
+  }
+
+  function updateStartSessionBtn(){
+    startSessionBtn.disabled = selectedLessonIds.size === 0;
+  }
+
+  selectAllLessonsBtn.addEventListener('click', () => {
+    const lessons = Array.isArray(quizData && quizData.lessons)
+      ? quizData.lessons.filter(l => getLessonQuestionCount(l.id) > 0)
+      : [];
+    const allSelected = lessons.length > 0 && lessons.every(l => selectedLessonIds.has(l.id));
+    selectedLessonIds = allSelected ? new Set() : new Set(lessons.map(l => l.id));
+    renderLessonsHub();
+  });
+
+
+  startSessionBtn.addEventListener('click', () => {
+    if(selectedLessonIds.size === 0) return;
+    startSessionSetup();
+  });
+
+  // Shared by "Start Session" and a single card's "Play" shortcut — both
+  // just populate `selectedLessonIds` differently, then land on the same
+  // existing Mode Select screen, now scoped to that selection.
+  function startSessionSetup(){
+    goToModeSelect();
+  }
+
+  // Filters the full question set down to whatever's currently selected
+  // on the Lessons Hub. Every downstream consumer (mode prep, gameplay
+  // answer handlers) reads `q.lessonId` off of what this returns, so
+  // this is the single place that selection is turned into a question set.
+  function getSelectedQuestions(){
+    if(!quizData || !Array.isArray(quizData.questions)) return [];
+    if(!selectedLessonIds || selectedLessonIds.size === 0) return quizData.questions.slice();
+    return quizData.questions.filter(q => selectedLessonIds.has(q.lessonId));
+  }
+
+  function goToModeSelect(){
+    quizTitleDisplay.textContent = quizData.title || 'Untitled Quiz';
+    const selectedQuestions = getSelectedQuestions();
+    const lessonCount = selectedLessonIds.size;
+    const droppedNote = quizData._droppedQuestionCount
+      ? ` (${quizData._droppedQuestionCount} question${quizData._droppedQuestionCount === 1 ? '' : 's'} skipped — missing a usable variant)`
       : '';
-    quizCountDisplay.textContent = `${data.questions.length} question${data.questions.length === 1 ? '' : 's'} loaded${droppedNote}`;
+    quizCountDisplay.textContent = `${selectedQuestions.length} question${selectedQuestions.length === 1 ? '' : 's'} selected from ${lessonCount} lesson${lessonCount === 1 ? '' : 's'}${droppedNote}`;
     selectedMode = null;
     modeCards.forEach(c => c.classList.remove('selected'));
     examLevelPanel.classList.add('hidden');
@@ -612,6 +1213,16 @@
     clearError();
     showScreen('mode');
   }
+
+  // Back to Lessons Hub from Mode Select — deliberately does NOT go
+  // through goToLessonsHub() (that resets selectedLessonIds); it just
+  // re-shows the hub with whatever lessons were already checked, so the
+  // person can tweak their selection rather than starting over.
+  const modeBackBtn = document.getElementById('modeBackBtn');
+  modeBackBtn.addEventListener('click', () => {
+    renderLessonsHub();
+    showScreen('lessonsHub');
+  });
 
   // ---------- File upload ----------
   fileInput.addEventListener('change', (e) => {
@@ -623,7 +1234,7 @@
         const data = normalizeQuizData(JSON.parse(reader.result));
         validateQuiz(data);
         quizHashDisplay.textContent = '';
-        goToModeSelect(data);
+        goToLessonsHub(data);
       }catch(err){
         showError('Failed to load file: ' + err.message);
       }
@@ -633,25 +1244,57 @@
   });
 
   // ---------- Quiz Code decoding (Base64URL, optional PBKDF2->AES-GCM decryption, gzip) ----------
+  function base64UrlToBytes(b64url){
+    let b64 = String(b64url).replace(/-/g, '+').replace(/_/g, '/');
+    while(b64.length % 4) b64 += '=';
+    const binaryString = atob(b64);
+    return Uint8Array.from(binaryString, c => c.charCodeAt(0));
+  }
+
+  // Combined Quiz Code format (Maker handoff Batch A): `<b64url(key)>.<b64url(salt+iv+ciphertext)>`.
+  // The `.` delimiter is safe because it's outside base64url's alphabet
+  // (A-Za-z0-9-_), so splitting on the first occurrence is unambiguous.
+  // A code with no `.` is a legacy/ciphertext-only code — returned as
+  // `{ key: null, code: <whole string> }` so old bare codes keep working.
+  function splitQuizCodeAndKey(combinedCode){
+    const trimmed = (combinedCode || '').trim();
+    const dotIndex = trimmed.indexOf('.');
+    if(dotIndex === -1) return { key: null, code: trimmed };
+
+    const keySegment = trimmed.slice(0, dotIndex);
+    const codeSegment = trimmed.slice(dotIndex + 1);
+    try{
+      const keyBytes = base64UrlToBytes(keySegment);
+      const key = new TextDecoder().decode(keyBytes);
+      return { key, code: codeSegment };
+    }catch(e){
+      // Malformed embedded-key segment — fall back to treating the whole
+      // string as a keyless code rather than silently mis-decoding it.
+      return { key: null, code: trimmed };
+    }
+  }
+
   async function decodeQuizCode(code){
     const trimmed = (code || '').trim();
     if(!trimmed) throw new Error('Paste a Quiz Code first.');
 
-    // Base64URL -> Base64
-    let b64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
-    while(b64.length % 4) b64 += '=';
+    // Combined-code splitting (Maker handoff Batch A) — if an embedded
+    // key is present it wins automatically, even if runnerSecretKey also
+    // has something typed into it; no merging, no error, simplest rule.
+    const { key: embeddedKey, code: splitCode } = splitQuizCodeAndKey(trimmed);
+    const codeToDecode = embeddedKey !== null ? splitCode : trimmed;
 
     let bytes;
     try{
-      const binaryString = atob(b64);
-      bytes = Uint8Array.from(binaryString, c => c.charCodeAt(0));
+      bytes = base64UrlToBytes(codeToDecode);
     }catch(e){
       throw new Error('Quiz Code is not valid Base64URL.');
     }
 
     // Optional AES-GCM decryption using PBKDF2-derived key
     const runnerKeyEl = document.getElementById('runnerSecretKey');
-    const secretKey = runnerKeyEl ? runnerKeyEl.value : '';
+    const typedKey = runnerKeyEl ? runnerKeyEl.value : '';
+    const secretKey = embeddedKey !== null ? embeddedKey : typedKey;
 
     const PBKDF2_ITERATIONS = 150000;
     const SALT_LEN = 16;
@@ -736,7 +1379,7 @@
       decodeCodeBtn.textContent = 'Decoding...';
       const { data, hash } = await decodeQuizCode(quizCodeInput.value);
       validateQuiz(data);
-      goToModeSelect(data);
+      goToLessonsHub(data);
       quizHashDisplay.textContent = hash ? `Integrity hash: ${hash.slice(0,16)}...` : '';
     }catch(err){
       showError('Failed to decode Quiz Code: ' + err.message);
@@ -745,6 +1388,24 @@
       decodeCodeBtn.textContent = 'Load From Code';
     }
   });
+
+  // ---------- .txt Quiz Code upload ----------
+  // Reads the file's text content into the same textarea the person
+  // would otherwise paste into, then runs it through the exact same
+  // decode path — no separate open-and-copy-paste step required.
+  if(quizCodeFileInput){
+    quizCodeFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        quizCodeInput.value = (reader.result || '').trim();
+        decodeCodeBtn.click();
+      };
+      reader.onerror = () => showError('Could not read the selected .txt file.');
+      reader.readAsText(file);
+    });
+  }
 
   // ---------- Mode selection ----------
   modeCards.forEach(card => {
@@ -771,11 +1432,28 @@
   function shuffleChoicesKeepCorrect(q){
     const indices = shuffleArray(q.choices.map((_, i) => i));
     const newChoices = indices.map(i => q.choices[i]);
+    if(q.multiAnswer){
+      const oldCorrectSet = new Set(q.correctAnswerIndices);
+      const newCorrectIndices = [];
+      indices.forEach((oldIdx, newIdx) => { if(oldCorrectSet.has(oldIdx)) newCorrectIndices.push(newIdx); });
+      return Object.assign({}, q, { choices: newChoices, correctAnswerIndices: newCorrectIndices, correctAnswerIndex: newCorrectIndices[0] });
+    }
     const newCorrectIndex = indices.indexOf(q.correctAnswerIndex);
     return Object.assign({}, q, { choices: newChoices, correctAnswerIndex: newCorrectIndex });
   }
 
   function forceCorrectAtZero(q){
+    if(q.multiAnswer){
+      // Group every correct choice at the front (order among themselves
+      // preserved), followed by the rest — the multi-answer equivalent of
+      // "correct answer always first".
+      const correctSet = new Set(q.correctAnswerIndices);
+      const correctChoices = q.correctAnswerIndices.map(i => q.choices[i]);
+      const others = q.choices.filter((_, i) => !correctSet.has(i));
+      const newChoices = [...correctChoices, ...others];
+      const newCorrectIndices = correctChoices.map((_, i) => i);
+      return Object.assign({}, q, { choices: newChoices, correctAnswerIndices: newCorrectIndices, correctAnswerIndex: newCorrectIndices[0] });
+    }
     const correctChoice = q.choices[q.correctAnswerIndex];
     const others = q.choices.filter((_, i) => i !== q.correctAnswerIndex);
     const newChoices = [correctChoice, ...others];
@@ -841,7 +1519,30 @@
     return `${mm}:${ss}`;
   }
 
+  // ---------- Quit mid-session (Batch F) ----------
+  // Per-question stats are already written as each question is answered
+  // or skipped, so quitting needs no special "discard partial progress"
+  // logic — it would take extra code to throw that away, so the default
+  // behavior here is correct by construction. Routes straight to the
+  // Lessons Hub, bypassing Results entirely (quitting isn't "finishing").
+  function quitToLessonsHub(){
+    stopTimer();
+    if(kahootTickInterval){ clearInterval(kahootTickInterval); kahootTickInterval = null; }
+    if(quizData) goToLessonsHub(quizData);
+  }
+  examQuitBtn.addEventListener('click', quitToLessonsHub);
+  kahootQuitBtn.addEventListener('click', quitToLessonsHub);
+  flashQuitBtn.addEventListener('click', quitToLessonsHub);
+
   // ---------- Start button (branches by mode) ----------
+  // Batch C interleave/shuffle decision (Open Questions #1): shuffle the
+  // combined set together when more than one lesson is in play (matches
+  // the existing shuffle-heavy difficulty levels' spirit for Kahoot and
+  // Exam Level 3+, which already fully shuffles via prepareExamQuestions);
+  // stay in contiguous per-lesson blocks for Flashcard and Exam Levels
+  // 1-2, which already don't reorder questions. A single selected lesson
+  // (including "Select All" on a legacy one-lesson file) is unaffected —
+  // this is what keeps the "just play the whole thing" case unchanged.
   startBtn.addEventListener('click', () => {
     if(!selectedMode) return;
 
@@ -849,10 +1550,18 @@
     score = 0;
     correctCount = 0;
     elapsedSeconds = 0;
+    sessionLog = [];
+
+    const selectedQuestions = getSelectedQuestions();
+    if(selectedQuestions.length === 0){
+      modeError.textContent = 'No questions available for the selected lesson(s).';
+      modeError.classList.remove('hidden');
+      return;
+    }
 
     if(selectedMode === 'exam'){
       currentLevel = levelSelect.value;
-      const prepared = prepareExamQuestions(quizData.questions, currentLevel);
+      const prepared = prepareExamQuestions(selectedQuestions, currentLevel);
       if(prepared.length === 0){
         modeError.textContent = 'No questions available for this level (e.g. no "situational" questions found). Try a different level.';
         modeError.classList.remove('hidden');
@@ -861,10 +1570,12 @@
       preparedQuestions = prepared;
       startExamMode();
     }else if(selectedMode === 'kahoot'){
-      preparedQuestions = quizData.questions.map(q => Object.assign({}, q));
+      let kahootQuestions = selectedQuestions.map(q => Object.assign({}, q));
+      if(selectedLessonIds.size > 1) kahootQuestions = shuffleArray(kahootQuestions);
+      preparedQuestions = kahootQuestions;
       startKahootMode();
     }else if(selectedMode === 'flashcard'){
-      preparedQuestions = quizData.questions.map(q => Object.assign({}, q));
+      preparedQuestions = selectedQuestions.map(q => Object.assign({}, q));
       startFlashcardMode();
     }
   });
@@ -892,22 +1603,48 @@
   function renderExamQuestion(){
     const q = preparedQuestions[currentIndex];
     examAnswered = false;
+    examQuestionStartedAt = Date.now();
+    examSelectedIndices = new Set();
 
-    examMeta.textContent = `Question ${currentIndex + 1} of ${preparedQuestions.length} · ${LEVEL_LABELS[currentLevel]}`;
+    const multiHint = q.multiAnswer ? ` · Select all ${q.correctAnswerIndices.length} that apply` : '';
+    examMeta.textContent = `Question ${currentIndex + 1} of ${preparedQuestions.length} · ${LEVEL_LABELS[currentLevel]}${multiHint}`;
     examQuestionText.textContent = q.questionText;
 
     choicesContainer.innerHTML = '';
     q.choices.forEach((choice, i) => {
       const btn = document.createElement('button');
-      btn.className = 'choice-btn';
+      btn.className = 'choice-btn' + (q.multiAnswer ? ' multi-choice' : '');
       btn.type = 'button';
       btn.textContent = choice;
-      btn.addEventListener('click', () => selectExamChoice(i));
+      if(q.multiAnswer){
+        btn.addEventListener('click', () => toggleExamMultiChoice(i, btn));
+      }else{
+        btn.addEventListener('click', () => selectExamChoice(i));
+      }
       choicesContainer.appendChild(btn);
     });
 
     examProgressBar.style.width = `${(currentIndex / preparedQuestions.length) * 100}%`;
     examNextBtn.classList.add('hidden');
+    examSkipBtn.classList.remove('hidden');
+    if(q.multiAnswer){
+      examSubmitBtn.classList.remove('hidden');
+      examSubmitBtn.disabled = true;
+    }else{
+      examSubmitBtn.classList.add('hidden');
+    }
+  }
+
+  function toggleExamMultiChoice(i, btn){
+    if(examAnswered) return;
+    if(examSelectedIndices.has(i)){
+      examSelectedIndices.delete(i);
+      btn.classList.remove('selected-multi');
+    }else{
+      examSelectedIndices.add(i);
+      btn.classList.add('selected-multi');
+    }
+    examSubmitBtn.disabled = examSelectedIndices.size === 0;
   }
 
   function selectExamChoice(selectedIndex){
@@ -922,15 +1659,73 @@
       else if(idx === selectedIndex) btn.classList.add('incorrect');
     });
 
-    if(selectedIndex === q.correctAnswerIndex){
+    const isCorrect = selectedIndex === q.correctAnswerIndex;
+    if(isCorrect){
       score++;
       correctCount++;
       examScoreDisplay.textContent = `Score: ${score}`;
     }
 
+    const timeMs = Date.now() - examQuestionStartedAt;
+    recordAnswer(q.lessonId, q.id, { correct: isCorrect, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: isCorrect ? 'correct' : 'wrong' });
+
+    examSkipBtn.classList.add('hidden');
     examNextBtn.textContent = (currentIndex === preparedQuestions.length - 1) ? 'Finish Quiz →' : 'Next Question →';
     examNextBtn.classList.remove('hidden');
   }
+
+  // Multi-answer (category) questions require picking ALL correct
+  // choices and nothing else — no partial credit — since a partial
+  // selection is still an incomplete/wrong answer to "select all that
+  // apply".
+  examSubmitBtn.addEventListener('click', () => {
+    if(examAnswered || examSelectedIndices.size === 0) return;
+    examAnswered = true;
+
+    const q = preparedQuestions[currentIndex];
+    const correctSet = new Set(q.correctAnswerIndices);
+    const buttons = choicesContainer.querySelectorAll('.choice-btn');
+    buttons.forEach((btn, idx) => {
+      btn.disabled = true;
+      if(correctSet.has(idx)) btn.classList.add('correct');
+      else if(examSelectedIndices.has(idx)) btn.classList.add('incorrect');
+    });
+
+    const isCorrect = examSelectedIndices.size === correctSet.size &&
+      [...examSelectedIndices].every(i => correctSet.has(i));
+    if(isCorrect){
+      score++;
+      correctCount++;
+      examScoreDisplay.textContent = `Score: ${score}`;
+    }
+
+    const timeMs = Date.now() - examQuestionStartedAt;
+    recordAnswer(q.lessonId, q.id, { correct: isCorrect, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: isCorrect ? 'correct' : 'wrong' });
+
+    examSkipBtn.classList.add('hidden');
+    examSubmitBtn.classList.add('hidden');
+    examNextBtn.textContent = (currentIndex === preparedQuestions.length - 1) ? 'Finish Quiz →' : 'Next Question →';
+    examNextBtn.classList.remove('hidden');
+  });
+
+  examSkipBtn.addEventListener('click', () => {
+    if(examAnswered) return;
+    examAnswered = true;
+    const q = preparedQuestions[currentIndex];
+    const timeMs = Date.now() - examQuestionStartedAt;
+    recordAnswer(q.lessonId, q.id, { skipped: true, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: 'skipped' });
+
+    examSubmitBtn.classList.add('hidden');
+    currentIndex++;
+    if(currentIndex >= preparedQuestions.length){
+      finishSession('exam');
+    }else{
+      renderExamQuestion();
+    }
+  });
 
   examNextBtn.addEventListener('click', () => {
     currentIndex++;
@@ -963,8 +1758,10 @@
     const q = preparedQuestions[currentIndex];
     kahootAnswered = false;
     kahootPointsFlash.textContent = '';
+    kahootSelectedIndices = new Set();
 
-    kahootMeta.textContent = `Question ${currentIndex + 1} of ${preparedQuestions.length} · Kahoot Mode`;
+    const multiHint = q.multiAnswer ? ` · Select all ${q.correctAnswerIndices.length}` : '';
+    kahootMeta.textContent = `Question ${currentIndex + 1} of ${preparedQuestions.length} · Kahoot Mode${multiHint}`;
     kahootQuestionText.textContent = q.questionText;
 
     kahootGrid.innerHTML = '';
@@ -974,12 +1771,23 @@
       btn.className = `kahoot-tile ${style.cls}`;
       btn.type = 'button';
       btn.innerHTML = `<span class="k-shape">${style.shape}</span><span>${choice}</span>`;
-      btn.addEventListener('click', () => selectKahootChoice(i));
+      if(q.multiAnswer){
+        btn.addEventListener('click', () => toggleKahootMultiChoice(i, btn));
+      }else{
+        btn.addEventListener('click', () => selectKahootChoice(i));
+      }
       kahootGrid.appendChild(btn);
     });
 
     kahootProgressBar.style.width = `${(currentIndex / preparedQuestions.length) * 100}%`;
 
+    kahootSkipBtn.classList.remove('hidden');
+    if(q.multiAnswer){
+      kahootSubmitBtn.classList.remove('hidden');
+      kahootSubmitBtn.disabled = true;
+    }else{
+      kahootSubmitBtn.classList.add('hidden');
+    }
     kahootRemainingMs = KAHOOT_TIME_LIMIT * 1000;
     updateKahootTimerUI();
     if(kahootTickInterval) clearInterval(kahootTickInterval);
@@ -994,6 +1802,18 @@
         updateKahootTimerUI();
       }
     }, 100);
+  }
+
+  function toggleKahootMultiChoice(i, btn){
+    if(kahootAnswered) return;
+    if(kahootSelectedIndices.has(i)){
+      kahootSelectedIndices.delete(i);
+      btn.classList.remove('k-selected');
+    }else{
+      kahootSelectedIndices.add(i);
+      btn.classList.add('k-selected');
+    }
+    kahootSubmitBtn.disabled = kahootSelectedIndices.size === 0;
   }
 
   function updateKahootTimerUI(){
@@ -1033,21 +1853,94 @@
     }
     kahootScoreDisplay.textContent = `Points: ${score}`;
 
+    const timeMs = (KAHOOT_TIME_LIMIT * 1000) - kahootRemainingMs;
+    recordAnswer(q.lessonId, q.id, { correct: isCorrect, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: isCorrect ? 'correct' : 'wrong' });
+
+    kahootSkipBtn.classList.add('hidden');
     setTimeout(() => advanceKahoot(), 1400);
   }
 
   function handleKahootTimeout(){
     kahootAnswered = true;
     const q = preparedQuestions[currentIndex];
+    const correctSet = q.multiAnswer ? new Set(q.correctAnswerIndices) : new Set([q.correctAnswerIndex]);
     const tiles = kahootGrid.querySelectorAll('.kahoot-tile');
     tiles.forEach((tile, idx) => {
       tile.disabled = true;
-      if(idx === q.correctAnswerIndex) tile.classList.add('k-correct');
+      if(correctSet.has(idx)) tile.classList.add('k-correct');
       else tile.classList.add('k-faded');
     });
     kahootPointsFlash.textContent = "Time's up!";
+
+    recordAnswer(q.lessonId, q.id, { correct: false, timeMs: KAHOOT_TIME_LIMIT * 1000 });
+    sessionLog.push({ questionText: q.questionText, result: 'wrong' });
+
+    kahootSkipBtn.classList.add('hidden');
+    kahootSubmitBtn.classList.add('hidden');
     setTimeout(() => advanceKahoot(), 1400);
   }
+
+  // Multi-answer (category) questions: no partial credit — the selected
+  // set must exactly match the correct set, same rule as Exam mode.
+  kahootSubmitBtn.addEventListener('click', () => {
+    if(kahootAnswered || kahootSelectedIndices.size === 0) return;
+    kahootAnswered = true;
+    if(kahootTickInterval) clearInterval(kahootTickInterval);
+
+    const q = preparedQuestions[currentIndex];
+    const correctSet = new Set(q.correctAnswerIndices);
+    const tiles = kahootGrid.querySelectorAll('.kahoot-tile');
+    tiles.forEach((tile, idx) => {
+      tile.disabled = true;
+      if(correctSet.has(idx)) tile.classList.add('k-correct');
+      else{
+        tile.classList.add('k-faded');
+        if(kahootSelectedIndices.has(idx)) tile.classList.add('k-wrong');
+      }
+    });
+
+    const isCorrect = kahootSelectedIndices.size === correctSet.size &&
+      [...kahootSelectedIndices].every(i => correctSet.has(i));
+    let earned = 0;
+    if(isCorrect){
+      const fraction = kahootRemainingMs / (KAHOOT_TIME_LIMIT * 1000);
+      earned = Math.max(100, Math.round(1000 * fraction));
+      score += earned;
+      correctCount++;
+      kahootPointsFlash.textContent = `+${earned} points!`;
+    }else{
+      kahootPointsFlash.textContent = 'No points';
+    }
+    kahootScoreDisplay.textContent = `Points: ${score}`;
+
+    const timeMs = (KAHOOT_TIME_LIMIT * 1000) - kahootRemainingMs;
+    recordAnswer(q.lessonId, q.id, { correct: isCorrect, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: isCorrect ? 'correct' : 'wrong' });
+
+    kahootSkipBtn.classList.add('hidden');
+    kahootSubmitBtn.classList.add('hidden');
+    setTimeout(() => advanceKahoot(), 1400);
+  });
+
+  kahootSkipBtn.addEventListener('click', () => {
+    if(kahootAnswered) return;
+    kahootAnswered = true;
+    if(kahootTickInterval) clearInterval(kahootTickInterval);
+
+    const q = preparedQuestions[currentIndex];
+    const tiles = kahootGrid.querySelectorAll('.kahoot-tile');
+    tiles.forEach(tile => { tile.disabled = true; });
+    kahootPointsFlash.textContent = 'Skipped';
+
+    const timeMs = (KAHOOT_TIME_LIMIT * 1000) - kahootRemainingMs;
+    recordAnswer(q.lessonId, q.id, { skipped: true, timeMs });
+    sessionLog.push({ questionText: q.questionText, result: 'skipped' });
+
+    kahootSkipBtn.classList.add('hidden');
+    kahootSubmitBtn.classList.add('hidden');
+    setTimeout(() => advanceKahoot(), 500);
+  });
 
   function advanceKahoot(){
     currentIndex++;
@@ -1079,7 +1972,9 @@
 
     flashMeta.textContent = `Card ${currentIndex + 1} of ${preparedQuestions.length} · Flashcard Mode`;
     flashFront.textContent = q.questionText;
-    flashBack.textContent = q.choices[q.correctAnswerIndex];
+    flashBack.textContent = q.multiAnswer
+      ? q.correctAnswerIndices.map(i => q.choices[i]).join(', ')
+      : q.choices[q.correctAnswerIndex];
 
     flashProgressBar.style.width = `${(currentIndex / preparedQuestions.length) * 100}%`;
   }
@@ -1093,11 +1988,19 @@
   });
 
   function gradeFlashcard(knewIt){
+    const q = preparedQuestions[currentIndex];
     if(knewIt){
       score++;
       correctCount++;
       flashScoreDisplay.textContent = `Knew It: ${score}`;
     }
+    // Flashcard is self-paced (the person controls when they flip and
+    // grade), so a raw "time to answer" would mix thinking time with
+    // however long they got distracted mid-card — not comparable to the
+    // forced-pace Exam/Kahoot timing. timeMs is intentionally omitted.
+    recordAnswer(q.lessonId, q.id, { correct: knewIt });
+    sessionLog.push({ questionText: q.questionText, result: knewIt ? 'correct' : 'wrong' });
+
     currentIndex++;
     if(currentIndex >= preparedQuestions.length){
       finishSession('flashcard');
@@ -1108,6 +2011,19 @@
 
   flashKnewBtn.addEventListener('click', () => gradeFlashcard(true));
   flashDidntBtn.addEventListener('click', () => gradeFlashcard(false));
+
+  flashSkipBtn.addEventListener('click', () => {
+    const q = preparedQuestions[currentIndex];
+    recordAnswer(q.lessonId, q.id, { skipped: true });
+    sessionLog.push({ questionText: q.questionText, result: 'skipped' });
+
+    currentIndex++;
+    if(currentIndex >= preparedQuestions.length){
+      finishSession('flashcard');
+    }else{
+      renderFlashcard();
+    }
+  });
 
   // =========================================================
   // RESULTS
@@ -1134,11 +2050,25 @@
     resultValue2.textContent = `${accuracy}%`;
     resultValue3.textContent = formatTime(elapsedSeconds);
 
+    // Per-session review: every question-answer pair from this session,
+    // in the order they were played — separate from the persistent
+    // per-lesson stats, which accumulate across every session ever.
+    sessionReviewList.innerHTML = sessionLog.map(entry => `
+      <div class="sr-row">
+        <span class="sr-q">${escapeHTML(entry.questionText)}</span>
+        <span class="sr-badge ${entry.result}">${entry.result === 'correct' ? '✓ Correct' : entry.result === 'wrong' ? '✗ Wrong' : '⏭ Skipped'}</span>
+      </div>
+    `).join('') || '<p>No questions were answered this session.</p>';
+
+    // United/all-time stats: combined across every session and lesson
+    // ever recorded on this device, not just this run.
+    allTimeSummaryRow.innerHTML = formatStatsSummaryHTML(getUnitedStats());
+
     showScreen('results');
   }
 
   restartBtn.addEventListener('click', () => {
-    if(quizData) goToModeSelect(quizData);
+    if(quizData) goToLessonsHub(quizData);
   });
 
 })();
