@@ -297,7 +297,9 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
     const cleanedPageText = cleanExtractedText(pageText);
     const questionSnippetRaw = typeof item.questionSnippet === 'string' ? item.questionSnippet : '';
     const answerSnippetRaw = typeof item.answerSnippet === 'string' ? item.answerSnippet : '';
-    const sourceSnippet = fuzzyIncludes(cleanedPageText, questionSnippetRaw) ? questionSnippetRaw : '';
+    // The AI's questionSnippet is stored in BOTH questionSnippet and sourceSnippet (bulk scan has no
+    // separate broader container, so the source is the question passage itself).
+    const questionSnippet = fuzzyIncludes(cleanedPageText, questionSnippetRaw) ? questionSnippetRaw : '';
     let answerSnippet = fuzzyIncludes(cleanedPageText, answerSnippetRaw) ? answerSnippetRaw : '';
     let targetTerm = typeof item.targetTerm === 'string' ? cleanExtractedText(item.targetTerm) : '';
 
@@ -337,7 +339,8 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
       // generateQuestionsWithAI) and batch-scan.js's page-range scans
       // (which run against whichever source is already active).
       sourceId: state.activeSourceId,
-      sourceSnippet,
+      sourceSnippet: questionSnippet,
+      questionSnippet,
       answerSnippet,
       targetTerm,
       tier,
@@ -346,8 +349,15 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
       // fuzzyIncludes above (dropped to '' otherwise) — non-empty here
       // means "found", consistent with verifyTier's own "assumed exact
       // until the next recheck" default.
-      sourceFound: !!sourceSnippet,
+      sourceFound: !!questionSnippet,
+      questionFound: !!questionSnippet,
       answerFound: !!answerSnippet,
+      // Batch 6 adds the outside-answer fallback chain; until then every AI answer is 'inside' scope.
+      answerScope: 'inside',
+      answerPage: null,
+      sourceOccurrence: 0,
+      questionOccurrence: 0,
+      answerOccurrence: 0,
       definitionType,
       // UNCHECKED_AI_CONTENT_AND_FUZZY_HIGHLIGHT_PERSISTENCE_PROMPT.md
       // Part B — this is the single place bulk AI-generated question

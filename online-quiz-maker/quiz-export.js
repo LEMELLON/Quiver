@@ -54,7 +54,11 @@ function buildQuizObject() {
         targetTerm: q.targetTerm || '',
         sourcePage: q.sourcePage,
         sourceSnippet: q.sourceSnippet || '',
+        questionSnippet: q.questionSnippet || '',
         answerSnippet: q.answerSnippet || '',
+        // additive fields: answerPage null = same page as sourcePage; Taker ignores all three new keys
+        answerPage: q.answerPage != null ? q.answerPage : null,
+        answerScope: q.answerScope === 'outside' ? 'outside' : 'inside',
         tier: [1, 2, 3].includes(q.tier) ? q.tier : 1,
         definitionType: q.definitionType === 'extension' ? 'extension' : 'new',
         variants: q.variants.map(v => ({
