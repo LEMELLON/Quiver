@@ -14,6 +14,7 @@ import {
 
 // Functions from other modules that these listeners call:
 import { renderSourcePage } from './doc-pane-navigation.js';
+import { MIN_CREATE_SELECTION_LEN } from './shared-constants.js';
 
 // Batch 9: touch support state.
 // mouseIsDown stops the debounced selectionchange path from firing mid-drag with a mouse.
@@ -59,13 +60,15 @@ function positionSelectionToolbar(rect) {
   selectionToolbar.style.left = left + 'px';
 }
 
-// captures the current text selection in Pane 2 (if valid) and positions the floating toolbar over it
+// captures the current text selection in Pane 2 (if valid). Two jobs (G6):
+//   1) capture for the scan buttons: ANY non-empty selection (CPU, AI, 1889 ...) is stored as lastDocSelection;
+//   2) the floating "Create Question" toolbar: only for selections of at least MIN_CREATE_SELECTION_LEN characters.
 function handleTextSelection() {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hideSelectionToolbar(); return; }
 
   const text = sel.toString().trim();
-  if (text.length <= 10) { hideSelectionToolbar(); return; }
+  if (!text) { hideSelectionToolbar(); return; }
 
   const range = sel.getRangeAt(0);
   if (!docTextContainer.contains(range.commonAncestorContainer)) { hideSelectionToolbar(); return; }
@@ -77,9 +80,13 @@ function handleTextSelection() {
   if (!pageEl) { hideSelectionToolbar(); return; }
 
   const captured = { text, sourcePage: Number(pageEl.dataset.page), sourceId: state.activeSourceId, range: range.cloneRange() };
-  setPendingSelection(captured);
-  setLastDocSelection(captured);
+  setLastDocSelection(captured); // always: the scan buttons read this, whatever the length
 
+  if (text.length < MIN_CREATE_SELECTION_LEN) {
+    hideSelectionToolbar(); // short: no create button, and clear any stale longer pending selection
+    return;
+  }
+  setPendingSelection(captured);
   positionSelectionToolbar(range.getBoundingClientRect());
 }
 

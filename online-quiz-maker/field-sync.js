@@ -3,7 +3,8 @@
 //
 // Keeps two derived fields in step with their snippets. Snippets are the source of truth (F1); sync copies snippet -> field.
 //   term pair:     q.targetTerm            <- q.answerSnippet
-//   question pair: clamp variant's text    <- q.questionSnippet + q.answerSnippet (answer blanked out of the question snippet)
+//   question pair: clamp variant's text    <- q.questionSnippet + q.answerSnippet (answer blanked out of the question snippet;
+//                                             falls back to the question snippet verbatim when it can't be blanked — G1/G2)
 // rephrased / true_false / category variants are never derived and never flagged (F2).
 //
 // NOT the dormant AI resync (AUTO_SYNC_ENABLED / handleResyncSnippets), NOT "Sync Highlights", NOT Pane 3's syncBadge.
@@ -53,14 +54,19 @@ function deriveTargetTerm(q) {
   return term || null;
 }
 
-// F4, with the reason when it can't be derived. Returns { text, occurrences } or { text: null, reason }.
-// reason: 'no-question-snippet' | 'no-answer-snippet' | 'answer-outside' | 'answer-not-in-question'
+// F4 + G1/G2. Two-step ladder. Returns { text, mode, reason, occurrences }:
+//   no question snippet                                   -> { text: null, mode: null, reason: 'no-question-snippet' }
+//   answer found inside the question snippet (inside scope) -> mode 'blanked': the snippet with the first occurrence of the answer replaced by ___
+//   everything else                                         -> mode 'verbatim': the whitespace-normalized question snippet as written,
+//                                                              reason: 'no-answer-snippet' | 'answer-outside' | 'answer-not-in-question'
 function deriveQuestionInfo(q) {
   const questionSnippet = normalizeWhitespace(q && q.questionSnippet);
   const answerSnippet = normalizeWhitespace(q && q.answerSnippet);
-  if (!questionSnippet) return { text: null, reason: 'no-question-snippet' };
-  if (!answerSnippet) return { text: null, reason: 'no-answer-snippet' };
-  if (q.answerScope === 'outside') return { text: null, reason: 'answer-outside' };
+  if (!questionSnippet) return { text: null, mode: null, reason: 'no-question-snippet', occurrences: 0 };
+
+  const verbatim = (reason) => ({ text: questionSnippet, mode: 'verbatim', reason, occurrences: 0 });
+  if (!answerSnippet) return verbatim('no-answer-snippet');
+  if (q.answerScope === 'outside') return verbatim('answer-outside');
 
   // first occurrence: exact, then case-insensitive (a regex keeps indexes in the original string, unlike lowercasing both sides).
   // Batch 6: if the full answer isn't found, retry with its edges trimmed (same trim as F3), because a highlighted answer often carries
@@ -81,33 +87,46 @@ function deriveQuestionInfo(q) {
     const occurrences = (questionSnippet.match(new RegExp(escapeRegExp(needle), 'gi')) || []).length;
     return {
       text: questionSnippet.slice(0, index) + BLANK + questionSnippet.slice(index + length),
+      mode: 'blanked',
+      reason: '',
       occurrences,
     };
   }
-  return { text: null, reason: 'answer-not-in-question' };
+  return verbatim('answer-not-in-question');
 }
 
-// F4. The clamp variant's question text <- questionSnippet with the first occurrence of answerSnippet replaced by ___.
-// null when: no question snippet, no answer snippet, answerScope === 'outside', or the answer isn't inside the question snippet.
+// F4 (superseded by G1/G2). The clamp variant's question text <- questionSnippet with the first occurrence of answerSnippet replaced by ___;
+// when the answer can't be blanked out (no answer yet, answer outside the source, answer not inside the question snippet) the question snippet
+// itself, as written. null ONLY when there is no question snippet.
 function deriveClampQuestionText(q) {
   return deriveQuestionInfo(q).text;
+}
+
+// 'blanked' | 'verbatim' | null (no question snippet)
+function getQuestionDerivationMode(q) {
+  return deriveQuestionInfo(q).mode;
+}
+
+// Short human reason the question text is the verbatim snippet (for the muted note in the editor). '' for blanked / no snippet.
+function getVerbatimReason(q) {
+  const info = deriveQuestionInfo(q);
+  if (info.mode !== 'verbatim') return '';
+  switch (info.reason) {
+    case 'no-answer-snippet': return 'there is no answer snippet yet';
+    case 'answer-outside': return 'the answer is outside the source';
+    default: return 'the answer isn\u2019t inside the question snippet';
+  }
 }
 
 function deriveFor(q, pair) {
   return pair === 'term' ? deriveTargetTerm(q) : deriveClampQuestionText(q);
 }
 
-// Short human reason a pair can't be derived (for Batch 4's "Can't derive: ..." hint). '' when it can be derived.
+// Short human reason a pair can't be derived (for the "Can't derive: ..." hint). '' when it can be derived.
+// For the question pair this is now only ever "there is no question snippet" (everything else falls back to the verbatim snippet, G1).
 function getUnderivableReason(q, pair) {
   if (pair === 'term') return deriveTargetTerm(q) === null ? 'there is no answer snippet' : '';
-  const info = deriveQuestionInfo(q);
-  if (info.text !== null) return '';
-  switch (info.reason) {
-    case 'no-question-snippet': return 'there is no question snippet';
-    case 'no-answer-snippet': return 'there is no answer snippet';
-    case 'answer-outside': return 'the answer is outside the source';
-    default: return 'the answer isn\u2019t inside the question snippet';
-  }
+  return deriveQuestionInfo(q).text === null ? 'there is no question snippet' : '';
 }
 
 // ---------- baseline model ----------
@@ -173,7 +192,9 @@ function logDerivationNotes(q, pair, value) {
     console.log('[field-sync] derived target term is long (' + value.length + ' chars) — list-style answer?', { qid: q.id });
   } else if (pair === 'question') {
     const info = deriveQuestionInfo(q);
-    if (info.text !== null && info.occurrences > 1) {
+    if (info.mode === 'verbatim') {
+      console.log('[field-sync] question snippet written as the question text (answer not blanked): ' + getVerbatimReason(q), { qid: q.id });
+    } else if (info.mode === 'blanked' && info.occurrences > 1) {
       console.log('[field-sync] answer occurs ' + info.occurrences + ' times in the question snippet; only the first was blanked', { qid: q.id });
     }
   }
@@ -232,6 +253,8 @@ export {
   getClampVariant,
   deriveTargetTerm,
   deriveClampQuestionText,
+  getQuestionDerivationMode,
+  getVerbatimReason,
   getUnderivableReason,
   initFieldSyncBaseline,
   getFieldSyncState,

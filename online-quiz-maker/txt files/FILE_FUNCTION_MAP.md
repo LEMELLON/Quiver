@@ -97,16 +97,18 @@ here — carried over from each file's own header comment.
 
 ### field-sync.js
 **Role:** Field sync. Keeps `targetTerm` in step with `answerSnippet` and the clamp (Multiple Choice) variant's question text in step with `questionSnippet` + `answerSnippet` (answer blanked to `___`). Snippets are the source of truth; sync copies snippet -> field, locally (no AI). Not the dormant AI resync, not Sync Highlights, not `syncBadge`.
-**Exports:** `getClampVariant`, `deriveTargetTerm`, `deriveClampQuestionText`, `getUnderivableReason`, `initFieldSyncBaseline`, `getFieldSyncState`, `reconcileFieldSync`, `applyFieldSync`, `keepFieldAsIs`.
+**Exports:** `getClampVariant`, `deriveTargetTerm`, `deriveClampQuestionText`, `getQuestionDerivationMode`, `getVerbatimReason`, `getUnderivableReason`, `initFieldSyncBaseline`, `getFieldSyncState`, `reconcileFieldSync`, `applyFieldSync`, `keepFieldAsIs`.
 **Depends on:** `snippet-question-generation.js` (`cleanExtractedText`), `text-normalize.js` (`normalizeWhitespace`). Both import cycles are safe (only used inside function bodies).
 **Called from:** `question-model.js` (`newQuestion` -> `initFieldSyncBaseline`), `ai-api-calls.js` (`parseAiQuestions` -> `initFieldSyncBaseline`, `getClampVariant`), `snippet-question-generation.js` (`finishScan`, `saveSnippetEdit`, `handleResyncSnippets` -> `reconcileFieldSync`). `editor-render.js` (Batch 4: `getFieldSyncState`, `getUnderivableReason`, `getClampVariant` to build the sync rows; `applyFieldSync` on the `fieldSync` action; `keepFieldAsIs` on `fieldSyncKeep`).
 **Question field:** `q.syncBaseline = { term: { snippet, field }, question: { snippet, field } }` (normalized strings). Transient: never exported by `buildQuizObject`, never migrated; a question without one gets it lazily and is never flagged.
+**Question-text fallback (G1/G2, supersedes F4's `null` cases):** `deriveQuestionInfo(q)` returns `{ text, mode, reason, occurrences }`. `mode: 'blanked'` = answer found inside the question snippet (inside scope), first occurrence replaced by `___`. `mode: 'verbatim'` = the whitespace-normalized question snippet as written, for `reason` `no-answer-snippet` / `answer-outside` / `answer-not-in-question`. `text: null` (`mode: null`) ONLY when there is no question snippet. `deriveClampQuestionText` returns `deriveQuestionInfo(q).text`; `getQuestionDerivationMode(q)` -> `'blanked' | 'verbatim' | null`; `getVerbatimReason(q)` -> short text or `''`; `getUnderivableReason(q, 'question')` is now only `'there is no question snippet'`. `currentKeys`, baseline shape, `getFieldSyncState`, `reconcileFieldSync`, `applyFieldSync` unchanged (auto-follow: verbatim fill -> blanked once an inside answer is scanned). `logDerivationNotes` logs (console only) when a verbatim fallback is written.
 **Batch 6 (hardening):** `getFieldSyncState` now returns `'desynced'` for an EMPTY field whose derived value is non-null, before the baseline-equality shortcut, so a question whose baseline was taken while its snippets already existed still gets a Sync button. `deriveQuestionInfo` (F4) retries with the answer's edges trimmed (same `trimTermEdges` as F3) when the full answer is not found in the question snippet. No new exports; `reconcileFieldSync`, `applyFieldSync`, `keepFieldAsIs` unchanged. See the Batch 6 section of the Update Log.
 
 ### selection-toolbar.js
 **Role:** Floating toolbar that appears on text selection in Pane 2, plus the two-way scroll sync (Pane 2 scroll → Pane 3 page).
 **Exports:** `hideSelectionToolbar`, `handleTextSelection`, `getPageFromTextViewport`.
-**Depends on:** `core-state.js` (`state`, pending-selection getters/setters), `dom-refs.js`, `doc-pane-navigation.js` (pending, `renderSourcePage`).
+**Depends on:** `core-state.js` (`state`, pending-selection getters/setters), `dom-refs.js`, `doc-pane-navigation.js` (pending, `renderSourcePage`), `shared-constants.js` (`MIN_CREATE_SELECTION_LEN`).
+**Selection behavior (G6):** `handleTextSelection` has two jobs. (1) Capture: ANY non-empty (non-whitespace) selection inside a `.doc-page` of Pane 2 is stored via `setLastDocSelection` (what the scan buttons read), so `CPU`, `AI`, `1889` work. (2) Toolbar: only selections of at least `MIN_CREATE_SELECTION_LEN` (11) characters call `setPendingSelection` and show the create button; shorter ones hide the toolbar and set pending to `null` (no stale longer selection for the create button). Collapsed / empty / outside-Pane-2 selections still just hide the toolbar. `touchend` and the debounced `selectionchange` call the same function.
 **Flag (repeated from layout-formatting.js's header, per this file):** source lines 3004-3007 (a `docTextContainer` click listener wiring `setActiveCard`) sit between this module and the previous one and aren't assigned to either — unresolved.
 
 ### doc-extraction.js
@@ -126,8 +128,8 @@ here — carried over from each file's own header comment.
 **Depends on:** nothing (leaf). **Read by:** question-model.js, editor-render.js, highlighting.js, snippet-question-generation.js (all pending).
 
 ### shared-constants.js
-**Role:** Single shared constant.
-**Exports:** `MIN_CHOICES` (= 2).
+**Role:** Shared constants.
+**Exports:** `MIN_CHOICES` (= 2), `AUTO_SYNC_ENABLED` (= false), `MIN_CREATE_SELECTION_LEN` (= 11; min selection length for the floating create button, read by `selection-toolbar.js`).
 **Depends on:** nothing (leaf). **Read by:** editor-render.js, variant-generation.js (both pending).
 
 ### seed-api-key.js
@@ -196,7 +198,7 @@ here — carried over from each file's own header comment.
 
 ### styles.css
 **Role:** All app styling — dark chrome/scrollbars, the draggable source-stack (slide-sorter) rows and thumbnails, Pane 1 nav-chips/pager, the term nav bar and term-pane scope-toggle/search controls, Pane 2's "bond paper" text rendering and highlighter `<mark>` styling (tier 1-4 backgrounds + V1-V4 verification badges), and Pane 3's PPTX Tier 1/Tier 2 render containers.
-**Field sync styles (Batch 4):** `.field-sync-slot` (`:empty` -> `display:none`, no gap when in sync), `.field-sync-row`, `.field-sync-row-desynced` (amber message), `.field-sync-row-underivable` (muted message), disabled-button style. File uses CRLF line endings; keep them.
+**Field sync styles (Batch 4):** `.field-sync-note` (muted verbatim-mode note under the question text), `.field-sync-slot` (`:empty` -> `display:none`, no gap when in sync), `.field-sync-row`, `.field-sync-row-desynced` (amber message), `.field-sync-row-underivable` (muted message), disabled-button style. File uses CRLF line endings; keep them.
 **Depends on:** nothing (leaf; selectors target ids/classes from `online-quiz-maker.html`, populated at runtime by various JS modules).
 **Confirms `slide-panel-mirror.js`'s open flag:** no orphaned `#slidePanelMirror`/`.slide-panel-mirror-loading` rules exist in this file — the file's own (now-removed) comment already documented that those rules were deleted along with the element, and a direct read confirms it.
 **Flag (pre-existing, not fixed this pass):** `.nav-chip-duplicate` and `.nav-chip-unchecked` both target the same `::before` pseudo-element on a nav-chip; if a question is ever both a flagged duplicate and unchecked, only one glyph shows (`.nav-chip-unchecked` wins since it's declared later in the cascade). Not touched — comment-only pass.
@@ -210,7 +212,7 @@ files**, not from reading the file itself. Treat as a starting hypothesis
 only; the agent who actually opens each file should overwrite this entry.
 
 ### editor-render.js — *not yet reviewed* (field sync additions below were written against the real file, Batch 4)
-**Field sync additions (Batch 4):** imports `getFieldSyncState`, `getUnderivableReason`, `applyFieldSync`, `keepFieldAsIs`, `getClampVariant` from `field-sync.js`.
+**Field sync additions (Batch 4):** imports `getFieldSyncState`, `getUnderivableReason`, `getQuestionDerivationMode`, `getVerbatimReason`, `applyFieldSync`, `keepFieldAsIs`, `getClampVariant` from `field-sync.js`. `fieldSyncRowInnerHtml(q, 'question')` also returns the muted `.field-sync-note` ("Using the question snippet as written — the answer isn’t blanked because …") when the pair is `'synced'`, the derivation mode is `'verbatim'` and the clamp text equals the derived text; no note for blanked, desynced, "Keep mine"-accepted text, or non-clamp variants. `'underivable'` for the question pair now means "no question snippet" only.
 New internal helpers (not exported): `fieldSyncRowInnerHtml(q, pair)`, `fieldSyncSlotTemplate(q, pair)`, `isDerivedQuestionVariant(q, variant)`, `patchFieldSyncRow(q, pair)`.
 New editor actions on `activeEditorEl`: `data-action="fieldSync"` (+ `data-pair="term|question"`) and `data-action="fieldSyncKeep"`; plus a `mousedown` guard on both buttons (see Update Log).
 New DOM: `[data-sync-row="term"]` under the Target term input; `[data-sync-row="question"]` under the Question text textarea (only while the shown variant is the question's clamp variant). The `input` handler for `targetTerm` / `questionText` patches only that slot.
@@ -223,6 +225,7 @@ question-model.js).
 ### highlighting.js — *confirmed*
 **Role:** Locates and wraps question/answer snippets in `<mark>` elements in Pane 2, handles duplicate-sharing of
 overlapping marks, and drives the batch and single-question highlight recheck flows.
+**Whole-word matching (G7):** `findMatchesInIndex` prefers whole-word hits at every ladder level (exact, punctuation-stripped, list-stripped) via the private helpers `needsWordBoundary`, `isWholeWordHit`, `preferWholeWord`: a hit is whole-word when the neighbouring characters are not letters/digits (`\p{L}\p{N}`; text edges count; apostrophes and hyphens are boundaries, so `Rizal` in `Rizal's` and `well` in `well-known` match; Han/kana/Hangul/Thai edges never need a boundary). Only the edge characters of the needle that are themselves letters/digits are checked. If there is at least one whole-word hit only those are returned, otherwise all substring hits (today's behavior, so `cell` in `cellular` still highlights). Stripped levels check boundaries in the original string. Return shape `[{ idx, len }]` and scope handling unchanged; `fuzzyIncludes` stays a plain substring test. `computeOccurrenceIndex`, `findSnippetRange`, `highlightSnippetInContainer`, `bestSentenceInBody` inherit the change.
 **Exports:** `fuzzyIncludes`, `highlightBlockAncestorOf`, `buildNormalizedContainerIndex`, `stripPunctuationKeepMap`,
 `stripListConjunctionsKeepMap`, `highlightSnippetInContainer`, `widenRangeToAvoidPartialMarks`,
 `unwrapMarksForQuestion`, `dedupeMarks`, `hasFuzzyMark`, `markedTextLength`, `calculateSimilarity`, `narrowQuestionSnippet` (field-sync handoff, Batch 2),

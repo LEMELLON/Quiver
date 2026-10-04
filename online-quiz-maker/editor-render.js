@@ -33,7 +33,7 @@ import { handleGenerateVariant, handleRegenerateChoices } from './variant-genera
 // markQidList reads a mark's data-qid, which may hold more than one id (a shared duplicate-pair mark).
 import { markQidList } from './highlighting.js';
 // Field sync (Batch 4): sync-state for the derived target term / clamp question text, plus the Sync / Keep mine actions.
-import { getFieldSyncState, getUnderivableReason, applyFieldSync, keepFieldAsIs, getClampVariant } from './field-sync.js';
+import { getFieldSyncState, getUnderivableReason, getQuestionDerivationMode, getVerbatimReason, applyFieldSync, keepFieldAsIs, getClampVariant } from './field-sync.js';
 
 // Injected by main.js (registerSourceSwitcher) so term-panel handlers can trigger a full source switch
 // (state.activeSourceId update, pane re-renders, etc.) without editor-render.js importing main.js back.
@@ -600,7 +600,8 @@ function snippetPanelTemplate(q, field, tierMeta) {
 const FIELD_SYNC_TITLE_MAX = 300; // the Sync button's title shows the exact value it will write, truncated past this
 const FIELD_SYNC_PAIR_LABEL = { term: 'Answer', question: 'Question' }; // which snippet the pair is out of sync with, for the row text
 
-// Inner HTML of one sync row slot, built from getFieldSyncState(). '' for 'synced' / 'none' (the slot stays an empty, zero-height div).
+// Inner HTML of one sync row slot, built from getFieldSyncState(). '' for 'synced' / 'none' (the slot stays an empty, zero-height div),
+// except the muted verbatim-mode note for the question pair.
 function fieldSyncRowInnerHtml(q, pair) {
   const { state: syncState, derived } = getFieldSyncState(q, pair);
   if (syncState === 'desynced') {
@@ -619,6 +620,14 @@ function fieldSyncRowInnerHtml(q, pair) {
         <button type="button" data-action="fieldSync" data-pair="${pair}" disabled title="Nothing to sync from" class="${BTN_MUTED}">↻ Sync from snippet</button>
         <button type="button" data-action="fieldSyncKeep" data-pair="${pair}" title="Accept the text as typed and stop flagging it" class="${BTN_MUTED}">Keep mine</button>
       </div>`;
+  }
+  // G5: verbatim mode is not an error. Muted note only while the field really holds the derived (verbatim) text.
+  if (pair === 'question' && syncState === 'synced' && derived !== null && getQuestionDerivationMode(q) === 'verbatim') {
+    const clamp = getClampVariant(q);
+    const squash = (t) => String(t == null ? '' : t).replace(/\s+/g, ' ').trim();
+    if (clamp && squash(clamp.questionText) === squash(derived)) {
+      return `<div class="field-sync-note">Using the question snippet as written \u2014 the answer isn\u2019t blanked because ${escapeHtml(getVerbatimReason(q))}.</div>`;
+    }
   }
   return '';
 }

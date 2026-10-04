@@ -233,6 +233,29 @@ function stripListConjunctionsKeepMap(str) {
   return { stripped: chars.join(''), map };
 }
 
+// G7: whole-word preference for short snippets (AI, CPU, 1889 ...). A hit is "whole-word" when the character on each side of it is not a
+// letter/digit (text edges count as boundaries). Only edges that are themselves letters/digits are checked, so a needle ending in "." or ")" is
+// unaffected. Apostrophes and hyphens are boundaries, so `Rizal` in `Rizal's` and `well` in `well-known` are whole words. Scripts written without
+// word spaces (Han, kana, Hangul, Thai) never need a boundary, so a 1-2 character CJK needle is not rejected by its neighbours.
+const WORD_CHAR_RE = /[\p{L}\p{N}]/u;
+const NO_SPACE_SCRIPT_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/u;
+function needsWordBoundary(ch) {
+  return !!ch && WORD_CHAR_RE.test(ch) && !NO_SPACE_SCRIPT_RE.test(ch);
+}
+function isWholeWordHit(normalized, idx, len) {
+  const first = normalized[idx];
+  const last = normalized[idx + len - 1];
+  if (needsWordBoundary(first) && idx > 0 && WORD_CHAR_RE.test(normalized[idx - 1])) return false;
+  if (needsWordBoundary(last) && idx + len < normalized.length && WORD_CHAR_RE.test(normalized[idx + len])) return false;
+  return true;
+}
+// whole-word subset when it is non-empty, else all hits (an answer that only exists inside a longer word still highlights)
+function preferWholeWord(normalized, hits) {
+  if (!hits.length) return hits;
+  const whole = hits.filter(h => isWholeWordHit(normalized, h.idx, h.len));
+  return whole.length ? whole : hits;
+}
+
 // Finds every match of `snippet` in `normalized` (exact first, then punctuation-stripped, then list-conjunction-stripped),
 // restricted to scope { startIdx, endIdx(exclusive) } when given. Returns [{ idx, len }] in `normalized` coordinates, in order.
 function findMatchesInIndex(normalized, snippet, scope) {
@@ -250,7 +273,7 @@ function findMatchesInIndex(normalized, snippet, scope) {
     out.push({ idx: i, len: needle.length });
     from = i + 1;
   }
-  if (out.length) return out;
+  if (out.length) return preferWholeWord(normalized, out);
 
   const collectStripped = (hay, map, strippedNeedle) => {
     const found = [];
@@ -264,7 +287,7 @@ function findMatchesInIndex(normalized, snippet, scope) {
       if (start >= lo && end < hi) found.push({ idx: start, len: end - start + 1 });
       f = si + 1;
     }
-    return found;
+    return preferWholeWord(normalized, found); // boundaries are checked in the ORIGINAL string (start/len are original coordinates)
   };
 
   const punct = stripPunctuationKeepMap(normalized);

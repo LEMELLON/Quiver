@@ -912,3 +912,4 @@ html, body { height: 100%; }
   .field-sync-row-underivable .field-sync-msg { color: #8296ab; }
   .field-sync-row button { text-transform: uppercase; }
   .field-sync-row button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .field-sync-note { margin-top: 4px; font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.04em; line-height: 1.4; color: #8296ab; }
