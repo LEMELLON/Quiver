@@ -195,6 +195,105 @@
   .mini-actions{ flex:1 1 100%; display:flex; gap:6px; flex-wrap:wrap; padding-left:4px; }
   .mini-actions .lesson-action-btn{ min-height:40px; min-width:40px; padding:6px 10px; }
 
+  /* Mini quiz editor (Batch 3) */
+  #miniEditorModal{ padding:8px; }
+  .modal-box.mini-ed-box{
+    max-width:640px; padding:0; overflow:hidden; display:flex; flex-direction:column;
+    max-height:94vh; max-height:94dvh;
+  }
+  .mini-ed-head{ flex:0 0 auto; padding:18px 18px 4px; }
+  .mini-ed-head h3{ margin:0 0 2px; }
+  .mini-ed-lesson{ color:var(--muted); font-size:.85rem; word-break:break-word; margin:0; }
+  .mini-ed-tabs{ display:flex; gap:6px; overflow-x:auto; padding:10px 0 6px; -webkit-overflow-scrolling:touch; }
+  .mini-ed-tab{
+    flex:0 0 auto; min-height:40px; max-width:200px; padding:6px 12px; font-size:.8rem;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:8px; cursor:pointer;
+  }
+  .mini-ed-tab:hover:not(:disabled){ color:var(--text); border-color:var(--accent); }
+  .mini-ed-tab.active{ color:var(--text); border-color:var(--accent); background:rgba(59,130,246,.15); }
+  .mini-ed-tab:disabled{ opacity:.35; cursor:not-allowed; }
+  .mini-ed-body{ flex:1 1 auto; min-height:0; overflow-y:auto; padding:0 18px 12px; -webkit-overflow-scrolling:touch; }
+  .mini-ed-input{
+    width:100%; box-sizing:border-box; min-height:44px; padding:10px 12px; font-size:1rem; font-family:inherit;
+    background:var(--card-alt); border:1px solid var(--border); color:var(--text); border-radius:10px;
+  }
+  .mini-ed-input:focus{ outline:none; border-color:var(--accent); }
+  .mini-ed-input:disabled{ opacity:.5; }
+  .mini-ed-countrow{ display:flex; align-items:center; gap:10px; }
+  .mini-ed-countrow .mini-ed-input{ width:96px; }
+  .mini-ed-countrow span{ color:var(--muted); font-size:.9rem; }
+  .mini-ed-hint{ font-size:.78rem; color:#fbbf24; margin:6px 0 0; min-height:0; }
+  .mini-ed-hint:empty{ display:none; }
+  .mini-ed-barlabel{ font-size:.9rem; font-weight:700; color:var(--text); margin:0 0 2px; }
+  .mini-ed-bar{
+    position:relative; height:48px; touch-action:none; user-select:none; -webkit-user-select:none; cursor:pointer;
+  }
+  .mini-ed-track{
+    position:absolute; left:20px; right:20px; top:50%; height:6px; margin-top:-3px; border-radius:3px;
+    background:var(--card-alt); border:1px solid var(--border); box-sizing:border-box;
+  }
+  .mini-ed-span{
+    position:absolute; top:50%; height:6px; margin-top:-3px; border-radius:3px; background:var(--accent);
+    left:calc(20px + var(--a, 0) * (100% - 40px));
+    width:calc((var(--b, 1) - var(--a, 0)) * (100% - 40px));
+  }
+  .mini-ed-handle{
+    position:absolute; top:50%; width:40px; height:40px; margin:-20px 0 0 -20px; z-index:2;
+    left:calc(20px + var(--p, 0) * (100% - 40px));
+    background:transparent; border-radius:50%; outline:none; touch-action:none; cursor:grab;
+  }
+  .mini-ed-handle::after{
+    content:""; position:absolute; left:10px; top:10px; width:20px; height:20px; box-sizing:border-box;
+    border-radius:50%; background:var(--accent); border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.5);
+  }
+  .mini-ed-handle.active{ z-index:3; }
+  .mini-ed-handle:focus-visible::after{ box-shadow:0 0 0 4px rgba(59,130,246,.5); }
+  .mini-ed-bar.custom .mini-ed-span, .mini-ed-bar.empty .mini-ed-span{ opacity:.35; }
+  .mini-ed-bar.custom .mini-ed-handle::after, .mini-ed-bar.empty .mini-ed-handle::after{ background:var(--muted); }
+  .mini-ed-bar.disabled{ opacity:.45; cursor:not-allowed; }
+  .mini-ed-bar.disabled .mini-ed-handle{ cursor:not-allowed; }
+  .mini-ed-listhead{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:14px 0 6px; }
+  .mini-ed-listhead .lesson-action-btn{ min-height:40px; padding:6px 12px; font-size:.8rem; }
+  .mini-ed-selcount{ margin-left:auto; font-size:.8rem; color:var(--muted); }
+  .mini-ed-list{
+    border:1px solid var(--border); border-radius:10px; max-height:min(320px, 42vh); overflow-y:auto;
+    -webkit-overflow-scrolling:touch; background:rgba(15,23,42,.35);
+  }
+  .mini-ed-row{
+    display:flex; align-items:flex-start; gap:10px; min-height:44px; margin:0; padding:9px 10px;
+    text-transform:none; letter-spacing:normal; font-size:.85rem; color:var(--text);
+    border-bottom:1px solid var(--border); cursor:pointer;
+  }
+  .mini-ed-row:last-child{ border-bottom:none; }
+  .mini-ed-row.in-range{ background:rgba(59,130,246,.10); }
+  .mini-ed-row input{ width:20px; height:20px; margin:1px 0 0; flex:0 0 auto; cursor:pointer; }
+  .mini-ed-row.no-id{ opacity:.5; cursor:not-allowed; }
+  .mini-ed-row.no-id input{ cursor:not-allowed; }
+  .mini-ed-qn{ flex:0 0 auto; min-width:34px; font-weight:700; color:var(--muted); }
+  .mini-ed-qt{
+    flex:1 1 auto; min-width:0; word-break:break-word;
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden;
+  }
+  .mini-ed-foot{
+    flex:0 0 auto; padding:10px 18px 14px; border-top:1px solid var(--border); background:var(--card);
+    display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+  }
+  .mini-ed-msgs{ flex:1 1 100%; }
+  .mini-ed-msgs p{ margin:0 0 4px; font-size:.78rem; }
+  .mini-ed-reason{ color:#fbbf24; }
+  .mini-ed-reason:empty, .mini-ed-msgs .error:empty{ display:none; }
+  .mini-ed-msgs .error{ margin:0 0 4px; }
+  .mini-ed-foot .btn-primary, .mini-ed-foot .btn-secondary{ width:auto; margin-top:0; padding:11px 18px; min-height:44px; }
+  .mini-ed-foot .mini-ed-delete{ margin-right:auto; color:var(--incorrect); }
+  .mini-ed-foot .mini-ed-delete.hidden{ display:none !important; }
+  @media (max-width:420px){
+    .mini-ed-head{ padding:14px 12px 4px; }
+    .mini-ed-body{ padding:0 12px 10px; }
+    .mini-ed-foot{ padding:8px 12px 12px; }
+    .mini-ed-foot .btn-primary, .mini-ed-foot .btn-secondary{ flex:1 1 auto; }
+  }
+
   /* Shared quiz header */
   .quiz-header{
     display:flex; align-items:center; gap:16px;
@@ -449,6 +548,56 @@
       <p id="statsModalSubtitle" class="success-note"></p>
       <div id="statsModalBody"></div>
       <button class="btn-secondary modal-close-btn" id="statsModalCloseBtn" type="button">Close</button>
+    </div>
+  </div>
+
+  <!-- MINI QUIZ EDITOR MODAL (Mini Quiz Batch 3) -->
+  <div class="modal-overlay hidden" id="miniEditorModal">
+    <div class="modal-box mini-ed-box" role="dialog" aria-modal="true" aria-labelledby="miniEdTitle" tabindex="-1" id="miniEdBox">
+      <div class="mini-ed-head">
+        <h3 id="miniEdTitle">Mini quizzes</h3>
+        <p class="mini-ed-lesson" id="miniEdLessonName"></p>
+        <div class="mini-ed-tabs" id="miniEdTabs" role="tablist" aria-label="Mini quizzes of this lesson"></div>
+      </div>
+      <div class="mini-ed-body">
+        <label for="miniEdName">Name</label>
+        <input type="text" class="mini-ed-input" id="miniEdName" maxlength="60" autocomplete="off">
+
+        <label for="miniEdCount">Questions in this mini quiz</label>
+        <div class="mini-ed-countrow">
+          <input type="number" class="mini-ed-input" id="miniEdCount" min="1" step="1" inputmode="numeric">
+          <span id="miniEdCountOf">of 0</span>
+        </div>
+        <p class="mini-ed-hint" id="miniEdHint" role="status"></p>
+
+        <label>Range</label>
+        <p class="mini-ed-barlabel" id="miniEdBarLabel" role="status"></p>
+        <div class="mini-ed-bar" id="miniEdBar">
+          <div class="mini-ed-track"></div>
+          <div class="mini-ed-span" id="miniEdSpan"></div>
+          <div class="mini-ed-handle" id="miniEdHandleStart" data-handle="start" role="slider" tabindex="0" aria-label="Range start" aria-orientation="horizontal"></div>
+          <div class="mini-ed-handle" id="miniEdHandleEnd" data-handle="end" role="slider" tabindex="0" aria-label="Range end" aria-orientation="horizontal"></div>
+        </div>
+
+        <label>Questions</label>
+        <div class="mini-ed-listhead">
+          <button type="button" class="lesson-action-btn" id="miniEdSelectAll">Select all</button>
+          <button type="button" class="lesson-action-btn" id="miniEdClear">Clear</button>
+          <button type="button" class="lesson-action-btn" id="miniEdInvert">Invert</button>
+          <span class="mini-ed-selcount" id="miniEdSelectedCount" role="status">0 selected</span>
+        </div>
+        <div class="mini-ed-list" id="miniEdList"></div>
+      </div>
+      <div class="mini-ed-foot">
+        <div class="mini-ed-msgs">
+          <p class="mini-ed-reason" id="miniEdReason" role="status"></p>
+          <p class="error" id="miniEdError" role="alert"></p>
+          <p id="miniEdStorageNote"></p>
+        </div>
+        <button type="button" class="btn-secondary mini-ed-delete hidden" id="miniEdDelete">🗑 Delete</button>
+        <button type="button" class="btn-primary" id="miniEdSave">Save</button>
+        <button type="button" class="btn-secondary" id="miniEdCancel">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -1564,17 +1713,505 @@
     return wrap;
   }
 
-  // PLACEHOLDER (Mini Quiz Batch 2): Batch 3 replaces this with the real
-  // editor modal. Called with miniId === null to create a new mini quiz.
+  // ---------- Mini quiz editor (Mini Quiz Batch 3) ----------
+  // One source of truth: editorState.selectedIds (a Set of question ids).
+  // The range bar, the count field, the checklist and the labels are all
+  // views of it, redrawn by edRender() after applySelection().
+  const MINI_HANDLE_HALF = 20;   // half of the 40px handle hit area (matches the CSS)
+  const MINI_DEFAULT_RANGE = 10; // a new mini quiz starts as Q1..Q10 (or the whole lesson if shorter)
+  const miniEd = {
+    modal: document.getElementById('miniEditorModal'),
+    box: document.getElementById('miniEdBox'),
+    lessonName: document.getElementById('miniEdLessonName'),
+    tabs: document.getElementById('miniEdTabs'),
+    name: document.getElementById('miniEdName'),
+    count: document.getElementById('miniEdCount'),
+    countOf: document.getElementById('miniEdCountOf'),
+    hint: document.getElementById('miniEdHint'),
+    bar: document.getElementById('miniEdBar'),
+    span: document.getElementById('miniEdSpan'),
+    hStart: document.getElementById('miniEdHandleStart'),
+    hEnd: document.getElementById('miniEdHandleEnd'),
+    barLabel: document.getElementById('miniEdBarLabel'),
+    selectAll: document.getElementById('miniEdSelectAll'),
+    clear: document.getElementById('miniEdClear'),
+    invert: document.getElementById('miniEdInvert'),
+    selCount: document.getElementById('miniEdSelectedCount'),
+    list: document.getElementById('miniEdList'),
+    reason: document.getElementById('miniEdReason'),
+    error: document.getElementById('miniEdError'),
+    storageNote: document.getElementById('miniEdStorageNote'),
+    saveBtn: document.getElementById('miniEdSave'),
+    cancelBtn: document.getElementById('miniEdCancel'),
+    deleteBtn: document.getElementById('miniEdDelete')
+  };
+  let editorState = null;
+
+  function miniStorageWorks(){
+    try{
+      const k = MINI_PREFIX + '__probe';
+      localStorage.setItem(k, '1');
+      localStorage.removeItem(k);
+      return true;
+    }catch(e){ return false; }
+  }
+
+  function plural(n, one, many){ return `${n} ${n === 1 ? one : many}`; }
+
+  // Items = every question of the lesson in file order. pos is the 1-based
+  // position (M5); id is null for a question without an id (it can't join a mini quiz).
+  function edItems(lessonId){
+    return getLessonQuestions(lessonId).map((q, i) => ({
+      pos: i + 1,
+      id: hasQuestionId(q) ? q.id : null,
+      text: String((q && q.questionText) || '')
+    }));
+  }
+  function edSelectable(){ return editorState.items.filter(it => it.id !== null); }
+  function edSelectedItems(){ return editorState.items.filter(it => it.id !== null && editorState.selectedIds.has(it.id)); }
+  function edIdsInRange(s, e){
+    return editorState.items.filter(it => it.id !== null && it.pos >= s && it.pos <= e).map(it => it.id);
+  }
+  // { count, start, end, contiguous }; contiguous = no selectable question
+  // between the first and last selected one is left out.
+  function edDescribe(){
+    const sel = edSelectedItems();
+    if(sel.length === 0) return { count: 0, start: null, end: null, contiguous: false };
+    const start = sel[0].pos, end = sel[sel.length - 1].pos;
+    const inside = editorState.items.filter(it => it.id !== null && it.pos >= start && it.pos <= end).length;
+    return { count: sel.length, start, end, contiguous: inside === sel.length };
+  }
+  function edOrderedSelectedIds(){ return edSelectedItems().map(it => it.id); }
+  function edFraction(v){ return editorState.N > 1 ? (v - 1) / (editorState.N - 1) : 0; }
+
+  function edAutoName(){
+    const st = editorState;
+    const others = miniReadList(st.lessonId).filter(m => m.id !== st.miniId);
+    return defaultMiniName(st.lessonId, edOrderedSelectedIds(), others.length + 1);
+  }
+  function edSignature(){
+    return JSON.stringify([editorState.nameTouched ? miniEd.name.value : '', edOrderedSelectedIds()]);
+  }
+  function edIsDirty(){ return !!editorState && edSignature() !== editorState.baseline; }
+
+  // Why Save is not possible right now ('' = it is).
+  function edSaveBlocker(){
+    const st = editorState;
+    if(edSelectable().length === 0) return "None of this lesson's questions have an id, so they can't be added to a mini quiz.";
+    if(st.selectedIds.size === 0) return 'Pick at least one question to save.';
+    if(st.miniId === null && miniReadList(st.lessonId).length >= MAX_MINI_PER_LESSON){
+      return `A lesson can have at most ${MAX_MINI_PER_LESSON} mini quizzes.`;
+    }
+    return '';
+  }
+
+  function edBuildTabs(){
+    const st = editorState;
+    const minis = loadMiniQuizzes(st.lessonId);
+    miniEd.tabs.innerHTML = '';
+    minis.forEach(m => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mini-ed-tab' + (m.id === st.miniId ? ' active' : '');
+      b.dataset.miniId = m.id;
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', m.id === st.miniId ? 'true' : 'false');
+      b.textContent = m.name;
+      b.title = m.name;
+      miniEd.tabs.appendChild(b);
+    });
+    const nb = document.createElement('button');
+    nb.type = 'button';
+    nb.className = 'mini-ed-tab' + (st.miniId === null ? ' active' : '');
+    nb.dataset.new = '1';
+    nb.setAttribute('role', 'tab');
+    nb.setAttribute('aria-selected', st.miniId === null ? 'true' : 'false');
+    nb.textContent = '＋ New mini quiz';
+    if(minis.length >= MAX_MINI_PER_LESSON){ nb.disabled = true; nb.title = `At most ${MAX_MINI_PER_LESSON} mini quizzes per lesson`; }
+    miniEd.tabs.appendChild(nb);
+  }
+
+  // Built once per load; a drag only toggles classes / checked in place.
+  function edBuildList(){
+    const st = editorState;
+    miniEd.list.innerHTML = '';
+    st.rows = [];
+    const frag = document.createDocumentFragment();
+    st.items.forEach(it => {
+      const row = document.createElement('label');
+      row.className = 'mini-ed-row' + (it.id === null ? ' no-id' : '');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.dataset.pos = String(it.pos);
+      cb.disabled = it.id === null;
+      const qn = document.createElement('span');
+      qn.className = 'mini-ed-qn';
+      qn.textContent = 'Q' + it.pos;
+      const qt = document.createElement('span');
+      qt.className = 'mini-ed-qt';
+      qt.textContent = it.text + (it.id === null ? "  (no id, can't be added)" : '');
+      row.title = it.text;
+      row.appendChild(cb); row.appendChild(qn); row.appendChild(qt);
+      frag.appendChild(row);
+      st.rows.push({ item: it, row, cb, checked: false, inRange: false });
+    });
+    miniEd.list.appendChild(frag);
+  }
+
+  function applySelection(ids, opts){
+    const st = editorState;
+    if(!st) return;
+    opts = opts || {};
+    st.selectedIds = new Set(ids);
+    const d = edDescribe();
+    if(opts.rs != null){ st.rs = opts.rs; st.re = opts.re; }
+    else if(d.count > 0){ st.rs = d.start; st.re = d.end; }
+    // empty selection without an override: the handles stay where they were
+    st.hintMsg = opts.hint || '';
+    edRender(d);
+  }
+
+  function edRender(d){
+    const st = editorState;
+    d = d || edDescribe();
+    const N = st.N;
+    const noBar = N < 2 || edSelectable().length === 0;
+
+    // handles + span
+    const a = edFraction(st.rs), b = edFraction(st.re);
+    miniEd.bar.style.setProperty('--a', String(a));
+    miniEd.bar.style.setProperty('--b', String(b));
+    miniEd.hStart.style.setProperty('--p', String(a));
+    miniEd.hEnd.style.setProperty('--p', String(b));
+    miniEd.bar.classList.toggle('disabled', noBar);
+    miniEd.bar.classList.toggle('custom', !noBar && d.count > 0 && !d.contiguous);
+    miniEd.bar.classList.toggle('empty', !noBar && d.count === 0);
+    [[miniEd.hStart, st.rs, 1, st.re, 'Range start'], [miniEd.hEnd, st.re, st.rs, N, 'Range end']].forEach(([h, v, lo, hi, nm]) => {
+      h.setAttribute('aria-valuemin', String(lo));
+      h.setAttribute('aria-valuemax', String(hi));
+      h.setAttribute('aria-valuenow', String(v));
+      h.setAttribute('aria-valuetext', 'Question ' + v);
+      h.setAttribute('aria-disabled', noBar ? 'true' : 'false');
+      h.tabIndex = noBar ? -1 : 0;
+    });
+
+    // labels
+    if(N < 2) miniEd.barLabel.textContent = 'Only one question';
+    else if(d.count === 0) miniEd.barLabel.textContent = 'No questions selected';
+    else if(!d.contiguous) miniEd.barLabel.textContent = `Custom selection · ${plural(d.count, 'question', 'questions')}`;
+    else if(d.start === d.end) miniEd.barLabel.textContent = `Q${d.start} · 1 question`;
+    else miniEd.barLabel.textContent = `Q${d.start} – Q${d.end} · ${plural(d.count, 'question', 'questions')}`;
+    miniEd.selCount.textContent = `${d.count} selected`;
+    miniEd.countOf.textContent = `of ${N}`;
+    miniEd.hint.textContent = st.hintMsg || st.lostMsg || '';
+
+    // count field (don't fight the person while they are typing the same number)
+    const typing = document.activeElement === miniEd.count && parseInt(miniEd.count.value, 10) === d.count;
+    if(!typing) miniEd.count.value = d.count > 0 ? String(d.count) : '';
+
+    // checklist: touch only the rows whose state changed
+    st.rows.forEach(r => {
+      const it = r.item;
+      const checked = it.id !== null && st.selectedIds.has(it.id);
+      const inRange = d.count > 0 && it.pos >= d.start && it.pos <= d.end && it.id !== null;
+      if(r.checked !== checked){ r.checked = checked; r.cb.checked = checked; }
+      if(r.inRange !== inRange){ r.inRange = inRange; r.row.classList.toggle('in-range', inRange); }
+    });
+
+    // name follows the selection until the person edits it
+    if(!st.nameTouched) miniEd.name.value = edAutoName();
+
+    // Save + reasons
+    const blocker = edSaveBlocker();
+    miniEd.saveBtn.disabled = !!blocker;
+    miniEd.reason.textContent = blocker;
+    miniEd.error.textContent = '';
+    miniEd.count.disabled = edSelectable().length === 0;
+  }
+
+  // ----- range bar -----
+  function edValueFromX(clientX, offset){
+    const r = miniEd.bar.getBoundingClientRect();
+    const usable = r.width - 2 * MINI_HANDLE_HALF;
+    if(usable <= 0) return 1;
+    const f = (clientX - offset - r.left - MINI_HANDLE_HALF) / usable;
+    return Math.max(1, Math.min(editorState.N, Math.round(1 + f * (editorState.N - 1))));
+  }
+  function edBarDisabled(){ return !editorState || editorState.N < 2 || edSelectable().length === 0; }
+  function edRaise(which){
+    miniEd.hStart.classList.toggle('active', which === 'start');
+    miniEd.hEnd.classList.toggle('active', which === 'end');
+  }
+  function edSetHandle(which, v){
+    const st = editorState;
+    let s = st.rs, e = st.re;
+    if(which === 'start') s = Math.max(1, Math.min(v, e));
+    else e = Math.min(st.N, Math.max(v, s));
+    // nothing moved and there is already a selection (contiguous or custom): leave it alone
+    if(s === st.rs && e === st.re && edDescribe().count > 0) return;
+    applySelection(edIdsInRange(s, e), { rs: s, re: e });
+  }
+
+  let edDrag = null;
+  miniEd.bar.addEventListener('pointerdown', (e) => {
+    if(!editorState || edBarDisabled()) return;
+    if(e.pointerType === 'mouse' && e.button !== 0) return;
+    const st = editorState;
+    const handle = e.target.closest ? e.target.closest('.mini-ed-handle') : null;
+    let which = null, offset = 0;
+    if(handle){
+      const hr = handle.getBoundingClientRect();
+      offset = e.clientX - (hr.left + hr.width / 2);
+      which = handle === miniEd.hStart ? 'start' : 'end';
+      if(st.rs === st.re) which = null; // overlapping: the first move decides which one it is
+    }else{
+      const v = edValueFromX(e.clientX, 0);
+      if(v < st.rs) which = 'start';
+      else if(v > st.re) which = 'end';
+      else if(st.rs !== st.re){
+        const ds = Math.abs(v - st.rs), de = Math.abs(v - st.re);
+        which = ds < de ? 'start' : 'end';
+      }
+      if(which) edSetHandle(which, v);
+    }
+    edDrag = { which, offset, id: e.pointerId };
+    edRaise(which);
+    try{ miniEd.bar.setPointerCapture(e.pointerId); }catch(err){ /* synthetic events / old browsers */ }
+    const focusEl = which === 'start' ? miniEd.hStart : which === 'end' ? miniEd.hEnd : (handle || null);
+    if(focusEl) focusEl.focus({ preventScroll: true });
+    e.preventDefault();
+  });
+  miniEd.bar.addEventListener('pointermove', (e) => {
+    if(!edDrag || !editorState) return;
+    const v = edValueFromX(e.clientX, edDrag.offset);
+    if(edDrag.which === null){
+      if(v < editorState.rs) edDrag.which = 'start';
+      else if(v > editorState.re) edDrag.which = 'end';
+      else return;
+      edRaise(edDrag.which);
+    }
+    edSetHandle(edDrag.which, v);
+  });
+  function edEndDrag(e){
+    if(!edDrag) return;
+    try{ miniEd.bar.releasePointerCapture(edDrag.id); }catch(err){ /* already released */ }
+    edDrag = null;
+  }
+  miniEd.bar.addEventListener('pointerup', edEndDrag);
+  miniEd.bar.addEventListener('pointercancel', edEndDrag);
+  miniEd.bar.addEventListener('lostpointercapture', () => { edDrag = null; });
+
+  [miniEd.hStart, miniEd.hEnd].forEach(h => {
+    h.addEventListener('keydown', (e) => {
+      if(!editorState || edBarDisabled()) return;
+      const st = editorState;
+      const which = h === miniEd.hStart ? 'start' : 'end';
+      const cur = which === 'start' ? st.rs : st.re;
+      let next = null;
+      if(e.key === 'ArrowRight' || e.key === 'ArrowUp') next = cur + 1;
+      else if(e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = cur - 1;
+      else if(e.key === 'PageUp') next = cur + 5;
+      else if(e.key === 'PageDown') next = cur - 5;
+      else if(e.key === 'Home') next = which === 'start' ? 1 : st.rs;
+      else if(e.key === 'End') next = which === 'start' ? st.re : st.N;
+      if(next === null) return;
+      e.preventDefault();
+      edRaise(which);
+      edSetHandle(which, next);
+    });
+    h.addEventListener('focus', () => edRaise(h === miniEd.hStart ? 'start' : 'end'));
+  });
+
+  // ----- checklist + count -----
+  miniEd.list.addEventListener('change', (e) => {
+    const cb = e.target;
+    if(!editorState || !cb || !cb.dataset || cb.dataset.pos === undefined) return;
+    const it = editorState.items[Number(cb.dataset.pos) - 1];
+    if(!it || it.id === null) return;
+    const next = new Set(editorState.selectedIds);
+    if(cb.checked) next.add(it.id); else next.delete(it.id);
+    applySelection(next);
+  });
+  miniEd.selectAll.addEventListener('click', () => {
+    if(editorState) applySelection(edSelectable().map(it => it.id));
+  });
+  miniEd.clear.addEventListener('click', () => { if(editorState) applySelection([]); });
+  miniEd.invert.addEventListener('click', () => {
+    if(!editorState) return;
+    applySelection(edSelectable().filter(it => !editorState.selectedIds.has(it.id)).map(it => it.id));
+  });
+
+  // M7
+  function edApplyCount(n){
+    const st = editorState;
+    const sel = edSelectable();
+    if(sel.length === 0) return;
+    n = Math.max(1, Math.min(n, sel.length));
+    const d = edDescribe();
+    let ids;
+    let hint = '';
+    if(d.count === 0 || d.contiguous){
+      const startPos = d.count === 0 ? st.rs : d.start;
+      let pool = sel.filter(it => it.pos >= startPos);
+      if(pool.length === 0) pool = sel;
+      ids = pool.slice(0, n).map(it => it.id);
+      if(ids.length < n) hint = `Only ${plural(ids.length, 'question', 'questions')} left from Q${pool[0].pos} to the end of the lesson.`;
+    }else{
+      const chosen = edSelectedItems();
+      if(n <= chosen.length){
+        ids = chosen.slice(0, n).map(it => it.id);
+      }else{
+        ids = chosen.map(it => it.id);
+        const lastPos = chosen[chosen.length - 1].pos;
+        for(const it of sel){
+          if(ids.length >= n) break;
+          if(it.pos > lastPos && !editorState.selectedIds.has(it.id)) ids.push(it.id);
+        }
+        if(ids.length < n) hint = `Only ${plural(ids.length, 'question', 'questions')} fit after the last one you picked.`;
+      }
+    }
+    applySelection(ids, { hint });
+  }
+  function edOnCount(ev){
+    if(!editorState) return;
+    const raw = miniEd.count.value.trim();
+    const n = parseInt(raw, 10);
+    if(raw === '' || !(n >= 1)){
+      if(ev.type === 'change') edRender();
+      return;
+    }
+    edApplyCount(n);
+    if(ev.type === 'change') edRender();
+  }
+  miniEd.count.addEventListener('input', edOnCount);
+  miniEd.count.addEventListener('change', edOnCount);
+
+  // name: typing makes it the person's own; leaving it blank hands it back to the auto name
+  miniEd.name.addEventListener('input', () => { if(editorState) editorState.nameTouched = true; });
+  miniEd.name.addEventListener('change', () => {
+    if(!editorState) return;
+    if(normalizeMiniName(miniEd.name.value) === ''){ editorState.nameTouched = false; miniEd.name.value = edAutoName(); }
+  });
+
+  // ----- open / switch / close -----
+  function edLoad(lessonId, miniId, opener){
+    const lesson = Array.isArray(quizData && quizData.lessons) ? quizData.lessons.find(l => l.id === lessonId) : null;
+    const items = edItems(lessonId);
+    const N = items.length;
+    const mini = miniId ? getMiniQuiz(lessonId, miniId) : null;
+    const st = {
+      lessonId, miniId: mini ? mini.id : null, items, N, rows: [],
+      selectedIds: new Set(), rs: 1, re: Math.max(1, Math.min(N, MINI_DEFAULT_RANGE)),
+      nameTouched: !!mini, hintMsg: '', lostMsg: '', baseline: '', opener: opener || null
+    };
+    editorState = st;
+    miniEd.lessonName.textContent = (lesson && lesson.name) || 'Lesson';
+    miniEd.error.textContent = '';
+    miniEd.deleteBtn.classList.toggle('hidden', !mini);
+    miniEd.name.value = mini ? mini.name : '';
+    edBuildTabs();
+    edBuildList();
+    let ids;
+    if(mini) ids = mini.questionIds;
+    else ids = items.filter(it => it.id !== null && it.pos <= st.re).map(it => it.id);
+    applySelection(ids);
+    if(mini && mini.questionIds.length === 0){ st.rs = 1; st.re = Math.max(1, Math.min(N, MINI_DEFAULT_RANGE)); edRender(); }
+    st.baseline = edSignature();
+    const lost = mini && mini.missingCount ? mini.missingCount : 0;
+    if(lost > 0){
+      st.lostMsg = `⚠ ${plural(lost, 'question', 'questions')} from this mini quiz ${lost === 1 ? 'is' : 'are'} no longer in this file.`;
+      miniEd.hint.textContent = st.lostMsg;
+    }
+    const noteParts = ['Mini quizzes are saved on this device only.'];
+    if(!isMiniStoragePersistent() || !miniStorageWorks()) noteParts.push("This browser is blocking storage, so changes here won't be remembered after you close the page.");
+    miniEd.storageNote.textContent = noteParts.join(' ');
+  }
+
   function openMiniEditor(lessonId, miniId){
     const lesson = Array.isArray(quizData && quizData.lessons) ? quizData.lessons.find(l => l.id === lessonId) : null;
-    const lessonName = (lesson && lesson.name) || 'Lesson';
-    const mini = miniId ? getMiniQuiz(lessonId, miniId) : null;
-    lessonsError.textContent = mini
-      ? `The mini quiz editor is coming in the next update (editing "${mini.name}" in "${lessonName}").`
-      : `The mini quiz editor is coming in the next update (new mini quiz for "${lessonName}").`;
-    lessonsError.classList.remove('hidden');
+    if(!lesson || getLessonQuestions(lessonId).length === 0) return;
+    if(miniId && !getMiniQuiz(lessonId, miniId)){
+      lessonsError.textContent = 'That mini quiz no longer exists.';
+      lessonsError.classList.remove('hidden');
+      return;
+    }
+    edLoad(lessonId, miniId || null, document.activeElement);
+    miniEd.modal.classList.remove('hidden');
+    miniEd.box.scrollTop = 0;
+    miniEd.box.focus({ preventScroll: true });
   }
+
+  function edCloseNow(){
+    const st = editorState;
+    miniEd.modal.classList.add('hidden');
+    editorState = null;
+    edDrag = null;
+    if(st) edRestoreFocus(st.lessonId);
+  }
+  function edRestoreFocus(lessonId){
+    const cards = lessonsGrid.querySelectorAll('.lesson-card');
+    for(const c of cards){
+      if(c.dataset.lessonId === String(lessonId)){
+        const b = c.querySelector('[data-action="mini-edit"]');
+        if(b && !b.disabled) b.focus({ preventScroll: true });
+        return;
+      }
+    }
+  }
+  function edRequestClose(){
+    if(!editorState) return;
+    if(edIsDirty() && !confirm('Discard changes?')) return;
+    edCloseNow();
+  }
+
+  miniEd.cancelBtn.addEventListener('click', edRequestClose);
+  miniEd.modal.addEventListener('click', (e) => { if(e.target === miniEd.modal) edRequestClose(); });
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape' && editorState && !miniEd.modal.classList.contains('hidden')){
+      e.preventDefault();
+      edRequestClose();
+    }
+  });
+
+  miniEd.tabs.addEventListener('click', (e) => {
+    const b = e.target.closest ? e.target.closest('.mini-ed-tab') : null;
+    if(!b || b.disabled || !editorState) return;
+    const target = b.dataset.new ? null : b.dataset.miniId;
+    if(target === editorState.miniId) return;
+    if(edIsDirty() && !confirm('Discard changes?')) return;
+    edLoad(editorState.lessonId, target, editorState.opener);
+  });
+
+  miniEd.saveBtn.addEventListener('click', () => {
+    const st = editorState;
+    if(!st) return;
+    const blocker = edSaveBlocker();
+    if(blocker){ miniEd.reason.textContent = blocker; return; }
+    const input = { name: miniEd.name.value, questionIds: edOrderedSelectedIds() };
+    const res = st.miniId === null ? createMiniQuiz(st.lessonId, input) : updateMiniQuiz(st.lessonId, st.miniId, input);
+    if(!res.ok){ miniEd.error.textContent = res.error || 'Could not save the mini quiz.'; return; }
+    const lessonId = st.lessonId;
+    expandedMiniLessons.add(lessonId);
+    edCloseNow();
+    renderLessonsHub();
+    edRestoreFocus(lessonId);
+    if(res.persisted === false){
+      lessonsError.textContent = "Saved for this session only. This browser is blocking storage, so it won't be remembered after you close the page.";
+      lessonsError.classList.remove('hidden');
+    }
+  });
+
+  miniEd.deleteBtn.addEventListener('click', () => {
+    const st = editorState;
+    if(!st || st.miniId === null) return;
+    const mini = getMiniQuiz(st.lessonId, st.miniId);
+    if(!confirm(`Delete the mini quiz "${mini ? mini.name : 'this mini quiz'}"? Your lesson stats are not affected.`)) return;
+    const lessonId = st.lessonId;
+    deleteMiniQuiz(lessonId, st.miniId);
+    edCloseNow();
+    renderLessonsHub();
+    edRestoreFocus(lessonId);
+  });
 
   function toggleLessonSelection(lessonId){
     if(getLessonQuestionCount(lessonId) === 0) return; // sources with no questions can't be selected
