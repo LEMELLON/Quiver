@@ -31,7 +31,8 @@ here — carried over from each file's own header comment.
 | seed-api-key.js | page-load init: seeds API key/model inputs | ✅ confirmed |
 | text-normalize.js | text→HTML rendering + snippet-matching normalizers | ✅ confirmed |
 | status-helpers.js | setParseStatus / setSelectionGenStatus | ✅ confirmed |
-| ai-credentials-and-models.js | model dropdown refresh + live key detection | ✅ confirmed |
+| ai-credentials-and-models.js | model dropdown refresh + live key detection + provider/endpoint UI wiring | ✅ confirmed |
+| ai-provider.js | active-provider resolution + single `callAi` dispatcher (Batch 7, new) | ✅ confirmed |
 | config.js | AI_CONFIG defaults (apiKey/model) | ✅ confirmed |
 | main.js | app orchestrator, multi-source import flow | ✅ confirmed |
 | doc-pane-navigation.js | Pane 3 render/nav, PDF/PPTX slide display | ✅ confirmed |
@@ -53,7 +54,7 @@ here — carried over from each file's own header comment.
 
 ### core-state.js
 **Role:** Central shared state object + constants every other module imports.
-**Exports:** `PBKDF2_ITERATIONS`, `SALT_LEN`, `IV_LEN`, `state`, `getPendingSelection`/`setPendingSelection`, `getLastDocSelection`/`setLastDocSelection`, `getDuplicateMap`/`setDuplicateMap`, `getActiveSource`, `createSource`, `API_KEY_STORAGE`, `MODEL_STORAGE`, `configDefaults`, `configApiKey`, `configModel`.
+**Exports:** `PBKDF2_ITERATIONS`, `SALT_LEN`, `IV_LEN`, `state`, `getPendingSelection`/`setPendingSelection`, `getLastDocSelection`/`setLastDocSelection`, `getDuplicateMap`/`setDuplicateMap`, `getActiveSource`, `createSource`, `API_KEY_STORAGE`, `MODEL_STORAGE`, `PROVIDER_STORAGE`, `ENDPOINT_URL_STORAGE`, `QWEN_MODEL_STORAGE` (Batch 7), `configDefaults`, `configApiKey`, `configModel`.
 **Key internals (not exported):** `state.sources[]` (multi-doc support, each `{id,name,docType,pages,pdfDoc,pptxFile,pptxZip}`), `state.activeSourceId`, `makeBlankSource`, `ensureActiveSource`, `SHIMMED_SOURCE_KEYS` (proxies `state.docType/pages/pdfDoc/pptxFile/pptxZip` onto the active source via `Object.defineProperty`).
 **Depends on:** nothing (leaf).
 **Read by:** effectively every other module.
@@ -121,7 +122,7 @@ here — carried over from each file's own header comment.
 **Depends on:** nothing (leaf). **Read by:** editor-render.js, variant-generation.js (both pending).
 
 ### seed-api-key.js
-**Role:** Page-load init script (no exports) — seeds `apiKeyInput`/`modelSelect` from localStorage, falling back to `config.js`.
+**Role:** Page-load init script (no exports) — seeds `apiKeyInput`/`modelSelect` from localStorage, falling back to `config.js`; Batch 7 also seeds `providerSelect`, `endpointUrlInput`, `endpointModelInput` from localStorage (no config.js default for those).
 **Exports:** none — runs top-level on import.
 **Depends on:** `core-state.js` (`API_KEY_STORAGE`, `MODEL_STORAGE`, `configApiKey`, `configModel`), `dom-refs.js` (`apiKeyInput`, `modelSelect`).
 **Ordering constraint (important, don't break on refactor):** must be imported by `main.js` **before** `ai-credentials-and-models.js`, since the latter's own top-level init reads `apiKeyInput.value` expecting it already seeded.
@@ -138,9 +139,9 @@ here — carried over from each file's own header comment.
 **Depends on:** `dom-refs.js` (`parseStatus`, `selectionGenStatus`).
 
 ### ai-credentials-and-models.js
-**Role:** Model dropdown population + live "detect models for this key" flow; owns the API-key/model input event wiring.
-**Exports:** `refreshModelOptions`, `detectModels`.
-**Depends on:** `dom-refs.js`, `core-state.js` (`MODEL_STORAGE`, `API_KEY_STORAGE`, `configModel`), global `GeminiClassifier` (from gemini-classifier.js).
+**Role:** Model dropdown population + live "detect models for this key" flow; owns the API-key/model/provider/endpoint input event wiring (Batch 7: provider picker persistence, `applyProviderUi()` row toggling, endpoint `GET {base}/models` detection into a `<datalist>`).
+**Exports:** `refreshModelOptions`, `detectModels`, `applyProviderUi`.
+**Depends on:** `dom-refs.js`, `core-state.js` (`MODEL_STORAGE`, `API_KEY_STORAGE`, `PROVIDER_STORAGE`, `ENDPOINT_URL_STORAGE`, `QWEN_MODEL_STORAGE`, `configModel`), `ai-provider.js` (`getActiveProvider`), `ai-api-calls.js` (`normalizeOpenAiBaseUrl`), global `GeminiClassifier` (from gemini-classifier.js).
 **Ordering constraint:** its top-level init block assumes `seed-api-key.js` already ran (see that file's note).
 
 ### config.js
@@ -281,3 +282,20 @@ Referenced export: `collectTargetTerms(questions)`.
 - **ai-api-calls.js** (Batch 6): new helpers `cleanedTextOfPage(pageNum)` and `resolveAnswerLocation(answerRaw, questionSnippet, sourcePage, statedPage)`. Chain: inside questionSnippet -> stated `answerPage` -> own page, then preceding pages nearest-first, then following -> `''`. `parseAiQuestions` writes `answerScope` / `answerPage`. Tier 2 extensions inherit the parent's `answerSnippet` and re-resolve its location (`inside` if within the extension's own question snippet, else `outside` on `parent.answerPage`, else `''`). Term registry entries are now `{ targetTerm, answerSnippet, answerPage, answerScope }`. No new imports.
 - **Known quirks:** an answer found on the question's own page but outside the question snippet is stored `outside` with `answerPage == sourcePage`. Nothing here has been run in a browser or against a live provider.
 
+
+## Snippet overhaul — Batch 7 additions (Update Log)
+
+**Provider abstraction + OpenAI-compatible endpoint.** Tested with a mocked `fetch`/`GeminiClassifier` (26 behaviour checks on the real `ai-provider.js` / `ai-api-calls.js` / `variant-generation.js`, neighbours stubbed) and in headless Chromium against the real `online-quiz-maker.html` + real `seed-api-key.js` / `ai-credentials-and-models.js` (39 rendered-DOM checks). **Not run against a live Ollama / LM Studio server, a live Gemini/OpenAI key, or the full app.**
+
+- **ai-provider.js (new, 1 file).** Exports `PROVIDERS` (`auto`, `gemini`, `openai`, `qwen-browser`, `openai-compatible`), `getActiveProvider()` (`auto` = the old key-prefix inference, the *only* remaining `startsWith('sk-')` in the codebase), `providerNeedsKey(p)` (true only for gemini/openai), `isLocalProvider(p)`, `providerNeedsThrottle(p)` (gemini only), `getActiveModel(p)` (free-text endpoint model name for `openai-compatible`, else the Model dropdown), `getEndpointUrl()`, `ensureProviderReady(missingKeyMessage?)` (throws the call site's own "enter your key" wording, or an endpoint/model-name message; returns `{ provider, apiKey, model }`), `isProviderConfigured()`, and the dispatcher `callAi(systemPrompt, userPrompt, { json = true, missingKeyMessage })`. `qwen-browser` currently throws "not available yet" (flagged `isLocalEndpointError`); **Batch 8 replaces that one branch.** Depends on `dom-refs.js`, `ai-api-calls.js` (2-file import cycle, safe: used only inside function bodies).
+- **ai-api-calls.js.** `callOpenAiApi(apiKey, model, sys, user, useJsonMode = true, options = {})`: new `options.baseUrl` (cleaned by new exported `normalizeOpenAiBaseUrl`: bare host gets `/v1`, trailing slash and `/chat/completions` stripped); no `Authorization` header when the key is empty; for a custom base: network failure -> "Could not reach the endpoint…(CORS)" (`isLocalEndpointError`), 404/"model not found" -> names the model (`isLocalEndpointError` + `isModelNotLoaded`), a 400 about `response_format` retries once without JSON mode (LM Studio), `<think>…</think>` is stripped from output, other errors stay unflagged so a hosted endpoint's 429 still reaches `handleApiError`'s quota path. Default OpenAI behaviour/wording unchanged. **Signature changes (not backward compatible):** `callAiSystemPrompt(systemPrompt, userPrompt)` and `runTierPass(tier, contentPages, registry, existingTerms)` lost their `apiKey`/`provider`/`model` params; `generateQuestionsWithAI` uses `ensureProviderReady` (same missing-key text) and `providerNeedsThrottle`. No longer imports `apiKeyInput`/`modelSelect`.
+- **variant-generation.js, snippet-question-generation.js, layout-formatting.js.** Every `startsWith('sk-')` branch / direct `callGeminiApiWithRetry`/`callOpenAiApi` call replaced with `ensureProviderReady()` + `callAi(...)` (`generateSingleVariant`, `regenerateChoicesForVariant`, `generateQuestionFromSnippet` (still dead code until Batch 10), `resyncSnippetsForQuestion`, `formatDocumentLayout` with `json: false`). `runAutoSync` checks `isProviderConfigured()` instead of the key box; `formatAllPagesLayout` throttles via `providerNeedsThrottle` (and only when a provider is configured). `handleApiError` returns `false` early for `isLocalEndpointError` errors so their own message surfaces. These files no longer import `apiKeyInput`/`modelSelect`/`callGeminiApiWithRetry`/`callOpenAiApi`.
+- **online-quiz-maker.html / dom-refs.js.** Nav-bar import panel gains `#providerRow` + `#providerSelect`, ids `#apiKeyRow` / `#modelSelectRow` (wrap the existing controls), `#endpointRow` (`#endpointUrlInput`, `#endpointModelInput` + `#endpointModelList` datalist, `#detectEndpointModelsBtn`), and `#providerHelp`. `#modelDetectStatus` moved out of the Model row so both modes can show it. New `dom-refs.js` exports: `providerSelect`, `apiKeyRow`, `modelSelectRow`, `endpointRow`, `endpointUrlInput`, `endpointModelInput`, `endpointModelList`, `detectEndpointModelsBtn`, `providerHelp`.
+- **core-state.js / seed-api-key.js.** Storage keys `quizMaker.provider`, `quizMaker.endpointUrl`, `quizMaker.qwenModel` (the endpoint's model name; Batch 8 can reuse it for the in-browser preset). Seeding stays in `seed-api-key.js`, before `ai-credentials-and-models.js` (ordering constraint kept).
+- **Known quirks / not done (not fixed here):**
+  - **Unseen files.** `main.js`, `batch-scan.js`, `editor-render.js`, `quiz-export.js`, `gemini-classifier.js` were not part of this upload. **Grep them** for `runTierPass(` / `callAiSystemPrompt(` (changed signatures) and for any `apiKeyInput.value` empty-key guard before `generateQuestionsWithAI` (e.g. in `importFiles`) — such a guard would still block key-less providers. `gemini-classifier.js` has its own key-pattern detection, used only by `detectModels` for hosted providers; left alone.
+  - `qwen-browser` is selectable but only errors until Batch 8; its option text says "coming soon" and the key + model rows hide for it.
+  - `formatAllPagesLayout` still runs concurrently with the 3-pass scan for `openai-compatible`; the D12 skip is scoped to in-browser Qwen in Batch 8, so a slow local endpoint will do both at once.
+  - A URL typed without a scheme is assumed `http://`. An https-served page calling `http://localhost` works in Chrome/Firefox but not Safari (mixed content); local servers must also allow this page's origin (CORS) — the help text says so.
+  - Endpoint model detection needs the server to implement `GET /models`; otherwise type the name by hand.
+  - Pre-existing, unrelated: `combineKeyToggle`, `downloadCodeBtn`, `secretKeyRow` are still missing from the HTML (the Batch 2 flag).

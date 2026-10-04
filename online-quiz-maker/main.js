@@ -7,6 +7,8 @@ import './shared-constants.js';
 
 import './seed-api-key.js';
 import './ai-credentials-and-models.js';
+import './qwen-ui.js'; // Batch 8: must come AFTER ai-credentials-and-models.js (its provider-change handling runs after applyProviderUi)
+import './offline-ui.js'; // Batch 9: offline/storage status + Qwen model cache controls (must come after qwen-ui.js)
 
 import { addQuestion, sortQuestionsByPage, updateQuestionCount } from './question-model.js';
 import { setParseStatus } from './status-helpers.js';
@@ -15,6 +17,8 @@ import { extractPptxPages, extractPdfPages } from './doc-extraction.js';
 import './text-normalize.js';
 import { markQidList } from './highlighting.js';
 import { renderTextVersion, formatAllPagesLayout } from './layout-formatting.js';
+import { getActiveProvider } from './ai-provider.js';
+import { qwenLayoutFormattingEnabled } from './qwen-local.js';
 import './selection-toolbar.js';
 import './variant-generation.js';
 import './snippet-question-generation.js';
@@ -104,7 +108,9 @@ async function importFiles(fileList) {
 
       // Runs layout formatting in the background without awaiting; it re-renders Pane 2 on its own once done.
       state.pages = pages;
-      formatAllPagesLayout();
+      // Batch 8 (D12): a small in-browser model competes with question generation for the same GPU and can rewrite wording, so
+      // layout formatting is skipped for qwen-browser unless the user ticked the Qwen "also reformat layout" checkbox.
+      if (!(getActiveProvider() === 'qwen-browser' && !qwenLayoutFormattingEnabled())) formatAllPagesLayout();
 
       const generated = await generateQuestionsWithAI(pages);
 
@@ -920,3 +926,9 @@ registerSourceSwitcher(openSource);
 
 renderTextVersion();
 addQuestion();
+
+// Batch 9: offline app shell. Service workers only run on https:// or localhost (never file://); registration is best-effort.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  const registerSw = () => navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('[sw] registration failed:', err));
+  if (document.readyState === 'complete') registerSw(); else window.addEventListener('load', registerSw);
+}

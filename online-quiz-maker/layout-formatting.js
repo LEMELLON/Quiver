@@ -1,10 +1,11 @@
 import { state, getDuplicateMap, setDuplicateMap } from './core-state.js';
-import { docTextContainer, apiKeyInput, modelSelect } from './dom-refs.js';
+import { docTextContainer } from './dom-refs.js';
 import { renderPageTextHtml } from './text-normalize.js';
 import { setSelectionGenStatus } from './status-helpers.js';
 
 import { highlightSnippetInContainer, recheckHighlights, dedupeMarks, logAllHighlights, locateAndHighlightSnippet, markQidList } from './highlighting.js';
-import { callGeminiApiWithRetry, callOpenAiApi, sleep, isGeminiModelNotFoundError } from './ai-api-calls.js';
+import { sleep, isGeminiModelNotFoundError } from './ai-api-calls.js';
+import { callAi, getActiveProvider, providerNeedsThrottle, ensureProviderReady, isProviderConfigured } from './ai-provider.js';
 // Cross-module import cycle with question-model.js; safe since computeDuplicateMap is only called inside a function body, never at module-evaluation time.
 import { computeDuplicateMap } from './question-model.js';
 
@@ -113,21 +114,13 @@ function sanitizeLayoutHtml(html) {
 
 // Sends one page's raw extracted text to the AI and returns a sanitized HTML fragment, reusing the same provider plumbing and API key as question generation.
 async function formatDocumentLayout(rawText) {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) throw new Error('Enter your Gemini or OpenAI API key in Pane 1 first.');
+  ensureProviderReady(); // throws the "enter your key" / "enter the endpoint" message when the active provider isn't usable yet
   if (!rawText || !rawText.trim()) return '';
 
-  const provider = apiKey.startsWith('sk-') ? 'openai' : 'gemini';
-  const model = modelSelect.value;
   const userPrompt = `Raw extracted text:\n"""\n${rawText}\n"""\n\nReconstruct the layout now, and return only the HTML fragment.`;
 
-  let rawHtml;
-  if (provider === 'gemini') {
-    rawHtml = await callGeminiApiWithRetry(apiKey, model, LAYOUT_SYSTEM_PROMPT, userPrompt);
-  } else {
-    // false: this call wants a raw HTML fragment back, not an OpenAI JSON-mode-wrapped object.
-    rawHtml = await callOpenAiApi(apiKey, model, LAYOUT_SYSTEM_PROMPT, userPrompt, false);
-  }
+  // json: false — this call wants a raw HTML fragment back, not an OpenAI JSON-mode-wrapped object.
+  const rawHtml = await callAi(LAYOUT_SYSTEM_PROMPT, userPrompt, { json: false });
 
   let cleaned = (rawHtml || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
 
@@ -153,8 +146,8 @@ async function formatAllPagesLayout() {
   setSelectionGenStatus('Reformatting page layout with AI…');
 
   // Throttle only for Gemini: this loop runs concurrently with the 3-pass Gemini question-generation scan, and together they can exceed the ~15 RPM free-tier quota.
-  const apiKeyForThrottle = apiKeyInput.value.trim();
-  const isGeminiKey = apiKeyForThrottle && !apiKeyForThrottle.startsWith('sk-');
+  // Batch 7: decided by the active provider (ai-provider.js), not the key prefix; with nothing configured there are no calls to throttle.
+  const needsThrottle = isProviderConfigured() && providerNeedsThrottle(getActiveProvider());
 
   try {
     for (const page of state.pages) {
@@ -173,7 +166,7 @@ async function formatAllPagesLayout() {
         }
         // Any other error: leave this page on its existing heuristic rendering and keep going.
       }
-      if (isGeminiKey) await sleep(4000);
+      if (needsThrottle) await sleep(4000);
     }
     // No explicit render call here: recheckHighlights() below does its own full rebuild, covering both the re-render and the highlight-survival report.
     recheckHighlights();

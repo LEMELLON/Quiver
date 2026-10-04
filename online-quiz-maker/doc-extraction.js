@@ -5,6 +5,19 @@
 import { state } from './core-state.js';
 import { setParseStatus } from './status-helpers.js';
 
+// Batch 9: Tesseract's worker, WASM core and language data are pinned to explicit URLs (they match the <script> in the HTML)
+// so sw.js can cache exactly these files. Core 5.1.1 ships tesseract-core{,-simd}{,-lstm}.wasm.js; tesseract.js 5.x picks the SIMD or
+// plain LSTM build at runtime, so both are listed for warming. Language data is also kept by Tesseract itself in IndexedDB after first use.
+const OCR_WORKER_PATH = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js';
+const OCR_CORE_PATH = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1';
+const OCR_LANG_PATH = 'https://tessdata.projectnaptha.com/4.0.0';
+const OCR_WARM_URLS = [
+  OCR_WORKER_PATH,
+  `${OCR_CORE_PATH}/tesseract-core-simd-lstm.wasm.js`,
+  `${OCR_CORE_PATH}/tesseract-core-lstm.wasm.js`,
+  `${OCR_LANG_PATH}/eng.traineddata.gz`,
+];
+
 // OCRs a rendered PDF page via Tesseract when the page has no extractable text layer.
 async function ocrPdfPage(page) {
   const scale = 1.5;
@@ -15,7 +28,7 @@ async function ocrPdfPage(page) {
   const ctx = canvas.getContext('2d');
   await page.render({ canvasContext: ctx, viewport }).promise;
 
-  const { data } = await Tesseract.recognize(canvas, 'eng');
+  const { data } = await Tesseract.recognize(canvas, 'eng', { workerPath: OCR_WORKER_PATH, corePath: OCR_CORE_PATH, langPath: OCR_LANG_PATH });
   return (data && data.text) || '';
 }
 
@@ -126,6 +139,7 @@ async function extractPptxPages(file) {
 }
 
 export {
+  OCR_WARM_URLS,
   ocrPdfPage,
   groupTextItemsIntoLines,
   extractPdfPages,

@@ -83,6 +83,10 @@ function setDuplicateMap(value) { duplicateMap = value; }
 // AI credentials: config.js defaults, overridden by localStorage, used via GeminiClassifier.
 const API_KEY_STORAGE = 'quizMaker.apiKey';
 const MODEL_STORAGE = 'quizMaker.model';
+// Batch 7: provider selection + OpenAI-compatible endpoint settings (see ai-provider.js).
+const PROVIDER_STORAGE = 'quizMaker.provider';
+const ENDPOINT_URL_STORAGE = 'quizMaker.endpointUrl';
+const QWEN_MODEL_STORAGE = 'quizMaker.qwenModel'; // free-text model name for the OpenAI-compatible endpoint (Batch 8 reuses it for the in-browser preset)
 
 const configDefaults = (typeof AI_CONFIG === 'object' && AI_CONFIG) ? AI_CONFIG : {};
 const configApiKey = (configDefaults.apiKey && configDefaults.apiKey !== 'YOUR_API_KEY_HERE')
@@ -105,6 +109,9 @@ export {
   createSource,
   API_KEY_STORAGE,
   MODEL_STORAGE,
+  PROVIDER_STORAGE,
+  ENDPOINT_URL_STORAGE,
+  QWEN_MODEL_STORAGE,
   configDefaults,
   configApiKey,
   configModel,

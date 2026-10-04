@@ -74,11 +74,19 @@
 // `err.isModelNotFound = true` in addition to being detectable via
 // isGeminiModelNotFoundError(err) — either works as the check above.)
 
+// BATCH 7: provider inference and key checks moved to ai-provider.js. callOpenAiApi gained an optional `{ baseUrl }` (OpenAI-compatible
+// endpoint mode, no Authorization header when the key is empty); callAiSystemPrompt(systemPrompt, userPrompt) and
+// runTierPass(tier, contentPages, registry, existingTerms) lost their apiKey/provider/model params (resolved inside callAi now).
+// BATCH 8: for 'qwen-browser', generateQuestionsWithAI runs each tier once per page window sized to the model's context (qwen-local.js
+// planPageChunks), carrying termRegistry/accumulatedTerms across windows; runTierPass's error wrap now preserves isCancelled /
+// isContextOverflow / isLocalEndpointError. Hosted providers still send one request per tier.
+
 // --- Shared dependencies ---
 import { state } from './core-state.js';
-import { apiKeyInput, modelSelect } from './dom-refs.js';
 import { setParseStatus } from './status-helpers.js';
 import { normalizeTermKey } from './text-normalize.js';
+import { callAi, getActiveProvider, getActiveModel, ensureProviderReady, providerNeedsThrottle } from './ai-provider.js';
+import { computePageBudgetChars, planPageChunks, getQwenContextWindow } from './qwen-local.js';
 import { cleanExtractedText } from './snippet-question-generation.js';
 import { fuzzyIncludes } from './highlighting.js';
 import { parseClampVariantSet } from './variant-generation.js';
@@ -209,13 +217,38 @@ async function callGeminiApiWithRetry(apiKey, model, systemPrompt, userPrompt, m
   throw lastErr;
 }
 
+// Batch 7: OpenAI's own base URL, and the cleaner for a user-typed OpenAI-compatible endpoint URL.
+const OPENAI_BASE_URL = 'https://api.openai.com/v1';
+
+// Turns what a person typed into the base URL the /chat/completions and /models paths hang off:
+//   "localhost:11434"                 -> "http://localhost:11434/v1"
+//   "http://localhost:1234/v1/"       -> "http://localhost:1234/v1"
+//   ".../v1/chat/completions"         -> ".../v1"
+// A bare host (no path) gets "/v1", which is where Ollama, LM Studio and llama.cpp serve the OpenAI API.
+function normalizeOpenAiBaseUrl(raw) {
+  let url = String(raw || '').trim();
+  if (!url) return OPENAI_BASE_URL;
+  if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+  url = url.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
+  try {
+    const u = new URL(url);
+    if (u.pathname === '' || u.pathname === '/') url = u.origin + '/v1';
+  } catch (e) { /* leave as typed; fetch will report it */ }
+  return url.replace(/\/+$/, '');
+}
+
 // `useJsonMode` defaults to true (existing question-generation callers
 // rely on OpenAI's JSON mode). Pass false for callers that want a raw
 // text/HTML fragment back instead of a forced { ... } JSON object.
+// `options.baseUrl` (Batch 7) points this at any OpenAI-compatible server instead of api.openai.com; with it, an empty `apiKey`
+// simply omits the Authorization header, and failures use local-server wording instead of OpenAI's.
 // ---------------------------------------------------------------------
-// Verbatim from source, lines 4197-4231
+// Verbatim from source, lines 4197-4231 (plus the Batch 7 baseUrl/no-key handling)
 // ---------------------------------------------------------------------
-async function callOpenAiApi(apiKey, model, systemPrompt, userPrompt, useJsonMode = true) {
+async function callOpenAiApi(apiKey, model, systemPrompt, userPrompt, useJsonMode = true, options = {}) {
+  const isCustom = !!(options && options.baseUrl);
+  const baseUrl = isCustom ? normalizeOpenAiBaseUrl(options.baseUrl) : OPENAI_BASE_URL;
+
   const body = {
     model,
     messages: [
@@ -226,17 +259,45 @@ async function callOpenAiApi(apiKey, model, systemPrompt, userPrompt, useJsonMod
   };
   if (useJsonMode) body.response_format = { type: 'json_object' };
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+  let res;
+  try {
+    res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+  } catch (netErr) {
+    if (!isCustom) throw netErr;
+    // fetch() only rejects on network-level failure: server not running, wrong host/port, or the browser blocked it (CORS / mixed content).
+    const apiErr = new Error(`Could not reach the endpoint at ${baseUrl}. Check that the server is running, the URL is right, and that it allows this page's origin (CORS).`);
+    apiErr.isLocalEndpointError = true;
+    throw apiErr;
+  }
   if (!res.ok) {
     let detail = '';
     try { detail = (await res.json())?.error?.message || ''; } catch (e) { /* ignore */ }
+
+    if (isCustom) {
+      // Some local servers (e.g. LM Studio) reject response_format: json_object; retry once in plain-text mode — the prompts already
+      // demand JSON and safeParseAIJson tolerates fences.
+      if (useJsonMode && res.status === 400 && /response_format/i.test(detail)) {
+        return callOpenAiApi(apiKey, model, systemPrompt, userPrompt, false, options);
+      }
+      if (res.status === 404 || /model[^.]*\b(not found|not loaded|does not exist|not exist)\b/i.test(detail)) {
+        const missing = new Error(`The endpoint doesn't have a model named "${model}" available${detail ? ' (' + detail + ')' : ''}. Pull or load it on the server, or use Detect to see what it serves.`);
+        missing.status = res.status;
+        missing.isLocalEndpointError = true;
+        missing.isModelNotLoaded = true;
+        throw missing;
+      }
+      const endpointErr = new Error(`Endpoint error (${res.status})${detail ? ': ' + detail : '. Check the URL and model name.'}`);
+      endpointErr.status = res.status; // not flagged local, so a 429 from a hosted endpoint still reaches handleApiError's quota path
+      throw endpointErr;
+    }
+
     const apiErr = new Error(`OpenAI API error (${res.status})${detail ? ': ' + detail : '. Check your API key and model.'}`);
     // Attach the HTTP status so handleApiError's `err.status === 429`
     // check reliably catches an OpenAI rate-limit/quota response even
@@ -246,8 +307,10 @@ async function callOpenAiApi(apiKey, model, systemPrompt, userPrompt, useJsonMod
     throw apiErr;
   }
   const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content || '';
-  if (!text.trim()) throw new Error('OpenAI returned an empty response.');
+  let text = data?.choices?.[0]?.message?.content || '';
+  // Reasoning-style local models (Qwen3 etc.) may prefix <think>…</think>; it would break JSON parsing and layout HTML.
+  if (isCustom) text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  if (!text.trim()) throw new Error(isCustom ? 'The endpoint returned an empty response.' : 'OpenAI returned an empty response.');
   return text;
 }
 
@@ -454,17 +517,10 @@ function parseAiQuestions(rawText, fallbackPage, tier, registry) {
   return cleaned;
 }
 
-// Calls whichever provider's API with a given system/user prompt pair —
-// shared by all 3 tier passes below so the gemini/openai branching
-// logic isn't tripled.
-// ---------------------------------------------------------------------
-// Verbatim from source, lines 4332-4337
-// ---------------------------------------------------------------------
-async function callAiSystemPrompt(apiKey, provider, model, systemPrompt, userPrompt) {
-  if (provider === 'gemini') {
-    return await callGeminiApiWithRetry(apiKey, model, systemPrompt, userPrompt);
-  }
-  return await callOpenAiApi(apiKey, model, systemPrompt, userPrompt);
+// Calls whichever provider is active with a given system/user prompt pair — shared by all 3 tier passes below.
+// Batch 7: routing now lives in ai-provider.js's callAi(); this stays as the tier passes' single entry point.
+async function callAiSystemPrompt(systemPrompt, userPrompt) {
+  return await callAi(systemPrompt, userPrompt, { json: true });
 }
 
 // Runs one tier of the 3-pass scan: sends that tier's system prompt —
@@ -480,7 +536,7 @@ async function callAiSystemPrompt(apiKey, provider, model, systemPrompt, userPro
 // ---------------------------------------------------------------------
 // Verbatim from source, lines 4349-4368
 // ---------------------------------------------------------------------
-async function runTierPass(tier, contentPages, apiKey, provider, model, registry, existingTerms) {
+async function runTierPass(tier, contentPages, registry, existingTerms) {
   const systemPrompt = formatTierSystemPrompt(TIER_SYSTEM_PROMPTS[tier], existingTerms);
   const userPrompt = 'Here is the extracted document text, broken into pages/slides:\n\n' +
     buildPagesPrompt(contentPages) +
@@ -488,7 +544,7 @@ async function runTierPass(tier, contentPages, apiKey, provider, model, registry
 
   let rawText;
   try {
-    rawText = await callAiSystemPrompt(apiKey, provider, model, systemPrompt, userPrompt);
+    rawText = await callAiSystemPrompt(systemPrompt, userPrompt);
   } catch (err) {
     // Issue 1b — a model-not-found failure gets a distinct, actionable
     // message rather than being wrapped the same as any other API
@@ -496,12 +552,16 @@ async function runTierPass(tier, contentPages, apiKey, provider, model, registry
     // generateQuestionsWithAI's sequential `await runTierPass(...)`
     // chain already stops at whichever tier hit this — Tier 2/3 never
     // run against a model that's confirmed to be permanently broken.
-    if (provider === 'gemini' && isGeminiModelNotFoundError(err)) {
+    if (getActiveProvider() === 'gemini' && isGeminiModelNotFoundError(err)) {
+      const model = getActiveModel('gemini');
       const wrapped = new Error(`Tier ${tier}: the selected model ("${model}") is no longer available. Please choose a different model from the dropdown and try again.`);
       wrapped.isModelNotFound = true;
       throw wrapped;
     }
-    throw new Error(err.message || `The Tier ${tier} AI request failed. Check your API key, model, and network connection.`);
+    const rewrapped = new Error(err.message || `The Tier ${tier} AI request failed. Check your API key, model, and network connection.`);
+    // Batch 8: keep the local-engine flags so handleApiError / the chunk loop can tell cancel / overflow / local errors apart.
+    for (const flag of ['isCancelled', 'isContextOverflow', 'isLocalEndpointError']) if (err && err[flag]) rewrapped[flag] = true;
+    throw rewrapped;
   }
 
   try {
@@ -530,12 +590,8 @@ async function runTierPass(tier, contentPages, apiKey, provider, model, registry
 // Verbatim from source, lines 4384-4429
 // ---------------------------------------------------------------------
 async function generateQuestionsWithAI(pages, seedTerms) {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) {
-    throw new Error('Please enter your Gemini or OpenAI API key above, then re-upload the file.');
-  }
-  const provider = apiKey.startsWith('sk-') ? 'openai' : 'gemini';
-  const model = modelSelect.value;
+  // Batch 7: the key check and provider inference moved to ai-provider.js (a key-less provider no longer throws here); the missing-key wording is unchanged.
+  const { provider } = ensureProviderReady('Please enter your Gemini or OpenAI API key above, then re-upload the file.');
 
   const contentPages = pages.filter(p => p.text && p.text.trim().length > 0);
   if (contentPages.length === 0) {
@@ -549,25 +605,48 @@ async function generateQuestionsWithAI(pages, seedTerms) {
   // so Tier N's prompt always reflects everything Tiers 1..N-1 minted.
   let accumulatedTerms = mergeTerms([], seedTerms || []);
   // Inter-pass throttling: only needed between Gemini passes (OpenAI
-  // has no equivalent RPM ceiling here) — keeps sequential requests
-  // under Gemini's ~15 RPM free-tier quota on top of the per-call
-  // retry/backoff in callGeminiApiWithRetry.
+  // and the local providers have no equivalent RPM ceiling here) — keeps
+  // sequential requests under Gemini's ~15 RPM free-tier quota on top of
+  // the per-call retry/backoff in callGeminiApiWithRetry.
   const INTER_PASS_DELAY_MS = 4000;
-  const throttle = () => (provider === 'gemini' ? sleep(INTER_PASS_DELAY_MS) : Promise.resolve());
+  const throttle = () => (providerNeedsThrottle(provider) ? sleep(INTER_PASS_DELAY_MS) : Promise.resolve());
 
-  setParseStatus('Pass 1 of 3 — scanning for top-tier concepts…');
-  const tier1Questions = await runTierPass(1, contentPages, apiKey, provider, model, termRegistry, accumulatedTerms);
-  accumulatedTerms = mergeTerms(accumulatedTerms, collectTargetTerms(tier1Questions));
+  // Batch 8: hosted providers and endpoints keep the single-request-per-tier behaviour. In-browser Qwen has a ~4k-token context,
+  // so each tier runs once per page window (planPageChunks); the term registry and accumulated terms carry across windows.
+  const MAX_TERMS_IN_PROMPT = 40; // keep the "already covered" list from eating the small context
+  const trimTerms = (t) => (Array.isArray(t) ? t.slice(-MAX_TERMS_IN_PROMPT) : t);
+  const runTier = async (tier, label) => {
+    if (provider !== 'qwen-browser') {
+      const qs = await runTierPass(tier, contentPages, termRegistry, accumulatedTerms);
+      accumulatedTerms = mergeTerms(accumulatedTerms, collectTargetTerms(qs));
+      return qs;
+    }
+    const probePrompt = formatTierSystemPrompt(TIER_SYSTEM_PROMPTS[tier], trimTerms(accumulatedTerms));
+    const budget = computePageBudgetChars(probePrompt, getQwenContextWindow());
+    const chunks = planPageChunks(contentPages, budget);
+    const out = [];
+    for (let i = 0; i < chunks.length; i++) {
+      setParseStatus(`${label}${chunks.length > 1 ? ` — part ${i + 1} of ${chunks.length}` : ''}…`);
+      let qs = [];
+      try {
+        qs = await runTierPass(tier, chunks[i], termRegistry, trimTerms(accumulatedTerms));
+      } catch (err) {
+        if (err && err.isContextOverflow) { console.warn(`Tier ${tier} part ${i + 1} skipped: context overflow`, err); continue; }
+        throw err; // cancel, load failure, WebGPU errors etc. stop the scan
+      }
+      accumulatedTerms = mergeTerms(accumulatedTerms, collectTargetTerms(qs));
+      out.push(...qs);
+    }
+    return out;
+  };
+
+  const tier1Questions = await runTier(1, 'Pass 1 of 3 — scanning for top-tier concepts');
   await throttle();
 
-  setParseStatus('Pass 2 of 3 — scanning bullet-by-bullet detail…');
-  const tier2Questions = await runTierPass(2, contentPages, apiKey, provider, model, termRegistry, accumulatedTerms);
-  accumulatedTerms = mergeTerms(accumulatedTerms, collectTargetTerms(tier2Questions));
+  const tier2Questions = await runTier(2, 'Pass 2 of 3 — scanning bullet-by-bullet detail');
   await throttle();
 
-  setParseStatus('Pass 3 of 3 — final sweep for missed details…');
-  const tier3Questions = await runTierPass(3, contentPages, apiKey, provider, model, termRegistry, accumulatedTerms);
-  accumulatedTerms = mergeTerms(accumulatedTerms, collectTargetTerms(tier3Questions));
+  const tier3Questions = await runTier(3, 'Pass 3 of 3 — final sweep for missed details');
 
   const questions = [...tier1Questions, ...tier2Questions, ...tier3Questions];
   if (questions.length === 0) {
@@ -583,6 +662,7 @@ export {
   parseSuggestedRetryDelayMs,
   callGeminiApiWithRetry,
   callOpenAiApi,
+  normalizeOpenAiBaseUrl,
   parseAiQuestions,
   callAiSystemPrompt,
   runTierPass,

@@ -1,9 +1,8 @@
 import { state } from './core-state.js';
-import { apiKeyInput, modelSelect } from './dom-refs.js';
 import { MIN_CHOICES } from './shared-constants.js';
 import { toClampPrompt } from './question-model.js';
 import { cleanExtractedText } from './snippet-question-generation.js';
-import { callGeminiApiWithRetry, callOpenAiApi } from './ai-api-calls.js';
+import { callAi, ensureProviderReady } from './ai-provider.js';
 import { safeParseAIJson } from './ai-prompt-builders.js';
 import { renderActiveQuestion } from './editor-render.js';
 
@@ -145,8 +144,7 @@ Rules (follow strictly):
 
 // Generates one normalized variant of the given type for question q, using its snippet or existing variant text as context.
 async function generateSingleVariant(q, type, statusElement) {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) throw new Error('Enter your Gemini or OpenAI API key in Pane 1 first.');
+  ensureProviderReady(); // throws the "enter your key" / "enter the endpoint" message when the active provider isn't usable yet
 
   // Prefer the clamp variant's text as context if present, else fall back to whichever variant is on hand.
   const clamp = q.variants.find(v => v.type === 'clamp');
@@ -156,8 +154,6 @@ async function generateSingleVariant(q, type, statusElement) {
     throw new Error("Add a source snippet or fill in a question first — there's nothing to generate from yet.");
   }
 
-  const provider = apiKey.startsWith('sk-') ? 'openai' : 'gemini';
-  const model = modelSelect.value;
   const systemPrompt = SINGLE_VARIANT_SYSTEM_PROMPTS[type];
 
   const existingOfType = q.variants.filter(v => v.type === type).map(v => v.questionText).filter(Boolean);
@@ -174,9 +170,7 @@ Generate the question variant now, and return only the JSON object.`;
 
   let rawText;
   try {
-    rawText = provider === 'gemini'
-      ? await callGeminiApiWithRetry(apiKey, model, systemPrompt, userPrompt)
-      : await callOpenAiApi(apiKey, model, systemPrompt, userPrompt);
+    rawText = await callAi(systemPrompt, userPrompt);
   } catch (err) {
     if (handleApiError(err, statusElement)) {
       throw new Error('⚠ API Quota Exceeded or Rate Limited. You have run out of API usage or are making requests too quickly.');
@@ -298,14 +292,11 @@ function getEmptyChoiceIndices(variant) {
 
 // Regenerates choices (and correct answer(s)) for the given variant via AI, without touching its questionText.
 async function regenerateChoicesForVariant(q, variant) {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) throw new Error('Enter your Gemini or OpenAI API key in Pane 1 first.');
+  ensureProviderReady();
   if (!variant.questionText.trim()) {
     throw new Error('Fill in the question text first — there\'s nothing to base choices on yet.');
   }
 
-  const provider = apiKey.startsWith('sk-') ? 'openai' : 'gemini';
-  const model = modelSelect.value;
   const systemPrompt = REGENERATE_CHOICES_SYSTEM_PROMPTS[variant.type] || REGENERATE_CHOICES_SYSTEM_PROMPTS.rephrased;
   const contextText = q.answerSnippet || q.sourceSnippet || '';
   // Preserve the variant's current choice count rather than resetting it back to a default.
@@ -320,9 +311,7 @@ Generate the choices now, and return only the JSON object.`;
 
   let rawText;
   try {
-    rawText = provider === 'gemini'
-      ? await callGeminiApiWithRetry(apiKey, model, systemPrompt, userPrompt)
-      : await callOpenAiApi(apiKey, model, systemPrompt, userPrompt);
+    rawText = await callAi(systemPrompt, userPrompt);
   } catch (err) {
     if (handleApiError(err, null)) {
       throw new Error('⚠ API Quota Exceeded or Rate Limited. You have run out of API usage or are making requests too quickly.');
@@ -414,6 +403,8 @@ async function handleRegenerateChoices(qid) {
 
 // Detects a quota-exhausted/rate-limited API error and reports it via statusElement or alert; returns true if handled.
 function handleApiError(err, statusElement) {
+  // Batch 7: connection-refused / model-not-loaded failures from a local or self-hosted endpoint are not quota problems — let their own message through.
+  if (err && err.isLocalEndpointError) return false;
   const msg = (err.message || '').toLowerCase();
   const isQuota = msg.includes('quota') || msg.includes('insufficient_quota') || err.status === 429 || msg.includes('rate limit');
 

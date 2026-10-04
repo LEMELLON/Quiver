@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Batch 9: installable app (served over http(s):// or localhost only; sw.js + manifest.webmanifest) -->
+<meta name="theme-color" content="#0b0f14">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Quiz Maker — Author &amp; Sync</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -47,7 +53,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script src="config.js"></script>
 <script src="gemini-classifier.js"></script>
 
@@ -87,7 +93,19 @@
       <p class="text-sm text-mute mb-3 mt-2">Upload a PDF or PPTX and an AI model will generate question cards automatically, each mapped back to its source page or slide.</p>
 
       <div class="grid grid-cols-1 gap-3 mb-3">
-        <div>
+        <!-- Batch 7: provider picker. 'auto' keeps the old behaviour (key starting "sk-" = OpenAI, otherwise Gemini). Rows below are shown/hidden by
+             ai-credentials-and-models.js's applyProviderUi(). -->
+        <div id="providerRow">
+          <label class="field-label" for="providerSelect">AI Provider</label>
+          <select id="providerSelect" class="input-base w-full">
+            <option value="auto">Auto (detect from API key)</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+            <option value="openai-compatible">OpenAI-compatible endpoint (Ollama, LM Studio, local Qwen…)</option>
+            <option value="qwen-browser">Qwen in this browser (WebGPU, no API key)</option>
+          </select>
+        </div>
+        <div id="apiKeyRow">
           <label class="field-label" for="apiKeyInput">API Key</label>
           <div class="flex gap-2">
             <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false"
@@ -96,7 +114,7 @@
             <button id="toggleApiKeyBtn" type="button" class="icon-btn">Show</button>
           </div>
         </div>
-        <div>
+        <div id="modelSelectRow">
           <label class="field-label" for="modelSelect">Model</label>
           <div class="flex gap-2">
             <select id="modelSelect" class="input-base flex-1">
@@ -107,10 +125,75 @@
             </select>
             <button id="detectModelsBtn" type="button" class="icon-btn" title="Query the key's available models">Detect</button>
           </div>
-          <p id="modelDetectStatus" class="hidden mt-1 text-[0.65rem] font-mono text-mute"></p>
         </div>
+        <!-- Shown only for the OpenAI-compatible endpoint provider. -->
+        <div id="endpointRow" class="hidden">
+         <div class="grid grid-cols-1 gap-3">
+          <div>
+            <label class="field-label" for="endpointUrlInput">Endpoint URL</label>
+            <input id="endpointUrlInput" type="text" autocomplete="off" spellcheck="false"
+              placeholder="http://localhost:11434/v1"
+              class="input-base w-full" />
+          </div>
+          <div>
+            <label class="field-label" for="endpointModelInput">Model name</label>
+            <div class="flex gap-2">
+              <input id="endpointModelInput" type="text" list="endpointModelList" autocomplete="off" spellcheck="false"
+                placeholder="qwen2.5:3b"
+                class="input-base flex-1" />
+              <button id="detectEndpointModelsBtn" type="button" class="icon-btn" title="List the models this endpoint serves">Detect</button>
+            </div>
+            <datalist id="endpointModelList"></datalist>
+          </div>
+         </div>
+        </div>
+        <!-- Batch 8: shown only for the in-browser Qwen provider; wired by qwen-ui.js (engine in qwen-local.js, worker in qwen-worker.js). -->
+        <div id="qwenRow" class="hidden">
+         <div class="grid grid-cols-1 gap-3">
+          <div>
+            <label class="field-label" for="qwenModelSelect">Qwen model (runs on your GPU)</label>
+            <select id="qwenModelSelect" class="input-base w-full"></select>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button id="qwenLoadBtn" type="button" class="icon-btn">Load model</button>
+            <button id="qwenCancelBtn" type="button" class="icon-btn hidden">Cancel</button>
+            <button id="qwenUnloadBtn" type="button" class="icon-btn" title="Free the GPU memory">Unload</button>
+          </div>
+          <div id="qwenProgressWrap" class="hidden h-1.5 w-full bg-edge rounded overflow-hidden">
+            <div id="qwenProgressBar" class="h-full bg-amber" style="width:0%"></div>
+          </div>
+          <p id="qwenStatus" class="text-[0.65rem] font-mono text-mute"></p>
+          <label class="inline-flex items-start gap-2 text-xs text-mute cursor-pointer">
+            <input id="qwenLayoutToggle" type="checkbox" class="mt-0.5" />
+            <span>Also reformat page layout with Qwen after import (slow on small models; may alter wording). Off by default.</span>
+          </label>
+          <p class="text-[0.65rem] text-mute">First load downloads the model once and caches it in this browser; later loads are instant. Nothing is uploaded. Small models make more mistakes than hosted ones — review generated questions.</p>
+          <!-- Batch 9: model cache controls, wired by offline-ui.js -->
+          <div id="qwenCacheBlock" class="border-t border-edge pt-3 space-y-2">
+            <p id="qwenCacheStatus" class="text-[0.65rem] font-mono text-mute"></p>
+            <div class="flex flex-wrap gap-2">
+              <button id="qwenDownloadBtn" type="button" class="icon-btn" title="Download the selected model now so it works without a network">Download model for offline use</button>
+              <button id="qwenDeleteCacheBtn" type="button" class="icon-btn" title="Remove the selected model from this device">Delete cached model</button>
+            </div>
+          </div>
+         </div>
+        </div>
+        <p id="modelDetectStatus" class="hidden text-[0.65rem] font-mono text-mute"></p>
       </div>
-      <p class="text-xs text-mute mb-3">Defaults from <code class="text-ink">config.js</code>; overrides you type here are saved to this browser's local storage. Sent directly to the selected provider's API — never to us.</p>
+      <p id="providerHelp" class="text-xs text-mute mb-3">Defaults from <code class="text-ink">config.js</code>; overrides you type here are saved to this browser's local storage. Sent directly to the selected provider's API — never to us.</p>
+
+      <!-- Batch 9: offline + storage status, wired by offline-ui.js. Needs https:// or localhost (not file://). -->
+      <div id="offlineRow" class="mb-3 border-t border-edge pt-3 space-y-2">
+        <p class="field-label">Offline &amp; storage</p>
+        <ul id="offlineStatusList" class="text-[0.65rem] font-mono text-mute space-y-0.5"></ul>
+        <div class="flex flex-wrap gap-2">
+          <button id="offlinePrepareBtn" type="button" class="icon-btn" title="Save OCR files and the in-browser AI runtime so they work without a network">Make app available offline</button>
+          <button id="persistStorageBtn" type="button" class="icon-btn" title="Ask the browser not to clear saved files when space is low">Protect storage</button>
+        </div>
+        <p id="storageEstimate" class="text-[0.65rem] font-mono text-mute"></p>
+        <p id="offlineMessage" class="text-[0.65rem] font-mono text-mute"></p>
+        <p class="text-[0.65rem] text-mute">To use on a phone: open this page once online, tap "Make app available offline", then use your browser's Install / Add to Home Screen option.</p>
+      </div>
 
       <label class="inline-flex items-center gap-2 font-mono text-xs tracking-wide uppercase border border-edge hover:border-amber hover:text-amber text-ink px-3 py-2 rounded cursor-pointer transition-colors">
         Choose file(s)

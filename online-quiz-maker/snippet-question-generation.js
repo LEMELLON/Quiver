@@ -1,14 +1,12 @@
 import { state, getPendingSelection, getLastDocSelection, setLastDocSelection } from './core-state.js';
 import {
-  apiKeyInput,
-  modelSelect,
   docTextContainer,
   selectionGenerateBtn,
   selectionQuestionType,
 } from './dom-refs.js';
 
 import { fuzzyIncludes, findSnippetRange, selectionRangeIdx, computeOccurrenceIndex, recheckHighlightsForQuestion } from './highlighting.js';
-import { callGeminiApiWithRetry, callOpenAiApi } from './ai-api-calls.js';
+import { callAi, ensureProviderReady, isProviderConfigured } from './ai-provider.js';
 import { safeParseAIJson } from './ai-prompt-builders.js';
 import { parseClampVariantSet, handleApiError } from './variant-generation.js';
 import { renderQuestionNav, renderActiveQuestion, setActiveCard } from './editor-render.js';
@@ -49,21 +47,14 @@ Rules (follow strictly):
 
 // Generates a question collection from a selected snippet via AI; statusElement is an optional (msg, tone) reporter for quota/rate-limit errors.
 async function generateQuestionFromSnippet(snippet, pageNum, statusElement) {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) throw new Error('Enter your Gemini or OpenAI API key in Pane 1 first.');
+  ensureProviderReady();
   if (snippet.length < 10) throw new Error('Select a longer snippet of text (more than 10 characters).');
 
-  const provider = apiKey.startsWith('sk-') ? 'openai' : 'gemini';
-  const model = modelSelect.value;
   const userPrompt = `Snippet (from page/slide ${pageNum}):\n"""\n${snippet}\n"""\n\nGenerate the definition-first question collection now, and return only the JSON object.`;
 
   let rawText;
   try {
-    if (provider === 'gemini') {
-      rawText = await callGeminiApiWithRetry(apiKey, model, SNIPPET_SYSTEM_PROMPT, userPrompt);
-    } else {
-      rawText = await callOpenAiApi(apiKey, model, SNIPPET_SYSTEM_PROMPT, userPrompt);
-    }
+    rawText = await callAi(SNIPPET_SYSTEM_PROMPT, userPrompt);
   } catch (err) {
     if (handleApiError(err, statusElement)) {
       // Reuse handleApiError's friendly wording so the caller's message stays consistent.
@@ -124,16 +115,13 @@ Rules (follow strictly):
 
 // Re-picks an edited question's question/answer snippets inside its fixed source snippet via AI; returns {questionSnippet, answerSnippet}, never mutates q.
 async function resyncSnippetsForQuestion(q) {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) throw new Error('Enter your Gemini or OpenAI API key in Pane 1 first.');
+  ensureProviderReady();
   if (!q.sourceSnippet || !q.sourceSnippet.trim()) {
     throw new Error('This question has no source snippet yet — scan one first.');
   }
   const sourceText = cleanExtractedText(q.sourceSnippet);
 
   const variant = q.variants[q.activeVariantIndex] || q.variants[0];
-  const provider = apiKey.startsWith('sk-') ? 'openai' : 'gemini';
-  const model = modelSelect.value;
   const choicesBlock = variant && Array.isArray(variant.choices) && variant.choices.some(c => c.trim())
     ? `\nCurrent choices: ${JSON.stringify(variant.choices)}, correct: ${JSON.stringify(variant.choices[variant.correctAnswerIndex] ?? '')}`
     : '';
@@ -150,9 +138,7 @@ Return only the JSON object.`;
 
   let rawText;
   try {
-    rawText = provider === 'gemini'
-      ? await callGeminiApiWithRetry(apiKey, model, RESYNC_SNIPPET_SYSTEM_PROMPT, userPrompt)
-      : await callOpenAiApi(apiKey, model, RESYNC_SNIPPET_SYSTEM_PROMPT, userPrompt);
+    rawText = await callAi(RESYNC_SNIPPET_SYSTEM_PROMPT, userPrompt);
   } catch (err) {
     if (handleApiError(err, null)) {
       throw new Error('⚠ API Quota Exceeded or Rate Limited. You have run out of API usage or are making requests too quickly.');
@@ -509,12 +495,12 @@ async function runAutoSync(qid) {
 
   // Cheap, synchronous, no API call: relocates the existing snippet highlight but can't rewrite the snippet text itself — only handleResyncSnippets does that.
   recheckHighlightsForQuestion(qid);
-  // Only spend an API call resyncing if a key is configured.
-  if (apiKeyInput.value.trim()) {
+  // Only spend an API call resyncing if the active provider is usable (a key for Gemini/OpenAI; an endpoint + model name for an OpenAI-compatible server).
+  if (isProviderConfigured()) {
     await handleResyncSnippets(qid);
   } else {
-    // No key: surface plainly that the snippet text wasn't resynced, only re-verified in place.
-    q.snippetError = 'Snippet text wasn\u2019t resynced to your edit — add an API key above to enable AI resync (the highlight was only re-verified in place).';
+    // Not configured: surface plainly that the snippet text wasn't resynced, only re-verified in place.
+    q.snippetError = 'Snippet text wasn\u2019t resynced to your edit — set up an AI provider above (API key, or endpoint + model name) to enable AI resync (the highlight was only re-verified in place).';
     renderActiveQuestion();
   }
 

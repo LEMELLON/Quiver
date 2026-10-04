@@ -27,6 +27,26 @@ const toggleApiKeyBtn = document.getElementById('toggleApiKeyBtn');
 const modelSelect = document.getElementById('modelSelect');
 const detectModelsBtn = document.getElementById('detectModelsBtn');
 const modelDetectStatus = document.getElementById('modelDetectStatus');
+// Batch 7: provider picker + the rows/inputs it toggles (see ai-provider.js / ai-credentials-and-models.js's applyProviderUi()).
+const providerSelect = document.getElementById('providerSelect');
+const apiKeyRow = document.getElementById('apiKeyRow');
+const modelSelectRow = document.getElementById('modelSelectRow');
+const endpointRow = document.getElementById('endpointRow');
+const endpointUrlInput = document.getElementById('endpointUrlInput');
+const endpointModelInput = document.getElementById('endpointModelInput');
+const endpointModelList = document.getElementById('endpointModelList');
+const detectEndpointModelsBtn = document.getElementById('detectEndpointModelsBtn');
+const providerHelp = document.getElementById('providerHelp');
+// Batch 8: in-browser Qwen controls (see qwen-ui.js / qwen-local.js).
+const qwenRow = document.getElementById('qwenRow');
+const qwenModelSelect = document.getElementById('qwenModelSelect');
+const qwenLoadBtn = document.getElementById('qwenLoadBtn');
+const qwenCancelBtn = document.getElementById('qwenCancelBtn');
+const qwenUnloadBtn = document.getElementById('qwenUnloadBtn');
+const qwenProgressWrap = document.getElementById('qwenProgressWrap');
+const qwenProgressBar = document.getElementById('qwenProgressBar');
+const qwenStatusEl = document.getElementById('qwenStatus');
+const qwenLayoutToggle = document.getElementById('qwenLayoutToggle');
 
 const docTextViewport = document.getElementById('docTextViewport');
 const docTextContainer = document.getElementById('docTextContainer');
@@ -133,6 +153,24 @@ export {
   modelSelect,
   detectModelsBtn,
   modelDetectStatus,
+  providerSelect,
+  apiKeyRow,
+  modelSelectRow,
+  endpointRow,
+  endpointUrlInput,
+  endpointModelInput,
+  endpointModelList,
+  detectEndpointModelsBtn,
+  providerHelp,
+  qwenRow,
+  qwenModelSelect,
+  qwenLoadBtn,
+  qwenCancelBtn,
+  qwenUnloadBtn,
+  qwenProgressWrap,
+  qwenProgressBar,
+  qwenStatusEl,
+  qwenLayoutToggle,
   docTextViewport,
   docTextContainer,
   selectionToolbar,
